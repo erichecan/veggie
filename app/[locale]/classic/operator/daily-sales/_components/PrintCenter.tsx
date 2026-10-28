@@ -502,6 +502,13 @@ function BatchCard({
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
                   <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
                   <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
+                  {/* 客退货物处置角标，只读展示（20261027 M5） */}
+                  {o.goodsReturnStatus === 'APPROVED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
+                  )}
+                  {o.goodsReturnStatus === 'REJECTED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
+                  )}
                   <span className="text-sm font-medium text-gray-900 w-24 text-right">
                     €{fmtMoney(Number(o.totalAmount))}
                   </span>
@@ -518,6 +525,12 @@ function BatchCard({
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
                   <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
                   <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
+                  {o.goodsReturnStatus === 'APPROVED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
+                  )}
+                  {o.goodsReturnStatus === 'REJECTED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
+                  )}
                   <span className="text-sm font-medium text-gray-900 w-24 text-right">
                     €{fmtMoney(Number(o.totalAmount))}
                   </span>

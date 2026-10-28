@@ -492,6 +492,14 @@ export default function ClassicOrdersPage() {
                   ? <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700 font-medium" data-testid="return-badge" title={o.returnIssueNote ?? ''}>{isEn ? 'Receipt issue' : '回单有问题'}</span>
                   : <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-red-50 text-red-600 font-medium" data-testid="return-badge">{isEn ? 'No receipt' : '未回单'}</span>
             )}
+            {/* 客退货物处置角标（20261027 M5）：只读展示 OrderReturn/ReturnItem 审核结果，与上面
+                「回单核销」(returnStatus) 完全是两件事——不要混用同一个 data-testid 或配色 */}
+            {o.goodsReturnStatus === 'APPROVED' && (
+              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
+            )}
+            {o.goodsReturnStatus === 'REJECTED' && (
+              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
+            )}
           </div>
         </td>
         {/* Internal Notes */}

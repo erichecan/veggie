@@ -10,8 +10,10 @@ import {
   postReturnStockMoves,
   applyReturnOrderLineReduction,
   calculateRefundAmount,
+  syncOrderGoodsReturnStatus,
   type ReturnStockMovePlan,
   type OrderLineReduction,
+  type GoodsReturnOrderSync,
 } from '@/lib/returns-engine'
 import type { TripRestaurant, ReturnItem, OrderItem } from '@/lib/types'
 
@@ -281,6 +283,7 @@ export async function PUT(
       // 收集需要的数据库操作（StockMove/OrderLine 的记账规则见 lib/returns-engine.ts）
       const stockMoves: ReturnStockMovePlan[] = []
       const orderLineUpdates: OrderLineReduction[] = []
+      const goodsReturnSyncs: GoodsReturnOrderSync[] = []
 
       let approvedCount = 0
       let rejectedCount = 0
@@ -354,6 +357,15 @@ export async function PUT(
               productId: ret.productId,
               reduceQty: returnQty,
             })
+            // Order 只读退货角标（20261027 M5）：同一站点关联的每张订单都标记，
+            // 不去反查这笔退货具体属于站点里的哪一张（ReturnItem 本身也不区分）
+            goodsReturnSyncs.push({
+              orderId,
+              status: 'APPROVED',
+              productName: ret.productName,
+              quantity: returnQty,
+              disposition,
+            })
           }
         } else {
           // 拒绝退货
@@ -363,6 +375,14 @@ export async function PUT(
             refundNote: review.refundNote,
           }
           rejectedCount++
+          for (const orderId of restaurant.orderIds) {
+            goodsReturnSyncs.push({
+              orderId,
+              status: 'REJECTED',
+              productName: ret.productName,
+              quantity: toNum(ret.quantity),
+            })
+          }
         }
 
         restaurants[rIdx] = { ...restaurant, returns }
@@ -392,6 +412,7 @@ export async function PUT(
         // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）+ 提成重算（deliveredQty 变了，
         // 受影响订单的司机提成快照需要重新覆盖，不再信旧快照）
         await applyReturnOrderLineReduction(tx, orderLineUpdates)
+        await syncOrderGoodsReturnStatus(tx, goodsReturnSyncs, user)
         await recalcTripDriverCommission(id, tx)
       })
 

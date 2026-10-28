@@ -165,6 +165,54 @@ export async function applyReturnOrderLineReduction(
   return affectedOrderIds
 }
 
+export interface GoodsReturnOrderSync {
+  orderId: string
+  status: 'APPROVED' | 'REJECTED'
+  productName: string
+  quantity: number
+  disposition?: ReturnDisposition
+}
+
+/**
+ * 审核/处置完成后回写 Order 的只读退货角标（20261027 M5）。
+ * 故意不做跨多条退货记录的状态汇总——goodsReturnStatus 是"镶嵌角标"语义，
+ * 只读展示最近一次处置结果，不是账本；同一订单极少会有第二条独立退货记录，
+ * 真出现了也是后写覆盖前写，与 Order.returnStatus（核销对账）各管各的不冲突。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function syncOrderGoodsReturnStatus(
+  tx: any,
+  updates: GoodsReturnOrderSync[],
+  user: { userId: string },
+) {
+  for (const u of updates) {
+    // updateMany 而非 update：Trip 路径的 orderId 来自 restaurant.orderIds 反查，
+    // 跟 applyReturnOrderLineReduction 同样的不精确问题——订单可能已被删/orderId 对不上，
+    // 这里要跟那边一样静默跳过而不是让整个事务 P2025 炸掉
+    const { count } = await tx.order.updateMany({
+      where: { id: u.orderId },
+      data: {
+        goodsReturnStatus: u.status,
+        goodsReturnedAt: u.status === 'APPROVED' ? new Date() : null,
+      },
+    })
+    if (count === 0) continue
+    await tx.orderAuditLog.create({
+      data: {
+        orderId: u.orderId,
+        userId: user.userId,
+        action: 'goods_return_disposed',
+        changedFields: {
+          status: u.status,
+          productName: u.productName,
+          quantity: u.quantity,
+          disposition: u.disposition ?? null,
+        },
+      },
+    })
+  }
+}
+
 /** 计算退款金额（精确小数）。review.refundAmount 优先，其次按百分比，否则全额。 */
 export function calculateRefundAmount(
   unitPrice: number,

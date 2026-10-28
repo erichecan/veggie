@@ -8,6 +8,7 @@ import {
   buildReturnStockMoves,
   postReturnStockMoves,
   applyReturnOrderLineReduction,
+  syncOrderGoodsReturnStatus,
 } from '@/lib/returns-engine'
 
 /**
@@ -67,14 +68,23 @@ export async function PUT(
       }
 
       if (action === 'reject') {
-        const updated = await prisma.orderReturn.update({
-          where: { id },
-          data: {
+        const [updated] = await prisma.$transaction(async (tx) => {
+          const updatedRet = await tx.orderReturn.update({
+            where: { id },
+            data: {
+              status: 'REJECTED',
+              approvedById: user.userId,
+              approvedByName: user.name,
+              approvedAt: new Date(),
+            },
+          })
+          await syncOrderGoodsReturnStatus(tx, [{
+            orderId: ret.orderId,
             status: 'REJECTED',
-            approvedById: user.userId,
-            approvedByName: user.name,
-            approvedAt: new Date(),
-          },
+            productName: ret.productName,
+            quantity: toNum(ret.quantity),
+          }], user)
+          return [updatedRet]
         })
         await writeLog({
           userId: user.userId, userEmail: user.email, userName: user.name,
@@ -119,6 +129,13 @@ export async function PUT(
 
         await postReturnStockMoves(tx, stockMoves, user)
         await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, productId: ret.productId, reduceQty: quantity }])
+        await syncOrderGoodsReturnStatus(tx, [{
+          orderId: ret.orderId,
+          status: 'APPROVED',
+          productName: ret.productName,
+          quantity,
+          disposition: disposition as 'SELLABLE' | 'SCRAP',
+        }], user)
 
         return [updatedRet]
       })

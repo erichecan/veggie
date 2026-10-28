@@ -501,6 +501,10 @@ export interface Order {
   driverCommissionTotal?: number | null
   /** 提成冻结时间 */
   commissionFrozenAt?: string | null
+  /** 退换货只读角标（源头是 ReturnItem 或 OrderReturn，不在订单页直接改）：'APPROVED' 已退货/'REJECTED' 已拒绝，null 无退货 */
+  goodsReturnStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+  /** 退货处置通过时间，goodsReturnStatus=APPROVED 时有值 */
+  goodsReturnedAt?: string | null
 }
 
 // ─── 订单审计日志 ────────────────────────────────────────────────────────────
