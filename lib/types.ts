@@ -635,6 +635,7 @@ export interface OrderReturn {
   warehouseVerifiedByName?: string
   warehouseVerifiedAt?: string
   warehouseNote?: string
+  salesNote?: string
   approvedById?: string
   approvedByName?: string
   approvedAt?: string

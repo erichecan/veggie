@@ -1178,6 +1178,9 @@ model OrderReturn {
   warehouseVerifiedByName String?
   warehouseVerifiedAt     DateTime?
   warehouseNote           String?
+  /// 销售审核备注，跟 warehouseNote 彻底独立（20261028 补：原先审核 reject 会覆盖写进
+  /// warehouseNote、approve 时直接丢弃，这里补一个专属列）
+  salesNote               String?
   approvedById            String?
   approvedByName          String?
   approvedAt              DateTime?

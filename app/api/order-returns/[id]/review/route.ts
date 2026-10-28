@@ -77,9 +77,7 @@ export async function PUT(
               approvedById: user.userId,
               approvedByName: user.name,
               approvedAt: new Date(),
-              // 复用 warehouseNote 承载"最近一次处置备注"：OrderReturn 没有单独的审核备注列，
-              // 到审核这一步仓库核实阶段的备注已经没有展示价值，这里覆盖是预期行为
-              ...(note?.trim() ? { warehouseNote: note.trim() } : {}),
+              ...(note?.trim() ? { salesNote: note.trim() } : {}),
             },
           })
           if (count === 0) return null
@@ -136,6 +134,7 @@ export async function PUT(
             approvedById: user.userId,
             approvedByName: user.name,
             approvedAt: new Date(),
+            ...(note?.trim() ? { salesNote: note.trim() } : {}),
           },
         })
         if (count === 0) return null
