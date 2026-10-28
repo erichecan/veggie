@@ -110,6 +110,9 @@
     "finance.account.manage": 69,
     "finance.settlement.read": 70,
     "finance.settlement.confirm": 72,
+    "finance.write_off.read": 191,
+    "finance.write_off.confirm": 192,
+    "finance.write_off.return": 193,
     "master.customer.read": 73,
     "master.customer.create": 74,
     "master.customer.update": 75,
@@ -193,8 +196,9 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "finance.write_off.read": 191,
-    "finance.write_off.confirm": 192,
-    "finance.write_off.return": 193
+    "dispatch.goods_return.read": 194,
+    "dispatch.goods_return.register": 195,
+    "dispatch.goods_return.warehouse_verify": 196,
+    "dispatch.goods_return.review": 197
   }
 }

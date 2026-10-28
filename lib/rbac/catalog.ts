@@ -275,6 +275,18 @@ export const PERMISSION_GROUPS: GroupDef[] = [
         ],
       },
       {
+        module: 'dispatch.goods_return',
+        labelZh: '退换货登记（手动）',
+        labelEn: 'Goods Return (Manual)',
+        note: '日销售中心手动登记的退货（OrderReturn 表），与司机端上报的 dispatch.trip.returns 是两条入口、共用同一套审核/处置规则（见 lib/returns-engine.ts）。',
+        actions: [
+          A.read,
+          { action: 'register', labelZh: '登记退货', labelEn: 'Register Return' },
+          { action: 'warehouse_verify', labelZh: '仓库核实', labelEn: 'Warehouse Verify' },
+          { action: 'review', labelZh: '审核处置', labelEn: 'Review & Dispose' },
+        ],
+      },
+      {
         module: 'dispatch.driver_slot',
         labelZh: '司机配置',
         labelEn: 'Driver Slot',

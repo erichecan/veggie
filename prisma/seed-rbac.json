@@ -75,6 +75,9 @@
         "dispatch.trip.read_discrepancy",
         "dispatch.trip.discrepancy",
         "dispatch.trip.correct_signature",
+        "dispatch.goods_return.read",
+        "dispatch.goods_return.register",
+        "dispatch.goods_return.review",
         "dispatch.driver_slot.read",
         "dispatch.driver_slot.manage",
         "dispatch.driver_summary.read",
@@ -255,6 +258,9 @@
         "dispatch.trip.read_discrepancy",
         "dispatch.trip.discrepancy",
         "dispatch.trip.correct_signature",
+        "dispatch.goods_return.read",
+        "dispatch.goods_return.register",
+        "dispatch.goods_return.review",
         "dispatch.driver_slot.read",
         "dispatch.driver_slot.manage",
         "dispatch.driver_summary.read",
@@ -458,7 +464,9 @@
         "page.bulletin.access",
         "dispatch.trip.warehouse_verify",
         "dispatch.trip.read",
-        "dispatch.trip.read_returns"
+        "dispatch.trip.read_returns",
+        "dispatch.goods_return.read",
+        "dispatch.goods_return.warehouse_verify"
       ]
     },
     {
@@ -541,7 +549,10 @@
         "page.bulletin.access",
         "stock.pick.lock",
         "dispatch.trip.read_returns",
-        "dispatch.trip.returns"
+        "dispatch.trip.returns",
+        "dispatch.goods_return.read",
+        "dispatch.goods_return.register",
+        "dispatch.goods_return.review"
       ]
     },
     {
