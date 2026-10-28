@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import InventoryOverviewPage from './overview/page'
 import ReceivePage from './receive/page'
 import ReturnsBoard from './_components/ReturnsBoard'
+import VehicleInspectionBoard from './_components/VehicleInspectionBoard'
 import StockMovesPage from './moves/page'
 
 const PURPLE = '#875A7B'
@@ -13,13 +14,16 @@ const PURPLE = '#875A7B'
 // 20260821：损耗与退货/批次台账·追溯/仓库地图·温区 三个 tab 已按范围确认仅做 UI 入口下线，
 // 底层页面文件/API/数据模型保留不动。退换货则从顶部导航迁入本页新增的 returns tab。
 // 20261014：新增「库存流水」tab（复式改造 L3）
-type TabKey = 'overview' | 'moves' | 'receive' | 'returns'
+// 20261028：新增「车辆检查」tab——次日仓库验车从「退换货」tab 第一栏拆出单独占一个 tab，
+// 两者并存、互不影响（旧 tab 结构不变，仍是三栏）。
+type TabKey = 'overview' | 'moves' | 'receive' | 'returns' | 'inspection'
 
 const ANALYTICS_TABS_ZH: { k: TabKey; icon: string; label: string }[] = [
   { k: 'overview', icon: '📊', label: '库存总览' },
   { k: 'moves', icon: '🔁', label: '库存流水' },
   { k: 'receive', icon: '📥', label: '收货' },
   { k: 'returns', icon: '↩️', label: '退换货' },
+  { k: 'inspection', icon: '🔍', label: '车辆检查' },
 ]
 
 const ANALYTICS_TABS_EN: { k: TabKey; icon: string; label: string }[] = [
@@ -27,6 +31,7 @@ const ANALYTICS_TABS_EN: { k: TabKey; icon: string; label: string }[] = [
   { k: 'moves', icon: '🔁', label: 'Stock Moves' },
   { k: 'receive', icon: '📥', label: 'Receiving' },
   { k: 'returns', icon: '↩️', label: 'Returns' },
+  { k: 'inspection', icon: '🔍', label: 'Vehicle Check' },
 ]
 
 function InventoryPageInner() {
@@ -61,6 +66,7 @@ function InventoryPageInner() {
       {tab === 'moves' && <StockMovesPage />}
       {tab === 'receive' && <ReceivePage />}
       {tab === 'returns' && <ReturnsBoard />}
+      {tab === 'inspection' && <VehicleInspectionBoard />}
     </div>
   )
 }

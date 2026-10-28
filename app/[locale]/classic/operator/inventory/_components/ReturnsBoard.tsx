@@ -9,7 +9,7 @@ import type { Trip, OrderReturn } from '@/lib/types'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { Dialog } from '@/components/ui/dialog'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
-import { flattenPending, VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
+import { VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
 import {
   flattenTripReturns,
   TripReturnReviewDialog,
@@ -20,6 +20,7 @@ import {
   type ReturnStatus,
 } from './TripReturnReviewDialog'
 import { OrderReturnDialog } from './OrderReturnDialog'
+import { buildWarehousePendingRows } from './warehouse-pending-rows'
 
 /**
  * 退货/报废整合 M1：`warehouse/returns`（仓库核实）+ `operator/returns`（销售审核+disposition）
@@ -95,35 +96,9 @@ export default function ReturnsBoard() {
   // 波次/订单在别的 tab 改了之后，切回来希望看到最新结果
   useRefetchOnFocus([load])
 
-  const pendingTripRows = flattenPending(trips)
   const allTripRows = flattenTripReturns(trips)
 
-  const warehousePending: CardRow[] = [
-    ...pendingTripRows.map(r => ({
-      key: `trip-${r.tripId}-${r.id ?? r.productId}`,
-      source: 'trip' as const,
-      status: 'WAREHOUSE_PENDING' as ReturnStatus,
-      createdAt: r.createdAt ?? r.tripCreatedAt,
-      restaurantName: r.restaurantName,
-      productName: r.productName,
-      quantity: r.quantity,
-      reason: r.reason,
-      actionType: r.actionType,
-      pendingRow: r,
-    })),
-    ...orderReturns.filter(r => r.status === 'WAREHOUSE_PENDING').map(r => ({
-      key: `or-${r.id}`,
-      source: 'order_return' as const,
-      status: 'WAREHOUSE_PENDING' as ReturnStatus,
-      createdAt: r.createdAt,
-      restaurantName: r.order?.restaurantName ?? '—',
-      productName: r.productName,
-      quantity: r.quantity,
-      reason: r.reason,
-      actionType: r.actionType,
-      orderReturnRow: r,
-    })),
-  ].sort(byDateDesc)
+  const warehousePending: CardRow[] = buildWarehousePendingRows(trips, orderReturns)
 
   const pendingReview: CardRow[] = [
     ...allTripRows.filter(r => r.status === 'PENDING_REVIEW').map(r => ({
