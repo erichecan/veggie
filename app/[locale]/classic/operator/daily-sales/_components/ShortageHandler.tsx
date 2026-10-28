@@ -172,7 +172,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    apiGet<DriverSlotInfo[]>('/api/driver-slots')
+    apiGet<DriverSlotInfo[]>('/api/driver-slots?includeInactiveUser=true')
       .then(d => setSlots(Array.isArray(d) ? d : []))
       .catch(() => setSlots([]))
   }, [])

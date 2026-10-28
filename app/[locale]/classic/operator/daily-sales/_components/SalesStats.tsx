@@ -14,6 +14,7 @@ import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { openAuthedPdf, downloadAuthedFile } from '@/lib/print/open-pdf'
 import { downloadCsv } from '@/lib/csv-export'
 import { compareSequenceThenName } from '@/lib/print/line-sort'
+import { userPickerOptions } from '@/lib/user-picker'
 import {
   buildSalesMatrix,
   matrixToCsvRows,
@@ -23,7 +24,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
-interface UserRow { id: string; name: string }
+interface UserRow { id: string; name: string; isActive?: boolean }
 interface CategoryRow { id: string; name: string }
 interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
 
@@ -131,7 +132,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     apiGet<ProductRow[]>('/api/products?limit=5000').then(d => setAllProducts(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<UserRow[]>('/api/users').then(d => setAllSalesmen(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<CategoryRow[]>('/api/product-categories').then(d => setAllCategories(Array.isArray(d) ? d : [])).catch(() => {})
-    apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setAllDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
+    apiGet<DriverSlotInfo[]>('/api/driver-slots?includeInactiveUser=true').then(d => setAllDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
   // 唯一的订单请求：只按日期区间拉，其余筛选全部在前端做 → 四种查看方式共用这一份数据
@@ -483,7 +484,7 @@ ${catsHtml}
             <label className="w-28 text-xs text-gray-500 shrink-0">Salesman</label>
             <SearchableDropdown
               className="flex-1"
-              options={[{ value: '', label: isEn ? 'All Salespeople' : '全部业务员' }, ...allSalesmen.map(u => ({ value: u.id, label: u.name }))]}
+              options={[{ value: '', label: isEn ? 'All Salespeople' : '全部业务员' }, ...userPickerOptions(allSalesmen, selectedSalesman, isEn, { includeInactive: true })]}
               value={selectedSalesman}
               onChange={setSelectedSalesman}
             />

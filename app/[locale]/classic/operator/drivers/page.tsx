@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import FieldTip from '@/components/ui/FieldTip'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { userPickerOptions } from '@/lib/user-picker'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -42,7 +43,7 @@ export default function DriversPage() {
   const [archivedRows, setArchivedRows] = useState<DriverSlot[]>([])
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [archiving, setArchiving] = useState<Record<string, boolean>>({})
-  const [driverUsers, setDriverUsers] = useState<{ id: string; name: string }[]>([])
+  const [driverUsers, setDriverUsers] = useState<{ id: string; name: string; isActive?: boolean }[]>([])
   const newNameRef = useRef<HTMLInputElement>(null)
 
   type SortKey = 'timeOfDay' | 'batchNum' | 'driverName'
@@ -65,7 +66,7 @@ export default function DriversPage() {
 
   async function load() {
     try {
-      const data = await apiGet<DriverSlot[]>('/api/driver-slots')
+      const data = await apiGet<DriverSlot[]>('/api/driver-slots?includeInactiveUser=true')
       setRows(
         data.map(s => ({
           id: s.id,
@@ -84,14 +85,14 @@ export default function DriversPage() {
 
   async function loadDriverUsers() {
     try {
-      const us = await apiGet<{ id: string; name: string }[]>('/api/users?role=DRIVER')
+      const us = await apiGet<{ id: string; name: string; isActive?: boolean }[]>('/api/users?role=DRIVER')
       setDriverUsers(Array.isArray(us) ? us : [])
     } catch { /* ignore */ }
   }
 
   async function loadArchived() {
     try {
-      const data = await apiGet<DriverSlot[]>('/api/driver-slots?archived=true')
+      const data = await apiGet<DriverSlot[]>('/api/driver-slots?archived=true&includeInactiveUser=true')
       setArchivedRows(data)
     } catch {
       toast.error(isEn ? 'Failed to load archived data' : '加载归档数据失败')
@@ -465,8 +466,8 @@ export default function DriversPage() {
                   style={{ ...inputStyle, ...focusStyle }}
                 >
                   <option value="">{isEn ? '— Unbound —' : '— 未绑定 —'}</option>
-                  {driverUsers.map(u => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
+                  {userPickerOptions(driverUsers, row.userId, isEn).map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
               ) : (
