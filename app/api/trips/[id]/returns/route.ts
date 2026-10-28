@@ -109,6 +109,8 @@ export async function POST(
           reason?: string
           actionType?: 'return' | 'exchange'
           photo?: string
+          /// 补报场景专用备注（20261028 M3），跟 reason 彻底分开
+          lateReportNote?: string
         }>
       }
 
@@ -168,6 +170,7 @@ export async function POST(
         reason: ri.reason,
         actionType: ri.actionType ?? 'return',
         photo: ri.photo,
+        lateReportNote: ri.lateReportNote?.trim() || undefined,
         unitPrice: itemPriceMap.get(ri.productId),
         status: 'WAREHOUSE_PENDING' as const,
         restaurantId,

@@ -93,6 +93,11 @@ export function VerifyReturnDialog({ item, onClose, onSaved, readOnly }: { item:
             {isEn ? 'Driver' : '司机'}：{item.driverName} · {isEn ? 'Reported' : '上报时间'}：{item.createdAt ? new Date(item.createdAt).toLocaleString(isEn ? 'en-GB' : 'zh-CN') : '—'}
           </div>
           {item.reason && <div className="mt-1 text-xs text-orange-600">{isEn ? 'Reason: ' : '原因：'}{item.reason}</div>}
+          {item.lateReportNote && (
+            <div className="mt-1 text-xs text-amber-700">
+              {isEn ? 'Late report — why: ' : '补报原因：'}{item.lateReportNote}
+            </div>
+          )}
           <div className="mt-1 text-xs text-blue-600">
             {item.actionType === 'exchange' ? (isEn ? 'Exchange' : '换货') : (isEn ? 'Return' : '退货')}
           </div>
