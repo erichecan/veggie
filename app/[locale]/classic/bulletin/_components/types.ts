@@ -6,6 +6,7 @@ export interface BulletinPost {
   source: 'MANUAL' | 'AUTO'
   content: string
   imageUrl: string | null
+  linkUrl: string | null
   createdAt: string
   pinned: boolean
   pinnedAt: string | null

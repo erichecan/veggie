@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -60,10 +61,12 @@ export default function ReturnsBoard() {
   const isEn = locale !== routing.defaultLocale
   const STATUS_LABELS = isEn ? TRIP_STATUS_LABELS_EN : TRIP_STATUS_LABELS_ZH
 
+  const searchParams = useSearchParams()
   const [trips, setTrips] = useState<Trip[]>([])
   const [orderReturns, setOrderReturns] = useState<OrderReturn[]>([])
   const [loading, setLoading] = useState(false)
   const [dialog, setDialog] = useState<DialogState>(null)
+  const highlightHandled = useRef(false)
 
   // 这里只做 UX 层面的按钮显隐，真正的拦截在后端 withAuth；
   // 按权限点而不是按角色名判断——角色名匹配对管理员新建的自定义角色会误判
@@ -178,6 +181,26 @@ export default function ReturnsBoard() {
       orderReturnRow: r,
     })),
   ].sort(byDateDesc)
+
+  // 退换货补全 M4：消息广场自动发帖的 linkUrl 带 ?highlight=<id>&source=，跳转过来直接
+  // 弹出对应记录，不用用户自己在三栏里找。只在第一次成功匹配时打开一次，避免数据刷新
+  // （useRefetchOnFocus）时反复弹窗。
+  useEffect(() => {
+    if (highlightHandled.current || loading) return
+    const highlight = searchParams.get('highlight')
+    const source = searchParams.get('source')
+    if (!highlight || !source) return
+    const match = [...warehousePending, ...pendingReview, ...done].find(r => {
+      if (source === 'order_return') return r.source === 'order_return' && r.orderReturnRow?.id === highlight
+      if (source === 'trip') return r.source === 'trip' && (r.pendingRow?.id === highlight || r.tripRow?.id === highlight)
+      return false
+    })
+    if (match) {
+      highlightHandled.current = true
+      openCard(match)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, warehousePending, pendingReview, done])
 
   function openCard(card: CardRow) {
     if (card.source === 'trip') {

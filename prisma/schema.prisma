@@ -2155,13 +2155,15 @@ enum BulletinCategory {
   ARRIVAL
   /// 供应商调价 —— 内容层面禁止出现具体金额，属产品规则，非数据库约束
   PRICE_CHANGE
+  /// 退换货仓库核实通过（20261028 补：Phase 2 自动发帖的第一个真实来源）
+  GOODS_RETURN
   OTHER
 }
 
 enum BulletinSource {
   /// 同事手动发布
   MANUAL
-  /// 系统自动生成（Phase 2 才会真正写入，本轮先把枚举建好避免二次迁移）
+  /// 系统自动生成（20261028 起真正写入：仓库核实通过的退换货）
   AUTO
 }
 
@@ -2173,6 +2175,9 @@ model BulletinPost {
   source   BulletinSource   @default(MANUAL)
   content  String           @db.Text
   imageUrl String?
+  /// 点击整条跳转的目标（镜像 Banner.linkUrl 的写法）；AUTO 退换货帖子指回退换货看板并带
+  /// ?highlight=<id>&source=，手动发帖一般不填
+  linkUrl  String?
 
   /// AUTO 来源的帖子没有人类作者，故可空
   authorId String?

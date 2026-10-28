@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { syncOrderGoodsReturnStatus } from '@/lib/returns-engine'
+import { createAutoGoodsReturnPost } from '@/lib/bulletin'
 
 /**
  * 仓库核实（退货/报废整合 M3，对齐 app/api/trips/[id]/returns/warehouse-verify 的既有规则）：
@@ -32,7 +33,10 @@ export async function PUT(
         return NextResponse.json({ error: '核实不通过必须填写原因' }, { status: 400 })
       }
 
-      const ret = await prisma.orderReturn.findUnique({ where: { id } })
+      const ret = await prisma.orderReturn.findUnique({
+        where: { id },
+        include: { order: { select: { restaurantName: true } } },
+      })
       if (!ret) {
         return NextResponse.json({ error: '退货记录不存在' }, { status: 404 })
       }
@@ -67,6 +71,13 @@ export async function PUT(
             productName: ret.productName,
             quantity: toNum(ret.quantity),
           }], user)
+        } else {
+          await createAutoGoodsReturnPost(tx, {
+            restaurantName: ret.order.restaurantName,
+            productName: ret.productName,
+            quantity: toNum(ret.quantity),
+            linkUrl: `/classic/operator/inventory?tab=returns&highlight=${ret.id}&source=order_return`,
+          })
         }
 
         return tx.orderReturn.findUnique({ where: { id } })
