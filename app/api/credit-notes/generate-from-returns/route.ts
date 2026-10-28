@@ -10,11 +10,12 @@ import type { TripRestaurant, ReturnItem } from '@/lib/types'
  * P0-3: 从已审批退货批量生成 CreditNote
  *
  * POST /api/credit-notes/generate-from-returns
- * body: { tripIds: string[] }
+ * body: { tripIds?: string[], orderReturnIds?: string[] }（至少给一个非空数组）
  *
  * 逻辑：
- * 1. 扫描指定行程中所有 APPROVED 状态的退货记录
- * 2. 按客户（restaurantId）合并，每个客户生成一张 CreditNote
+ * 1. 扫描指定行程中所有 APPROVED 状态的退货记录（Trip 路径，司机报备）；
+ *    扫描指定 id 中所有 APPROVED 状态的 OrderReturn（手工登记路径，20261028 M7 补）
+ * 2. 两条路径按客户（restaurantId）合并，每个客户生成一张 CreditNote
  * 3. 将退货记录状态更新为 SETTLED
  * 4. P0-3 退货日期使用今天（creditDate = today）
  */
@@ -23,19 +24,23 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json()
-      const tripIds = body.tripIds as string[] | undefined
+      const tripIds = (body.tripIds as string[] | undefined) ?? []
+      const orderReturnIds = (body.orderReturnIds as string[] | undefined) ?? []
 
-      if (!Array.isArray(tripIds) || tripIds.length === 0) {
-        return NextResponse.json({ error: '缺少 tripIds' }, { status: 400 })
+      if (tripIds.length === 0 && orderReturnIds.length === 0) {
+        return NextResponse.json({ error: '缺少 tripIds 或 orderReturnIds' }, { status: 400 })
       }
       if (tripIds.length > 50) {
         return NextResponse.json({ error: '一次最多处理 50 个行程' }, { status: 400 })
       }
+      if (orderReturnIds.length > 50) {
+        return NextResponse.json({ error: '一次最多处理 50 条退货登记' }, { status: 400 })
+      }
 
-      const trips = await prisma.trip.findMany({
+      const trips = tripIds.length > 0 ? await prisma.trip.findMany({
         where: { id: { in: tripIds } },
         select: { id: true, name: true, restaurants: true },
-      })
+      }) : []
 
       // 按客户聚合所有 APPROVED 退货
       const customerReturns = new Map<string, {
@@ -47,7 +52,7 @@ export async function POST(req: Request) {
           unitPrice: number
           reason: string | null
           sourceOrderId: string | null
-          sourceTripId: string
+          sourceTripId: string | null
         }>
       }>()
 
@@ -96,6 +101,40 @@ export async function POST(req: Request) {
         }
       }
 
+      // 手工登记路径（OrderReturn，20261028 M7）：按 id 精确查已批准的记录，
+      // unitPrice 没有存在 OrderReturn 上（创建时只做了存在性校验），在这里按
+      // orderId+productId 补查一次 OrderLine，跟登记时的查法一致
+      const settledOrderReturnIds: string[] = []
+      if (orderReturnIds.length > 0) {
+        const orderReturns = await prisma.orderReturn.findMany({
+          where: { id: { in: orderReturnIds }, status: 'APPROVED' },
+          include: { order: { select: { restaurantId: true, restaurantName: true } } },
+        })
+        for (const ret of orderReturns) {
+          const line = await prisma.orderLine.findFirst({
+            where: { orderId: ret.orderId, productId: ret.productId },
+            select: { unitPrice: true },
+          })
+          const customerId = ret.order.restaurantId
+          if (!customerReturns.has(customerId)) {
+            customerReturns.set(customerId, {
+              customerName: ret.order.restaurantName,
+              lines: [],
+            })
+          }
+          customerReturns.get(customerId)!.lines.push({
+            productId: ret.productId,
+            productName: ret.productName,
+            quantity: toNum(ret.quantity),
+            unitPrice: toNum(line?.unitPrice ?? 0),
+            reason: ret.reason ?? null,
+            sourceOrderId: ret.orderId,
+            sourceTripId: null,
+          })
+          settledOrderReturnIds.push(ret.id)
+        }
+      }
+
       if (customerReturns.size === 0) {
         return NextResponse.json({ error: '未找到已审批的退货记录' }, { status: 400 })
       }
@@ -119,6 +158,14 @@ export async function POST(req: Request) {
           await tx.trip.update({
             where: { id: upd.tripId },
             data: { restaurants: upd.restaurants as never },
+          })
+        }
+
+        // 更新手工登记退货状态（20261028 M7）
+        if (settledOrderReturnIds.length > 0) {
+          await tx.orderReturn.updateMany({
+            where: { id: { in: settledOrderReturnIds } },
+            data: { status: 'SETTLED', settledAt: today },
           })
         }
 
@@ -160,7 +207,7 @@ export async function POST(req: Request) {
               totalTax: 0,
               totalIncTax: subtotalExTax,
               status: 'CONFIRMED',
-              notes: `从退货自动生成 — ${tripIds.length}个行程`,
+              notes: `从退货自动生成 — ${tripIds.length}个行程 + ${settledOrderReturnIds.length}条登记`,
               createdBy: user.userId,
               lines: { create: lineData },
             },
