@@ -1,7 +1,8 @@
 {
   "retired": [
     71,
-    137
+    137,
+    194
   ],
   "keys": {
     "sales.order.read": 0,
@@ -82,6 +83,9 @@
     "dispatch.trip.read_discrepancy": 168,
     "dispatch.trip.discrepancy": 145,
     "dispatch.trip.correct_signature": 146,
+    "dispatch.goods_return.register": 195,
+    "dispatch.goods_return.warehouse_verify": 196,
+    "dispatch.goods_return.review": 197,
     "dispatch.driver_slot.read": 47,
     "dispatch.driver_slot.manage": 48,
     "dispatch.driver_summary.read": 147,
@@ -195,10 +199,6 @@
     "system.mfa.enroll": 179,
     "system.notification.create": 180,
     "system.settings.read": 115,
-    "system.settings.manage": 116,
-    "dispatch.goods_return.read": 194,
-    "dispatch.goods_return.register": 195,
-    "dispatch.goods_return.warehouse_verify": 196,
-    "dispatch.goods_return.review": 197
+    "system.settings.manage": 116
   }
 }
