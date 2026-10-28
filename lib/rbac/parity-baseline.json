@@ -4662,7 +4662,7 @@
     "OTHER": "n"
   },
   "PUT /api/order-returns/[id]/review": {
-    "BOSS": "n",
+    "BOSS": "y",
     "OPERATOR": "y",
     "FINANCE": "n",
     "WAREHOUSE": "n",
@@ -4690,7 +4690,7 @@
     "OTHER": "n"
   },
   "GET /api/order-returns": {
-    "BOSS": "n",
+    "BOSS": "y",
     "OPERATOR": "y",
     "FINANCE": "n",
     "WAREHOUSE": "y",
@@ -4704,7 +4704,7 @@
     "OTHER": "n"
   },
   "POST /api/order-returns": {
-    "BOSS": "n",
+    "BOSS": "y",
     "OPERATOR": "y",
     "FINANCE": "n",
     "WAREHOUSE": "n",
