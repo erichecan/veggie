@@ -26,11 +26,17 @@ export function FrequentTab({ frequent, onReorder, isEn }: { frequent: FrequentC
           </div>
           <div className="flex items-center justify-between mt-2">
             <span className="text-sm font-bold" style={{ color: PURPLE }}>{eur(p.customerPrice ?? 0)}</span>
-            <button onClick={() => onReorder(p, p.lastQuantity)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium text-white transition-colors"
-              style={{ background: PURPLE }}>
-              {isEn ? 'Reorder' : '一键复购'}
-            </button>
+            {p.outOfStock ? (
+              <button disabled className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-200 text-gray-500 cursor-not-allowed">
+                {isEn ? 'Out of stock' : '暂时缺货'}
+              </button>
+            ) : (
+              <button onClick={() => onReorder(p, p.lastQuantity)}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium text-white transition-colors"
+                style={{ background: PURPLE }}>
+                {isEn ? 'Reorder' : '一键复购'}
+              </button>
+            )}
           </div>
         </div>
       ))}

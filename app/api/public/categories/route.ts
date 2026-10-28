@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   if (denied) return denied
 
   try {
-    const result = await listCustomerFacingCategories({ canBeSold: true })
+    const result = await listCustomerFacingCategories({ canBeSold: true, showInPortal: true })
     return NextResponse.json(serializeApi(result))
   } catch (error) {
     console.error('[GET /api/public/categories]', error)

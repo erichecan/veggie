@@ -11,6 +11,7 @@ import { nextOrderCode } from '@/lib/order-code'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 import { checkCustomerCredit } from '@/lib/credit-check'
+import { portalOrderBlockers } from '@/lib/customer-portal-products'
 
 /**
  * P1-2: 客户小程序 — 订单管理
@@ -197,15 +198,24 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '订单商品不能为空' }, { status: 400 })
       }
 
-      // 不可售商品不能下单(20261009，与内部下单 /api/orders 同一道闸门)——购物车里可能还留着
-      // 商品被取消 Can be Sold 之前加进去的
-      const notSellable = await prisma.product.findMany({
-        where: { id: { in: submittedItems.map((i: { productId?: string }) => String(i.productId ?? '')) }, canBeSold: false },
-        select: { name: true },
-      })
-      if (notSellable.length > 0) {
+      // 商品闸门——购物车（localStorage）里可能还留着状态变化之前加进去的商品：
+      // - 不可售(20261009，与内部下单 /api/orders 同一道闸门)或取消了「在客户门户显示」(20261028)
+      // - 缺货：现存量 <= 0(20261028 客户需求，口径见 lib/customer-portal-products.ts isPortalOutOfStock)
+      // 前端已对这些商品禁用加入购物车，这里是权威兜底，绕过前端直接调接口同样被拒
+      const blockers = portalOrderBlockers(await prisma.product.findMany({
+        where: { id: { in: submittedItems.map((i: { productId?: string }) => String(i.productId ?? '')) } },
+        select: { name: true, canBeSold: true, showInPortal: true, qtyOnHand: true },
+      }))
+      if (blockers.unavailable.length > 0) {
         return NextResponse.json({
-          error: `以下商品已停售，请从购物车移除后再下单：${notSellable.map(p => p.name).join('、')}`,
+          error: `以下商品已停售，请从购物车移除后再下单：${blockers.unavailable.join('、')}`
+            + ` / These products are no longer available, please remove them from your cart: ${blockers.unavailable.join(', ')}`,
+        }, { status: 400 })
+      }
+      if (blockers.outOfStock.length > 0) {
+        return NextResponse.json({
+          error: `以下商品暂时缺货，请从购物车移除后再下单：${blockers.outOfStock.join('、')}`
+            + ` / These products are out of stock, please remove them from your cart: ${blockers.outOfStock.join(', ')}`,
         }, { status: 400 })
       }
 

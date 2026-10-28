@@ -177,6 +177,7 @@ export default function ClassicProductDetailPage() {
     vendorTaxRate: 0,
     type: 'product',
     canBeSold: true,
+    showInPortal: true,
     canBePurchased: true,
     isPackaging: false,
     canBeExpensed: false,
@@ -809,6 +810,8 @@ export default function ClassicProductDetailPage() {
                   {[
                     { key: 'isPackaging' as const, label: 'Is Packaging' },
                     { key: 'canBeSold' as const, label: 'Can be Sold' },
+                    // 只管客户门户：取消后门户里看不到、门户下单被拒，内部下单照常（20261028）
+                    { key: 'showInPortal' as const, label: isEn ? 'Show in Customer Portal' : '在客户门户显示' },
                     { key: 'canBePurchased' as const, label: 'Can be Purchased' },
                     { key: 'canBeExpensed' as const, label: 'Can be Expensed' },
                   ].map(({ key, label }) => (
