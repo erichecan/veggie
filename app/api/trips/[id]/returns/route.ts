@@ -3,11 +3,16 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { toNum, round2 } from '@/lib/decimal-helpers'
-import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
-import { toStockQty } from '@/lib/inventory'
-import { postStockMove, LOC } from '@/lib/stock-ledger'
-import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
+import { toNum } from '@/lib/decimal-helpers'
+import { recalcTripDriverCommission } from '@/lib/commission'
+import {
+  buildReturnStockMoves,
+  postReturnStockMoves,
+  applyReturnOrderLineReduction,
+  calculateRefundAmount,
+  type ReturnStockMovePlan,
+  type OrderLineReduction,
+} from '@/lib/returns-engine'
 import type { TripRestaurant, ReturnItem, OrderItem } from '@/lib/types'
 
 /**
@@ -273,29 +278,9 @@ export async function PUT(
 
       const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
 
-      // 收集需要的数据库操作
-      const stockMoves: Array<{
-        productId: string
-        productName: string
-        type: 'RETURN' | 'SCRAP'
-        lossStage?: string | null
-        lossReason?: string | null
-        qty: number
-        note: string
-        sourceType: string
-        sourceId: string
-        sourceRef: string | null
-        /** 原订单行的单位（换算成基础单位用） */
-        uomId: string | null
-        partnerId: string | null
-        /** 可再售：回补批次；报废/待报废：不碰批次 */
-        sellable: boolean
-      }> = []
-      const orderLineUpdates: Array<{
-        orderId: string
-        productId: string
-        reduceQty: number
-      }> = []
+      // 收集需要的数据库操作（StockMove/OrderLine 的记账规则见 lib/returns-engine.ts）
+      const stockMoves: ReturnStockMovePlan[] = []
+      const orderLineUpdates: OrderLineReduction[] = []
 
       let approvedCount = 0
       let rejectedCount = 0
@@ -331,7 +316,7 @@ export async function PUT(
             disposition,
             refundMode: review.refundMode,
             refundPct: review.refundPct,
-            refundAmount: review.refundAmount ?? calculateRefund(ret, review),
+            refundAmount: review.refundAmount ?? calculateRefundAmount(toNum(ret.unitPrice), toNum(ret.quantity), review),
             refundNote: review.refundNote,
             exchangeOrderId: ret.actionType === 'exchange' ? review.exchangeOrderId?.trim() || undefined : undefined,
             approvedAt: new Date().toISOString(),
@@ -347,42 +332,20 @@ export async function PUT(
             select: { uomId: true },
           })
           // P1-3: StockMove with source tracking; P1-4: decimal qty
-          // 客退入库记账：无论去向如何，先记一笔"货物回来了"（客户 → 仓库）
-          stockMoves.push({
-            uomId: sourceLine?.uomId ?? null,
-            partnerId: restaurant.restaurantId,
-            sellable: disposition === 'SELLABLE',
+          stockMoves.push(...buildReturnStockMoves({
             productId: ret.productId,
             productName: ret.productName,
-            type: 'RETURN',
-            qty: returnQty,
-            note: `退货入库(${disposition === 'SELLABLE' ? '可再售' : '待报废'}): ${restaurant.restaurantName} — ${ret.reason ?? '无原因'}`,
+            quantity: returnQty,
+            disposition,
+            scrapReason: review.scrapReason,
+            reason: ret.reason,
+            uomId: sourceLine?.uomId ?? null,
+            partnerId: restaurant.restaurantId,
+            partnerName: restaurant.restaurantName,
             sourceType: 'RETURN',
             sourceId: id,
             sourceRef: restaurant.orderIds?.[0] ?? null,
-          })
-
-          if (disposition !== 'SELLABLE') {
-            // 报废：货回来了但不能再卖，紧接着一笔「仓库 → 报废」（计入损耗仪表盘 & 退货回收率）
-            const reasonKey = review.scrapReason ?? 'CUSTOMER_RETURN_DAMAGED'
-            const reasonLabel = SCRAP_REASON_LABEL[reasonKey] ?? reasonKey
-            stockMoves.push({
-              uomId: sourceLine?.uomId ?? null,
-              partnerId: restaurant.restaurantId,
-              sellable: false,
-              productId: ret.productId,
-              productName: ret.productName,
-              type: 'SCRAP',
-              qty: -returnQty,
-              note: `客退报废(${reasonLabel}): ${restaurant.restaurantName} — ${ret.reason ?? '无原因'}`,
-              // 结构化归因（台账 E4）：客退报废天然属「客退」环节，不必让看板再从 note 里猜
-              lossStage: 'CUSTOMER_RETURN',
-              lossReason: reasonKey,
-              sourceType: 'RETURN_SCRAP',
-              sourceId: id,
-              sourceRef: restaurant.orderIds?.[0] ?? null,
-            })
-          }
+          }))
 
           // 调整 OrderLine.deliveredQty（减去退货数量，货物已不在客户手上）P1-4: 精确小数
           for (const orderId of restaurant.orderIds) {
@@ -422,56 +385,13 @@ export async function PUT(
           data: { restaurants: restaurants as never },
         })
 
-        // 退货库存入账（lib/stock-ledger.ts，20261014 复式改造 L3）：
+        // 退货库存入账（lib/stock-ledger.ts，20261014 复式改造 L3；20261027 抽到 lib/returns-engine.ts）：
         //   每笔退货「客户 → 仓库」；报废的再接一笔「仓库 → 报废」。可再售的按 FEFO 反序回补批次。
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const txAny = tx as any
-        for (const sm of stockMoves) {
-          const stockQty = await toStockQty(txAny, sm.productId, Math.abs(sm.qty), sm.uomId)
-          const isScrap = sm.type === 'SCRAP'
-          await postStockMove(txAny, {
-            productId: sm.productId,
-            productName: sm.productName,
-            qty: stockQty,
-            from: isScrap ? LOC.STOCK : LOC.CUSTOMERS,
-            to: isScrap ? LOC.SCRAP : LOC.STOCK,
-            type: sm.type,
-            lot: sm.sellable ? { mode: 'fefo' } : { mode: 'none' },
-            note: sm.note,
-            lossStage: sm.lossStage ?? null,
-            lossReason: sm.lossReason ?? null,
-            sourceType: sm.sourceType,
-            sourceId: sm.sourceId,
-            sourceRef: sm.sourceRef,
-            partnerId: sm.partnerId,
-            uomQty: Math.abs(sm.qty),
-            uomId: sm.uomId,
-            userId: user.userId,
-            createdBy: user.name ?? user.email,
-          })
-        }
+        await postReturnStockMoves(tx, stockMoves, user)
 
-        // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）
-        for (const upd of orderLineUpdates) {
-          const line = await tx.orderLine.findFirst({
-            where: { orderId: upd.orderId, productId: upd.productId },
-            select: { id: true, deliveredQty: true },
-          })
-          if (line) {
-            const current = toNum(line.deliveredQty)
-            const newQty = round2(Math.max(0, current - upd.reduceQty))
-            await tx.orderLine.update({
-              where: { id: line.id },
-              data: { deliveredQty: newQty },
-            })
-          }
-        }
-
-        // 提成重算：deliveredQty 变了，受影响订单的司机提成快照需要重新覆盖（不再信旧快照）
-        const affectedOrderIds = Array.from(new Set(orderLineUpdates.map(u => u.orderId)))
-        for (const orderId of affectedOrderIds) {
-          await recalcOrderCommission(orderId, tx)
-        }
+        // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）+ 提成重算（deliveredQty 变了，
+        // 受影响订单的司机提成快照需要重新覆盖，不再信旧快照）
+        await applyReturnOrderLineReduction(tx, orderLineUpdates)
         await recalcTripDriverCommission(id, tx)
       })
 
@@ -493,19 +413,4 @@ export async function PUT(
       return NextResponse.json({ error: '退货审核失败' }, { status: 500 })
     }
   }, { require: 'dispatch.trip.returns' })
-}
-
-/** P1-4: 计算退款金额（精确小数） */
-function calculateRefund(
-  ret: ReturnItem,
-  review: { refundMode?: 'pct' | 'fixed'; refundPct?: number; refundAmount?: number },
-): number {
-  if (review.refundAmount !== undefined) return round2(review.refundAmount)
-  const unitPrice = toNum(ret.unitPrice)
-  const qty = toNum(ret.quantity)
-  const total = round2(unitPrice * qty)
-  if (review.refundMode === 'pct' && review.refundPct !== undefined) {
-    return round2(total * review.refundPct / 100)
-  }
-  return total
 }
