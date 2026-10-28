@@ -22,6 +22,7 @@ import {
   type MatrixGranularity,
 } from '@/lib/analytics/sales-matrix'
 import { DatePicker } from '@/components/ui/date-picker'
+import { sortCustomerLines, type CustomerSortKey } from '@/lib/analytics/sales-stats-sort'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
@@ -41,6 +42,13 @@ interface ReportLine {
   spec: string
   categoryName: string
   uomName: string
+  /** 订单号（Order.code），没有号的老单为空串 */
+  orderCode: string
+  /** 配送批次三元组，与顶部司机/AM-PM/批次筛选同一来源（formatDriverSlotFromOrder，wave 派生优先）；
+   *  未分配批次的订单 batchNum=0、timeOfDay/driverName 为空串 */
+  batchNum: number
+  timeOfDay: string
+  driverName: string
   qty: number
   unitPrice: number
   amount: number
@@ -53,22 +61,40 @@ const DOW_LABELS_ZH = ['周一', '周二', '周三', '周四', '周五', '周六
 const DOW_LABELS_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const fmtQty = (v: number) => (v % 1 === 0 ? v.toFixed(0) : v.toFixed(2))
 
+const batchLabel = (l: ReportLine) => (l.batchNum > 0 ? `#${l.batchNum}` : '')
+
+/** 订单号 / 批次 / 司机 / AM-PM 四列，分组与平铺两种视图共用 */
+function OrderBatchCells({ l }: { l: ReportLine }) {
+  return (
+    <>
+      <td className="px-3 py-1.5 text-gray-600 font-mono whitespace-nowrap">{l.orderCode}</td>
+      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{batchLabel(l)}</td>
+      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{l.driverName}</td>
+      <td className="px-3 py-1.5 text-gray-600 uppercase whitespace-nowrap">{l.timeOfDay}</td>
+    </>
+  )
+}
+
+/** 按客户查看的列数（默认分组视图）：商品 规格 订单号 批次 司机 AM/PM 数量 单价 金额 */
+const CUSTOMER_VIEW_COLS = 9
+
 // 按客户查看：单个日期分组（日期头 → 客户 → 商品行 → 日小计）
 function FragmentRows({ day, isEn }: { day: { date: string; dateQty: number; dateAmt: number; customers: ReportLine[][] }; isEn: boolean }) {
   return (
     <>
       <tr className="bg-gray-100">
-        <td colSpan={5} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
+        <td colSpan={CUSTOMER_VIEW_COLS} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
       </tr>
       {day.customers.map(custLines => (
         <Fragment key={day.date + custLines[0].customerId}>
           <tr className="bg-gray-50/60">
-            <td colSpan={5} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
+            <td colSpan={CUSTOMER_VIEW_COLS} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
           </tr>
           {custLines.map((l, i) => (
             <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
               <td className="px-4 py-1.5 pl-8 text-gray-700">{l.productName}</td>
               <td className="px-4 py-1.5 text-gray-500">{l.spec}</td>
+              <OrderBatchCells l={l} />
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(2)}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(l.unitPrice)}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(l.amount)}</td>
@@ -78,7 +104,36 @@ function FragmentRows({ day, isEn }: { day: { date: string; dateQty: number; dat
       ))}
       <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
         <td className="px-4 py-1.5">{isEn ? `Subtotal ${day.date}` : `小计 ${day.date}`}</td>
+        <td colSpan={5} />
+        <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(2)}</td>
         <td />
+        <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
+      </tr>
+    </>
+  )
+}
+
+// 按客户查看 · 已选排序键：单个日期下平铺（客户成为一列），日小计保留
+function FlatDayRows({ day, isEn }: { day: { date: string; dateQty: number; dateAmt: number; lines: ReportLine[] }; isEn: boolean }) {
+  return (
+    <>
+      <tr className="bg-gray-100">
+        <td colSpan={CUSTOMER_VIEW_COLS + 1} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
+      </tr>
+      {day.lines.map((l, i) => (
+        <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
+          <td className="px-4 py-1.5 text-[#875A7B]">{l.customerName}</td>
+          <td className="px-4 py-1.5 text-gray-700">{l.productName}</td>
+          <td className="px-4 py-1.5 text-gray-500">{l.spec}</td>
+          <OrderBatchCells l={l} />
+          <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(2)}</td>
+          <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(l.unitPrice)}</td>
+          <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(l.amount)}</td>
+        </tr>
+      ))}
+      <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
+        <td className="px-4 py-1.5">{isEn ? `Subtotal ${day.date}` : `小计 ${day.date}`}</td>
+        <td colSpan={6} />
         <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(2)}</td>
         <td />
         <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
@@ -108,6 +163,11 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
   const [customerQuery, setCustomerQuery] = useState('')
   const [productQuery, setProductQuery] = useState('')
+  /** 订单号筛选（20261028）：逗号/空格分隔可填多个，每个按「包含」匹配，不区分大小写 */
+  const [orderQuery, setOrderQuery] = useState('')
+  /** 按客户查看的列排序；null = 默认 日期 → 客户 分组 */
+  const [custSortKey, setCustSortKey] = useState<CustomerSortKey | null>(null)
+  const [custSortDir, setCustSortDir] = useState<'asc' | 'desc'>('asc')
 
   const [allProducts, setAllProducts] = useState<ProductRow[]>([])
   const [allSalesmen, setAllSalesmen] = useState<UserRow[]>([])
@@ -205,6 +265,11 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   }, [allProducts])
 
   // ── 筛选结果：一批订单行，全部筛选在此统一应用 ───────────────────────────
+  const orderTerms = useMemo(
+    () => orderQuery.split(/[\s,，]+/).map(t => t.trim().toLowerCase()).filter(Boolean),
+    [orderQuery],
+  )
+
   const reportLines = useMemo(() => {
     const custSet = new Set(selectedCustomers.map(c => c.id))
     const prodNames = new Set(selectedProducts.map(p => p.name))
@@ -214,12 +279,13 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       if (custSet.size > 0 && !custSet.has(o.restaurantId)) continue
       const salesUserId = (o as Order & { salesUserId?: string | null }).salesUserId ?? ''
       if (selectedSalesman && salesUserId !== selectedSalesman) continue
-      if (selectedDrivers.length > 0 || selectedTimes.length > 0 || selectedBatchNums.length > 0) {
-        const p = parseDriverSlotKey(formatDriverSlotFromOrder(o))
-        if (selectedDrivers.length > 0 && !selectedDrivers.includes(p.driver)) continue
-        if (selectedTimes.length > 0 && !selectedTimes.includes(p.time)) continue
-        if (selectedBatchNums.length > 0 && !selectedBatchNums.includes(p.num)) continue
-      }
+      const orderCode = o.code ?? ''
+      if (orderTerms.length > 0 && !orderTerms.some(t => orderCode.toLowerCase().includes(t))) continue
+      // 批次三元组每行都要显示（订单号 / 批次 / 司机 / AM-PM 列），不再只在有筛选时才解析
+      const slot = parseDriverSlotKey(formatDriverSlotFromOrder(o))
+      if (selectedDrivers.length > 0 && !selectedDrivers.includes(slot.driver)) continue
+      if (selectedTimes.length > 0 && !selectedTimes.includes(slot.time)) continue
+      if (selectedBatchNums.length > 0 && !selectedBatchNums.includes(slot.num)) continue
       const date = ((o as Order & { deliveryDate?: string }).deliveryDate ?? String(o.createdAt)).slice(0, 10)
       if (selectedWeekdays.length > 0) {
         const dow = (new Date(date + 'T12:00:00Z').getUTCDay() + 6) % 7
@@ -240,6 +306,10 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
           spec: l.spec?.trim() ?? '',
           categoryName: prod?.category ?? (isEn ? 'Uncategorized' : '未分类'),
           uomName: l.uomName ?? prod?.uomName ?? '',
+          orderCode,
+          batchNum: slot.num,
+          timeOfDay: slot.time,
+          driverName: slot.driver,
           qty: Number(l.orderedQty ?? 0),
           unitPrice: Number(l.unitPrice ?? 0),
           amount: Number(l.subtotal ?? 0),
@@ -252,7 +322,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       a.date.localeCompare(b.date)
       || a.customerName.localeCompare(b.customerName)
       || (sortBySequence ? compareSequenceThenName(a.sequence, a.productName, b.sequence, b.productName) : 0))
-  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, selectedWeekdays, sortBySequence, productMap, isEn])
+  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, selectedWeekdays, orderTerms, sortBySequence, productMap, isEn])
 
   const reportTotal = useMemo(() => ({
     qty: reportLines.reduce((s, l) => s + l.qty, 0),
@@ -280,6 +350,24 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
         }
       })
   }, [reportLines])
+
+  // 查看方式①·已选列排序：每个日期下平铺，按所选列排（日期分组保留——跨多天时按天看才有意义）
+  const flatReport = useMemo(() => {
+    if (!custSortKey) return []
+    return groupedReport.map(day => ({
+      date: day.date,
+      dateQty: day.dateQty,
+      dateAmt: day.dateAmt,
+      lines: sortCustomerLines(day.customers.flat(), custSortKey, custSortDir),
+    }))
+  }, [groupedReport, custSortKey, custSortDir])
+
+  /** 点表头：未排序 → 升序 → 降序 → 回到默认分组 */
+  function toggleCustSort(key: CustomerSortKey) {
+    if (custSortKey !== key) { setCustSortKey(key); setCustSortDir('asc'); return }
+    if (custSortDir === 'asc') { setCustSortDir('desc'); return }
+    setCustSortKey(null)
+  }
 
   // 查看方式②：按商品（跨区间聚合）
   const productReport = useMemo(() => {
@@ -386,6 +474,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     if (selectedWeekdays.length > 0) params.set('weekdays', selectedWeekdays.join(','))
     if (selectedCategories.length > 0) params.set('categoryIds', selectedCategories.join(','))
     if (selectedSalesman) params.set('salesUserId', selectedSalesman)
+    if (orderTerms.length > 0) params.set('orderCodes', orderTerms.join(','))
     if (sortBySequence) params.set('sortBySequence', '1')
     if (isEn) params.set('lang', 'en')
     return `/api/print/day-wise-report-pdf?${params.toString()}`
@@ -625,6 +714,22 @@ ${catsHtml}
         </div>
       </div>
 
+      {/* 订单号（20261028）：多个用逗号或空格分隔，包含即匹配；同样作用于下方打印与 CSV 导出 */}
+      <div className="px-5 py-3 border-b border-gray-200">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider shrink-0">{isEn ? 'Orders' : '订单号'}</span>
+          <input
+            value={orderQuery}
+            onChange={e => setOrderQuery(e.target.value)}
+            placeholder={isEn ? 'Order no., e.g. D-261028-001' : '订单号，如 D-261028-001'}
+            className="border border-gray-300 rounded px-2 py-0.5 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
+          />
+          {orderTerms.length === 0
+            ? <span className="text-xs text-gray-400">{isEn ? '(Empty = all orders; separate several with commas)' : '（留空 = 全部订单；多个用逗号分隔）'}</span>
+            : <button onClick={() => setOrderQuery('')} className="text-xs text-gray-400 hover:text-gray-600">{isEn ? 'Clear' : '清除'}</button>}
+        </div>
+      </div>
+
       {/* ── 结果：查看方式切换 ── */}
       <div>
         <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap bg-gray-50 border-b border-gray-100">
@@ -693,29 +798,49 @@ ${catsHtml}
             {ordersLoading ? (isEn ? 'Loading…' : '加载中…') : (isEn ? 'No order lines match the current filters' : '当前筛选条件下没有订单行')}
           </div>
         ) : viewMode === 'customer' ? (
-          /* 按客户 */
+          /* 按客户：默认 日期 → 客户 分组；点可排序的表头后改为每天平铺、客户成为一列 */
           <div className="max-h-[480px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-white shadow-sm">
-                <tr className="border-b border-gray-200">
-                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product' : '产品'}</th>
-                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Spec / Description' : '规格 / 描述'}</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Qty' : '数量'}</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Unit Price' : '单价'}</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">{isEn ? 'Amount' : '金额'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedReport.map(day => <FragmentRows key={day.date} day={day} isEn={isEn} />)}
-                <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
-                  <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
-                  <td className="px-4 py-2" />
-                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
-                  <td className="px-4 py-2" />
-                  <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
-                </tr>
-              </tbody>
-            </table>
+            {(() => {
+              const th = (key: CustomerSortKey | null, label: string, cls: string) => (
+                <th
+                  onClick={key ? () => toggleCustSort(key) : undefined}
+                  className={`px-3 py-2 text-gray-400 font-medium whitespace-nowrap ${cls} ${key ? 'cursor-pointer select-none hover:text-gray-600' : ''}`}
+                  title={key ? (isEn ? 'Click to sort (click again: descending, third click: back to grouped by customer)' : '点击排序（再点降序，第三次点回到按客户分组）') : undefined}
+                >
+                  {label}{key && custSortKey === key && <span className="ml-0.5">{custSortDir === 'asc' ? '▲' : '▼'}</span>}
+                </th>
+              )
+              return (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-white shadow-sm">
+                    <tr className="border-b border-gray-200">
+                      {custSortKey && th(null, isEn ? 'Customer' : '客户', 'text-left')}
+                      {th('product', isEn ? 'Product' : '产品', 'text-left')}
+                      {th(null, isEn ? 'Spec / Description' : '规格 / 描述', 'text-left')}
+                      {th('order', isEn ? 'Order No.' : '订单号', 'text-left')}
+                      {th('batch', isEn ? 'Batch' : '批次', 'text-left')}
+                      {th('driver', isEn ? 'Driver' : '司机', 'text-left')}
+                      {th('time', 'AM/PM', 'text-left')}
+                      {th('qty', isEn ? 'Qty' : '数量', 'text-right w-20')}
+                      {th(null, isEn ? 'Unit Price' : '单价', 'text-right w-20')}
+                      {th('amount', isEn ? 'Amount' : '金额', 'text-right w-24')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {custSortKey
+                      ? flatReport.map(day => <FlatDayRows key={day.date} day={day} isEn={isEn} />)
+                      : groupedReport.map(day => <FragmentRows key={day.date} day={day} isEn={isEn} />)}
+                    <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                      <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
+                      <td className="px-4 py-2" colSpan={custSortKey ? 6 : 5} />
+                      <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
+                      <td className="px-4 py-2" />
+                      <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )
+            })()}
           </div>
         ) : viewMode === 'product' ? (
           /* 按商品 */

@@ -31,7 +31,7 @@ const META_T = {
     customersSelected: (n: number) => `${n} customer(s) selected`,
     productsSelected: (n: number) => `${n} product(s) selected`,
     categoriesSelected: (n: number) => ` · ${n} categor${n > 1 ? 'ies' : 'y'} selected`,
-    drivers: 'Drivers', batch: 'Batch#', weekday: 'Weekday',
+    drivers: 'Drivers', batch: 'Batch#', weekday: 'Weekday', orderNo: 'Order No.',
     allBatches: 'All batches',
     orders: (n: number) => `${n} orders`,
     lines: (n: number) => `${n} lines`,
@@ -45,7 +45,7 @@ const META_T = {
     customersSelected: (n: number) => `已选 ${n} 个客户`,
     productsSelected: (n: number) => `已选 ${n} 个产品`,
     categoriesSelected: (n: number) => ` · 已选 ${n} 个分类`,
-    drivers: '司机', batch: '批次#', weekday: '星期',
+    drivers: '司机', batch: '批次#', weekday: '星期', orderNo: '订单号',
     allBatches: '全部批次',
     orders: (n: number) => `${n} 单`,
     lines: (n: number) => `${n} 行`,
@@ -74,6 +74,7 @@ export async function GET(req: Request) {
     const weekdays = searchParams.get('weekdays')?.split(',').map(Number).filter(n => !isNaN(n)) ?? []
     const categoryIds = searchParams.get('categoryIds')?.split(',').filter(Boolean) ?? []
     const salesUserId = searchParams.get('salesUserId') ?? ''
+    const orderCodes = searchParams.get('orderCodes')?.split(',').filter(Boolean) ?? []
     const sortBySequence = searchParams.get('sortBySequence') === '1'
 
     if (!fromDate || !toDate) {
@@ -82,7 +83,7 @@ export async function GET(req: Request) {
 
     try {
       const { lines, orders } = await loadDayWiseReportData({
-        fromDate, toDate, customerIds, productNames, drivers, times, batchNums, weekdays, categoryIds, salesUserId,
+        fromDate, toDate, customerIds, productNames, drivers, times, batchNums, weekdays, categoryIds, salesUserId, orderCodes,
       })
 
       const dateLabel = fromDate === toDate ? fromDate : `${fromDate} → ${toDate}`
@@ -94,6 +95,8 @@ export async function GET(req: Request) {
         times.length > 0 ? `${times.map(t => t.toUpperCase()).join('/')}` : '',
         batchNums.length > 0 ? `${mt.batch} ${batchNums.join(', ')}` : '',
         weekdays.length > 0 ? `${mt.weekday}: ${weekdays.map(w => DAY_NAMES[w]).join(', ')}` : '',
+        // 按订单号筛过的打印件必须在纸上写明，否则看起来像一份完整报表（20261028）
+        orderCodes.length > 0 ? `${mt.orderNo}: ${orderCodes.join(', ')}` : '',
       ].filter(Boolean)
       const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : mt.allBatches
       const countLabel = mode === 'day' ? mt.orders(orders.length) : mt.lines(lines.length)
