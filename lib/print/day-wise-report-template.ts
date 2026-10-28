@@ -8,7 +8,7 @@ import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header
  * 页脚由 renderHtmlToPdf() 统一加"筛选摘要 - Page X/Y"。
  */
 import { type DocKind } from './doc-badge'
-import { formatPrintTimestamp } from './trip-common'
+import { escapeHtml, formatPrintTimestamp } from './trip-common'
 import { eur } from '@/lib/format-money'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { compareSequenceThenName } from '@/lib/print/line-sort'
@@ -32,6 +32,7 @@ const T = {
     grandTotalOrders: (n: number) => `Grand Total (${n} orders)`,
     date: 'Date',
     product: 'Product',
+    spec: 'Spec / Description',
     qty: 'Qty',
     unitPrice: 'Unit Price',
     amount: 'Amount',
@@ -51,6 +52,7 @@ const T = {
     grandTotalOrders: (n: number) => `总计（共 ${n} 单）`,
     date: '日期',
     product: '商品',
+    spec: '规格 / 描述',
     qty: '数量',
     unitPrice: '单价',
     amount: '金额',
@@ -67,6 +69,9 @@ export interface ReportLine {
   customerId: string
   customerName: string
   productName: string
+  /** 订单行 Description 快照（OrderLine.spec = 单位规格 · 销售描述，见 lib/order-line-description.ts），
+   *  与销售统计屏幕「规格 / 描述」列同一字段；行上为空就是空串 */
+  spec?: string
   qty: number
   unitPrice: number
   amount: number
@@ -227,6 +232,7 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
       <td>${l.salesman ?? ''}</td>
       <td>${l.deliveryBatch}</td>
       <td>${l.productName}</td>
+      <td>${escapeHtml(l.spec ?? '')}</td>
       <td class="r">${l.qty.toFixed(2)}</td>
       <td class="r">${giftMoneyCell(l.isGift, eur(l.unitPrice))}</td>
       <td class="r">${giftMoneyCell(l.isGift, eur(l.amount))}</td>
@@ -236,13 +242,13 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
   return wrapHtml(title, meta, `
     <table>
       <thead><tr>
-        <th>${t.date}</th><th>${t.customer}</th><th>${t.salesman}</th><th>${t.driver}</th><th>${t.product}</th>
+        <th>${t.date}</th><th>${t.customer}</th><th>${t.salesman}</th><th>${t.driver}</th><th>${t.product}</th><th>${t.spec}</th>
         <th class="r">${t.qty}</th><th class="r">${t.unitPrice}</th><th class="r">${t.amount}</th>
       </tr></thead>
       <tbody>
         ${rows}
         <tr class="grand-total">
-          <td colspan="7">${t.grandTotal}</td>
+          <td colspan="8">${t.grandTotal}</td>
           <td class="r">${eur(grand)}</td>
         </tr>
       </tbody>
@@ -253,15 +259,17 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
 export function buildSummaryHtml(lines: ReportLine[], title: string, meta: string, sortBySequence: boolean, lang: PrintLang = 'en'): string {
   const t = T[lang]
   // Group by product → accumulate qty per day-of-week（金额列已按需求移除，按总数量降序排）
-  const prodMap = new Map<string, { dayQty: number[]; totalQty: number; sequence: number }>()
+  // 按商品名聚合，同名商品不同单位/规格的行会并到一起——specs 收集出现过的全部规格（同屏幕「按商品」）
+  const prodMap = new Map<string, { dayQty: number[]; totalQty: number; sequence: number; specs: Set<string> }>()
 
   for (const l of lines) {
     const dow = dayOfWeek(l.date)
     let entry = prodMap.get(l.productName)
     if (!entry) {
-      entry = { dayQty: [0, 0, 0, 0, 0, 0, 0], totalQty: 0, sequence: l.productSequence }
+      entry = { dayQty: [0, 0, 0, 0, 0, 0, 0], totalQty: 0, sequence: l.productSequence, specs: new Set<string>() }
       prodMap.set(l.productName, entry)
     }
+    if (l.spec) entry.specs.add(l.spec)
     entry.dayQty[dow] += l.qty
     entry.totalQty += l.qty
   }
@@ -274,13 +282,17 @@ export function buildSummaryHtml(lines: ReportLine[], title: string, meta: strin
   let grandQty = 0
   const grandDayQty = [0, 0, 0, 0, 0, 0, 0]
 
-  const rows = sorted.map(([name, { dayQty, totalQty }]) => {
+  const rows = sorted.map(([name, { dayQty, totalQty, specs }]) => {
     grandQty += totalQty
     for (let i = 0; i < 7; i++) grandDayQty[i] += dayQty[i]
 
     const dayCells = dayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(2) : ''}</td>`).join('')
+    // 规格放在商品名下方一行小字，不单开一列：这张表是固定列宽网格，再挤一列星期数量格就放不下了
+    const specHtml = specs.size > 0
+      ? `<div style="font-size:7.5pt;color:#666;margin-top:0.5mm">${escapeHtml([...specs].join(' / '))}</div>`
+      : ''
     return `<tr class="sum-row">
-      <td>${name}</td>
+      <td>${name}${specHtml}</td>
       ${dayCells}
       <td class="r" style="font-weight:bold">${totalQty.toFixed(2)}</td>
     </tr>`

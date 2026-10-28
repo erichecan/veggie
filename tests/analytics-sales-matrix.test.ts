@@ -9,7 +9,7 @@ import {
 
 const DOW = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const CSV_LABELS = {
-  product: '产品', uom: '单位', total: '数量合计', amount: '金额合计',
+  product: '产品', spec: '规格 / 描述', uom: '单位', total: '数量合计', amount: '金额合计',
   onHand: '当前库存', forecastQuantity: '预测数量', grand: '合计',
 }
 
@@ -163,7 +163,7 @@ describe('CSV 行', () => {
 
   test('表头 = 产品/单位 + 各列 + 合计/金额/库存/Forecast Quantity', () => {
     const { headers } = matrixToCsvRows(m, CSV_LABELS)
-    assert.deepEqual(headers, ['产品', '单位', '08-10', '08-12', '数量合计', '金额合计', '当前库存', '预测数量'])
+    assert.deepEqual(headers, ['产品', '规格 / 描述', '单位', '08-10', '08-12', '数量合计', '金额合计', '当前库存', '预测数量'])
   })
 
   test('数据行与表头列数一致（错位会让 Excel 里整列串位）', () => {
@@ -175,8 +175,28 @@ describe('CSV 行', () => {
     const { rows } = matrixToCsvRows(m, CSV_LABELS)
     const last = rows[rows.length - 1]
     assert.equal(last[0], '合计')
-    assert.equal(last[2], 3)
-    assert.equal(last[3], 5)
-    assert.equal(last[4], 8)
+    assert.equal(last[3], 3)
+    assert.equal(last[4], 5)
+    assert.equal(last[5], 8)
+  })
+})
+
+describe('规格（spec）', () => {
+  test('同一商品多个规格去重后按首次出现顺序拼接，空规格不计', () => {
+    const m = buildSalesMatrix([
+      line({ date: '2026-08-10', qty: 1, spec: 'CASE 10*500g' }),
+      line({ date: '2026-08-11', qty: 1, spec: '' }),
+      line({ date: '2026-08-12', qty: 1, spec: '500g/bunch' }),
+      line({ date: '2026-08-13', qty: 1, spec: 'CASE 10*500g' }),
+    ], 'week', DOW)
+    assert.equal(m.rows.length, 1)
+    assert.equal(m.rows[0].spec, 'CASE 10*500g / 500g/bunch')
+  })
+
+  test('没有规格的商品是空串，CSV 里该列为空而不是 undefined', () => {
+    const m = buildSalesMatrix([line({ date: '2026-08-10', qty: 1 })], 'week', DOW)
+    assert.equal(m.rows[0].spec, '')
+    const { rows } = matrixToCsvRows(m, CSV_LABELS)
+    assert.equal(rows[0][1], '')
   })
 })
