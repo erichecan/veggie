@@ -136,6 +136,12 @@ export interface DispatchSelector extends PrintContentFilter {
   driverSlotId?: string | null
   batchLabel?: string | null
   waveIds?: string[] | null
+  /**
+   * 与 waveIds 搭配：只取这些波次里 seq 命中的托盘（批次号）的订单，而不是整个波次。
+   * 打印中心勾了「批次 2」时，屏幕上每个波次只剩批次 2 的托盘；不带这个参数的话服务端
+   * 按 wave.orderIds 取整波次，批次 1 也一起打出来（20261028 客户反馈「筛选不起作用」）。
+   */
+  batchSeqs?: number[] | null
 }
 
 /**
@@ -148,6 +154,8 @@ export function parseDispatchSelector(searchParams: URLSearchParams): DispatchSe
     driverSlotId: searchParams.get('driverSlotId'),
     batchLabel: searchParams.get('batchLabel'),
     waveIds: parseIdListParam(searchParams.get('waveIds')),
+    batchSeqs: parseIdListParam(searchParams.get('batchSeqs'))
+      ?.map(Number).filter(n => Number.isInteger(n)),
     customerIds: parseIdListParam(searchParams.get('customerIds')),
     productIds: parseIdListParam(searchParams.get('productIds')),
   }
@@ -209,12 +217,24 @@ export async function loadDispatchPrintData(
   // 见 lib/wave-assign.ts、docs/20260624-data-ownership-audit.md。
   let orders: Awaited<ReturnType<typeof prisma.order.findMany<{ include: { lines: true; salesUser: { select: { name: true } } } }>>> = []
   if (multiMode) {
-    // 筛选打印：只取选中波次的订单（union orderIds），与打印中心屏幕上可见批次一致
-    const waves = await prisma.pickingWave.findMany({
-      where: { id: { in: selectedWaveIds } },
-      select: { orderIds: true },
-    })
-    const ids = [...new Set(waves.flatMap(w => w.orderIds))]
+    // 筛选打印：只取选中波次的订单（union orderIds），与打印中心屏幕上可见批次一致。
+    // 带了批次号筛选时改取这些波次里对应托盘的订单——与屏幕上 batchGroups 按 batchFilter
+    // 裁剪托盘、丢掉未分托盘订单的口径一致
+    const batchSeqs = selector.batchSeqs ?? []
+    let ids: string[]
+    if (batchSeqs.length > 0) {
+      const pallets = await prisma.pallet.findMany({
+        where: { waveId: { in: selectedWaveIds }, seq: { in: batchSeqs } },
+        select: { items: true },
+      })
+      ids = [...new Set(pallets.flatMap(p => ((p.items as Array<{ orderId: string }>) ?? []).map(it => it.orderId)))]
+    } else {
+      const waves = await prisma.pickingWave.findMany({
+        where: { id: { in: selectedWaveIds } },
+        select: { orderIds: true },
+      })
+      ids = [...new Set(waves.flatMap(w => w.orderIds))]
+    }
     orders = ids.length > 0
       ? await prisma.order.findMany({
           where: { id: { in: ids }, status: { in: statusFilter } },
