@@ -1,230 +1,225 @@
-# DEV-PLAN：退货/报废流程整合（warehouse/returns ↔ operator/inventory，三条记账路径收编为一条）
+# DEV-PLAN：退换货 5 步流程补全 + 新建「车辆检查」tab
+
+> 上一轮「退货/报废整合」（20261027，7 个提交 `b8f42353`~`3e1e800a`）已全部合并并部署到生产
+> （`git log origin/main..HEAD` 为空，确认已推送），状态机/仓库核实/销售审核/disposition 记账全部
+> 完整且正确，**本轮不重建它**，只在它之上补齐用户走查后发现的缺口，并把"仓库次日验车"这一步
+> 迁到一个新建的独立 tab。
 
 ## 读取了哪些文档
 
-本次没有独立 PRD 文件，来源是你在对话中分批给出的现场反馈 + 你亲自登录生产环境后的发现，逐字存进
-`docs/20261027-veggie-退货报废整合-需求原话.md`，不转述不润色。
+- 本次没有独立 PRD。来源是你口述的 5 步业务流程（多角色登录 → 司机报备退换货 → 次日仓库验车核实 →
+  仓库确认后消息广场通知销售二次核实 → 销售确认后进会计核销管理，含历史订单换开新发票），
+  以及你的明确指令："1,把环节 3 迁移到 inventory 下面的车辆检查 tab（新建）2,补齐上面的全部缺口
+  3,开发完成后,提交并部署"。原话已存 `docs/20261028-veggie-退换货5步流程-需求原话.md`（见下方歧义清单第0条）。
+- 上一轮遗留文档（只读，确认"已完成/不用动"的边界）：`DEV-REPORT.md`（上一轮完成报告）、
+  `docs/20261027-veggie-退货报废整合-需求原话.md`、`docs/20260922-return-case-flow-tasks.md`。
+- 本次代码调研（grep + 通读，均在本会话完成）：
+  `app/api/order-returns/route.ts`、`[id]/warehouse-verify/route.ts`、`[id]/review/route.ts`，
+  `app/api/trips/[id]/returns/route.ts`、`warehouse-verify/route.ts`，
+  `lib/returns-engine.ts`、`lib/types.ts`（ReturnItem）、`lib/bulletin.ts`、`lib/bulletin-categories.ts`，
+  `app/[locale]/classic/operator/inventory/page.tsx`、`_components/ReturnsBoard.tsx`、
+  `OrderReturnDialog.tsx`、`components/warehouse/VerifyReturnDialog.tsx`、
+  `_components/TripReturnReviewDialog.tsx`、
+  `app/[locale]/classic/driver/trip/[id]/page.tsx`（司机端报备 UI）、
+  `app/[locale]/classic/bulletin/_components/BulletinPostCard.tsx`，
+  `lib/accounting/returns.ts`、`lib/rbac/page-guard.ts`、`lib/role-access.ts`、
+  `lib/rbac/catalog.ts` / `prisma/seed-rbac.json`、`prisma/schema.prisma`
+  （OrderReturn / BulletinPost / BulletinCategory / Invoice / InvoiceStatus）。
+- 生产库只读核实（SSH）：`Trip` 表现有 78 条，全部在近 30 天内（`DRIVER_APP_ENABLED` 于 20260924
+  开灯后司机端链路已经是活的，之前"Trip 恒死"的旧结论已过期并已更正到记忆库）；司机退货上报
+  （`ReturnItem`）目前仅 1 条，`OrderReturn` 0 条——两条路径都还很新，本轮改动历史兼容风险低。
 
-历史背景文档（只读没改，决定了"哪些已经做完不用动、哪些是新坑"）：
-- `docs/20260922-return-case-flow-tasks.md` —— 上一轮把 Trip/ReturnItem 三段流程（司机上报→仓库核实→
-  销售/运营审核→disposition）从零建起来的任务台账，17/17 探针通过，`/code-review high` + `/security-review`
-  都走过。结论：这条流程**代码层面是完整且正确的**，本次不重建它的状态机/API，只解决"没人用、够不着、
-  跟另外两条野路子打架"的问题。
-- 代码现状调研（grep + 直接读文件，均在本次会话完成）：
-  `app/[locale]/classic/operator/inventory/page.tsx`（20260821 注释：退换货已从顶部导航迁入本页 tab，
-  底层文件保留不动）、`app/[locale]/classic/operator/inventory/scrap/page.tsx`、
-  `app/[locale]/classic/warehouse/page.tsx`、`lib/rbac/route-map.ts`、`prisma/seed-rbac.json`、
-  `lib/scrap-reasons.ts`、`lib/types.ts`（ReturnItem/TripRestaurant）、`prisma/schema.prisma`
-  （Order/Trip/OrderAuditLog）。
-- 生产库只读查询（SSH，无写操作）：76 条 Trip 全部有 restaurants，但 ReturnItem 的 5 种状态计数全是 0 ——
-  正式流程上线以来**从未被实际使用过一次**。
+## 用户走查发现的 5 个缺口（逐条对应你的 5 步流程）
 
-## 现状调研结论（决定了下面怎么改）
-
-三条路径都能记录"客户退货/报废"同一件事，彼此不知道对方存在：
-
-| 路径 | 入口 | 记账方式 | 挂没挂单据 | 现状 |
-|---|---|---|---|---|
-| ① Trip/ReturnItem 正式流程 | 司机上报→`warehouse/returns`核实→`operator/returns`(或 inventory 的「退换货」tab)审核 | 审核通过自动 `postStockMove` | ✅ 挂 Trip/订单 | 代码完整，生产 0 条记录 |
-| ② 独立报废页 `operator/inventory/scrap` | 手填商品+数量+原因(含 `CUSTOMER_RETURN_EXPIRED/DAMAGED`) | 直接 POST `/api/scrap`→`postStockMove` | ❌ 无任何关联字段 | 入口本身也是孤儿路由，但有真实业务含义的原因枚举 |
-| ③ 仓库"调整库存"弹窗 | `warehouse` 首页通用弹窗，占位文案示例"客户退货" | 直接 POST `/api/stock-moves` | ❌ 纯自由文本备注 | 任何理由都能填，无结构 |
-
-权限层面的根因（`lib/rbac/route-map.ts:446,465`）：`/classic/warehouse/**` 需要 `page.warehouse.access`，
-`/classic/operator/**` 需要 `page.operator.access`，两个页面权限点互不包含——纯仓库员工**物理上打不开**
-`/classic/operator/inventory`，这才是"权限问题跳来跳去"的代码级原因，不是 UI 没做好。
-同时确认 `prisma/seed-rbac.json` 里 WAREHOUSE 角色已经持有 `dispatch.trip.warehouse_verify`、
-`stock.scrap.manage`、`stock.move.create` 这些**动作权限**——缺的只是页面门，不缺动作权限，改动范围因此
-收得很小。
+| 步骤 | 你说的现象 | 代码实证 |
+|---|---|---|
+| ① 多角色登录落地页 | 司机/销售/调度各自登录应该落到各自主页 | `lib/rbac/page-guard.ts:74 getDefaultLandingPath` 的兜底分支没有调用 `lib/role-access.ts:421 homeFor(roles[])`，多角色场景判断不完整 |
+| ② 司机报备 | 照片应强制；补报几天前的退换货应有独立备注，不能跟普通原因混在一起 | `driver/trip/[id]/page.tsx:181 submitException()` 校验 `selected/reasonText/signature`，**没校验 `exceptionPhoto`**；"补报退换货"复用同一个 `reasonText` 字段，没有独立字段 |
+| ③ 次日仓库验车 | 要在 inventory 页新建一个"车辆检查"tab | 现有"退换货"tab（`ReturnsBoard.tsx`）是销售审核也在用的三栏看板，不是你要的"验车"专用队列——需新建，旧 tab 不动 |
+| ④ 仓库确认→消息广场→销售二次核实，三条备注独立 | 仓库确认后应自动发一条消息广场帖子；三条备注（司机/仓库/销售）应各自独立 | `BulletinPost` 目前只有 `MANUAL` 来源，没有任何代码会自动发帖；`order-returns/[id]/review/route.ts` 审核 reject 时把 `note` **覆盖写进 warehouseNote**（注释里写明是故意复用），approve 时 `note` **完全没有落库**——这是 OrderReturn 这条路径独有的 bug。Trip 路径（`ReturnItem`）本身已经是 `reason`/`warehouseNote`/`refundNote` 三个独立字段，不需要动 |
+| ⑤ 会计核销管理显示异常+双重确认状态，支持换开新发票 | 核销列表要能看到"有退换货异常/仓库已确认/销售已确认"，未确认标红；历史订单要能换开新发票 | `lib/accounting/returns.ts:listReturns()` 只查 `Order.returnStatus`（纸面对账，跟退换货无关的字段），**完全不读 `OrderReturn`/`goodsReturnStatus`**；`Invoice`/`InvoiceStatus` 没有任何"换开/作废旧票"的概念 |
 
 ## 模块拆解
 
-### M1 —— 退换货统一看板（核心）
-把 `warehouse/returns`（核实）+ `operator/returns`（审核+disposition）两个页面的逻辑合并成
-`operator/inventory` 的「退换货」tab 内一个三栏看板：待核实 / 待审核 / 已处理。
-数据源同时查 Trip.restaurants[].returns（司机上报）和新增的 `OrderReturn` 表（手动登记，见 M3），
-合并展示，标明来源，但审核/处置用同一套 UI 和同一个后端处置函数。
+1. **M1 车辆检查 tab（新建）**——`inventory/page.tsx` 的 `TabKey` 加 `'inspection'`，新组件
+   `_components/VehicleInspectionBoard.tsx`：只保留"待核实"这一个队列（Trip 侧复用
+   `flattenPending`+`VerifyReturnDialog`，OrderReturn 侧复用 `OrderReturnDialog` 的
+   `WAREHOUSE_PENDING` 分支），抽一个共享 helper（如 `buildWarehousePendingRows(trips, orderReturns)`）
+   给新 tab 和旧 `ReturnsBoard.tsx` 的"待核实"列共用，避免复制 ~25 行拼装逻辑。旧"退换货"tab
+   结构不变（仍是三栏，继续服务销售审核+已处理历史）。
+2. **M2 登录落地页**——`getDefaultLandingPath` 兜底分支改为调用 `homeFor(roles)`。
+3. **M3 司机报备强化**——① `submitException()` 加 `exceptionPhoto` 必填校验（无照片 toast 报错并
+   阻止提交）；② 给"补报退换货"场景加独立的 `lateReportNote` 字段（UI 新增一个文本框，跟
+   `reasonText` 分开展示、分开提交），`ReturnItem`（TS 接口，JSON 存储，免迁移）加
+   `lateReportNote?: string`，仓库/销售侧的详情展示补一行显示它。
+4. **M4 消息广场自动通知**——`BulletinCategory` 加 `GOODS_RETURN`；`BulletinPost` 加
+   `linkUrl String?`（镜像 `Banner.linkUrl` 的现成写法）；`lib/bulletin.ts` 新增
+   `createAutoGoodsReturnPost(tx, {restaurantName, productName, quantity, linkUrl})`（不走权限点，
+   直接复用该文件"管理动作按角色判断、不接正式权限点体系"的既有约定）；在两条仓库核实成功路径
+   （`order-returns/[id]/warehouse-verify`、`trips/[id]/returns/warehouse-verify`）verify 分支
+   的事务里调用它，`linkUrl` 指向 `退换货` tab 并带 `?highlight=<id>&source=order_return|trip`；
+   `ReturnsBoard.tsx` 读取这两个 query 参数，挂载时自动 `openCard` 对应记录；
+   `BulletinPostCard.tsx` 渲染 `linkUrl`（有则整条可点击跳转）。
+5. **M5 OrderReturn 三条备注独立**——`OrderReturn` 加 `salesNote String?`；
+   `order-returns/[id]/review/route.ts` 的 reject/approve 两个分支都改成写 `salesNote`（不再碰
+   `warehouseNote`）；`OrderReturnDialog.tsx` 第 185-187 行的 REJECTED 展示改读
+   `item.salesNote ?? item.warehouseNote`（兼容迁移前的历史记录），APPROVED 状态补一行同样的展示。
+6. **M6 核销管理接入退换货标记**——新增 `lib/accounting/goods-return-flags.ts` 导出
+   `getGoodsReturnFlags(orderIds)`：按 `orderId` 精确查 `OrderReturn`（覆盖包括 WAREHOUSE_PENDING/
+   PENDING_REVIEW 的全部状态），Trip 路径只能退回到 `Order.goodsReturnStatus`/`goodsReturnedAt`
+   这两个"终态徽章"字段兜底（已知局限：Trip 路径的退换货如果还停在待核实/待审核，这里看不到——
+   写进风险点，不做全表扫 Trip 的复杂方案）。`listReturns()` 合并这个结果到 `ReturnRow`，前端加
+   异常徽章 + 仓库确认/销售确认两个子状态，未确认标红"待确认"。
+7. **M7 退货→欠款单（Credit Note）扩展**——`generate-from-returns/route.ts` 加
+   `orderReturnIds?: string[]` 入参，复用现有"按客户分组→建 CreditNote→标记 SETTLED"逻辑，
+   不新开一个平行路由。
+8. **M8 历史订单换开新发票**——`Invoice` 加 `supersedesInvoiceId String? @unique` 自关联，
+   `InvoiceStatus` 加 `SUPERSEDED`；新路由 `app/api/invoices/[id]/reissue/route.ts`：复制旧票
+   `lines`(Json)+金额到一张新 `DRAFT` 发票，旧票标记 `SUPERSEDED`（`ar-summary` 现有
+   `status in [DRAFT,POSTED]` 的过滤天然把它排除出应收汇总，不用改别处）；新票内容如需改行项，
+   走现有 `PATCH /api/invoices/[id]` 编辑 DRAFT 的既有能力，不在 reissue 里重做一套编辑表单。
+   路由需登记进 `lib/rbac/route-map.ts`（权限点复用现成的 `finance.invoice.create`+
+   `finance.invoice.update`，两点已同授予同一批角色，不用新增 RBAC 授权）。
 
-- 删除 `app/[locale]/classic/warehouse/returns/`、`app/[locale]/classic/operator/returns/`（独立孤儿路由，
-  不是降级下线，是彻底删除——留着就是给第三条野路子留后门）。
-- `warehouse/layout.tsx` 导航去掉"退换货核实"条目。
-- 把原来两个页面里的核实逻辑、审核逻辑搬进 `operator/inventory/page.tsx` 的「退换货」tab 组件。
-
-### M2 —— 权限开口子
-不改 WAREHOUSE 角色现有动作权限，只给 `/classic/operator/inventory/**` 这一条子路径单独开第二个页面
-权限点，复用代码里已有的先例写法（`route-map.ts:450-451,464` 财务摸发票/订单的做法）：
-
-```ts
-{ pattern: '/classic/operator/inventory/**', permission: ['page.operator.access', 'page.warehouse.access'] },
-```
-
-这条要写在 `/classic/operator/**` 通配规则（第 465 行）之前，否则永远匹配不到。
-
-### M3 —— 手动登记入口（日销售中心「退货登记」tab）
-新建 `app/[locale]/classic/operator/daily-sales/_components/ReturnRegistration.tsx`，作为
-`daily-sales/page.tsx` 现有三个 tab（打印中心/缺货处理/销售统计）的平级第四个 tab，不嵌进"缺货处理"——
-缺货处理是发货前事件、退货是发货后事件，语义不同，混在一起以后排查会分不清是哪种原因（这是我的判断，
-已在对话里跟你说明过）。
-
-按订单号/客户搜到订单行 → 填商品+数量+原因+actionType(退货/换货) → 提交，创建一条 `OrderReturn` 记录
-（新表，见下面 schema），状态机复用 M1 看板同一套核实/审核/disposition 逻辑，不另起状态机。
-之所以不像最初考虑的那样"借用一个空 Trip 占位"：Trip 语义上是"司机的一次配送行程"，强塞一条没有司机的
-占位记录会污染司机相关的统计（司机日销售、loss-dashboard 等按 Trip 聚合的地方），新建一张直接挂
-`orderId` 的小表反而更干净，还顺带解决了①现有机制"退货记录只能靠 restaurantId+productId 反查订单，
-匹配不精确"的老问题（新表直接存 orderId，不用反查）。
-
-### M4 —— 收编②③两条野路子
-- ②`operator/inventory/scrap` 页面：UI 层去掉下拉框里 `CUSTOMER_RETURN_EXPIRED`/`CUSTOMER_RETURN_DAMAGED`
-  两个选项（新增一个 `MANUAL_SCRAP_REASONS` 子集常量，只排除这两项，不改 `SCRAP_REASONS` 本身——
-  `lib/scrap-reasons.ts` 顶部注释写明这套原因是"仓库报废和客退处置共用"，`app/api/trips/[id]/returns/route.ts:368`
-  审核通过 disposition=SCRAP 时仍要用这两个原因给 StockMove 打标，删常量会连带打断正式流程，只能砍
-  手动页面的下拉选项）。
-- ③`warehouse/page.tsx` 调整库存弹窗：占位文案去掉"客户退货"示例（`如：损耗处理、盘点调整、客户退货`
-  改成`如：损耗处理、盘点调整`），引导用户改走 M1/M3 的正式入口，不删弹窗本身（盘点误差等场景仍然需要
-  通用调整）。
-
-### M5 —— Order 侧只读同步 + 审计
-- `Order` 新增只读字段 `goodsReturnStatus`（String? 可空），值域 `'PENDING' | 'APPROVED' | 'REJECTED'`，
-  故意不叫 `returnStatus`/不复用 `OrderReturnStatus` 枚举——现有 `returnStatus` 字段语义是"核销/对账确认"，
-  20261021 刚修过一次把 `RETURNED` 误读成"有退货"的坑（`docs` 已有记录），这次新字段必须一眼就能跟它
-  分清楚。
-- 审核/处置通过时回写这个字段 + 在 `OrderAuditLog` 插一条 `action: 'goods_return_disposed'` 记录
-  （`OrderAuditLog.action` 本来就是自由字符串，不用改表结构）。
-- 销售单/日销售中心列表页给这个字段加一个小角标（有退货/处理中/已拒绝），只读展示，不可在订单页直接改。
-
-## schema 设计
+## Schema 设计（新增迁移）
 
 ```prisma
-enum GoodsReturnStatus {
-  WAREHOUSE_PENDING
-  PENDING_REVIEW
-  APPROVED
-  REJECTED
-  SETTLED
-}
-
-enum GoodsReturnDisposition {
-  SELLABLE
-  SCRAP
-}
-
-/// 日销售中心"退货登记"手动入口专用。司机现场上报的退货仍走 Trip.restaurants[].returns
-/// (ReturnItem)，两套互不迁移、互不冲突；M1 统一看板会同时查两边、共用同一套核实/审核/处置函数。
-/// 与 Trip 版本相比直接挂 orderId，不用再按 restaurantId+productId 反查订单。
 model OrderReturn {
-  id                      String                   @id @default(cuid())
-  orderId                 String
-  order                   Order                    @relation(fields: [orderId], references: [id])
-  productId               String
-  productName             String
-  quantity                Decimal                  @db.Decimal(12, 3)
-  reason                  String?
-  actionType              String                   @default("return") // return | exchange
-  exchangeOrderId         String?
-  status                  GoodsReturnStatus         @default(WAREHOUSE_PENDING)
-  disposition             GoodsReturnDisposition?
-  scrapLotId              String?
-  warehouseVerifiedById   String?
-  warehouseVerifiedByName String?
-  warehouseVerifiedAt     DateTime?
-  warehouseNote           String?
-  approvedById            String?
-  approvedByName          String?
-  approvedAt              DateTime?
-  settledAt               DateTime?
-  registeredById          String
-  registeredByName        String?
-  createdAt               DateTime                 @default(now())
+  // ...现有字段不变
+  salesNote String?   // 新增：销售审核备注，跟 warehouseNote 彻底独立
+}
 
-  @@index([orderId])
-  @@index([status])
+enum BulletinCategory {
+  SHORTAGE
+  ARRIVAL
+  PRICE_CHANGE
+  GOODS_RETURN   // 新增
+  OTHER
+}
+
+model BulletinPost {
+  // ...现有字段不变
+  linkUrl String?   // 新增：自动发帖时指向退换货 tab 的具体记录
+}
+
+enum InvoiceStatus {
+  DRAFT
+  POSTED
+  PAID
+  CANCELLED
+  SUPERSEDED   // 新增：被换开新票取代，排除出应收汇总
+}
+
+model Invoice {
+  // ...现有字段不变
+  supersedesInvoiceId String?  @unique
+  supersedesInvoice   Invoice? @relation("InvoiceSupersession", fields: [supersedesInvoiceId], references: [id])
+  supersededByInvoice Invoice? @relation("InvoiceSupersession")
 }
 ```
-
-`Order` 表新增：
-
-```prisma
-/// 只读镶嵌角标，源头永远是 ReturnItem/OrderReturn，不在订单页直接改。
-/// 故意不叫 returnStatus / 不复用 OrderReturnStatus：那个字段是核销对账语义，
-/// 20261021 刚修过一次混淆的坑，这里必须用不同的名字和值域避免重蹈覆辙。
-goodsReturnStatus String?   // 'PENDING' | 'APPROVED' | 'REJECTED'，null = 无退货
-goodsReturnedAt   DateTime?
-```
-
-后端共用逻辑：把 `app/api/trips/[id]/returns/route.ts` 里"审核通过→disposition→postStockMove→回写
-Order"这段逻辑抽成 `lib/returns-engine.ts` 的一个纯函数，Trip 版和新 `OrderReturn` 版的审核接口都调它，
-不重复实现 StockMove 记账和 Order 回写两次。
+（`ReturnItem.lateReportNote` 是 TS 接口字段，存在 `Trip.restaurants[].returns[]` 的 JSON 里，不涉及迁移。）
 
 ## 路由清单
 
-新增：
-- `POST /api/order-returns` —— 登记（日销售中心调用），权限 `goods_return.register`
-- `GET /api/order-returns` —— 列表（M1 看板调用），权限 `goods_return.warehouse_verify` 或 `goods_return.review`
-- `PUT /api/order-returns/[id]/warehouse-verify` —— 核实，权限 `goods_return.warehouse_verify`
-- `PUT /api/order-returns/[id]/review` —— 审核+disposition，权限 `goods_return.review`
-
-删除：
-- `/classic/warehouse/returns`（页面+路由）
-- `/classic/operator/returns`（页面+路由，逻辑已搬进 inventory 的 tab）
-
-修改：
-- `lib/rbac/route-map.ts`：新增 `/classic/operator/inventory/**` 页面权限行（M2），新增上述 4 条 API 权限行
-- `prisma/seed-rbac.json`：WAREHOUSE 角色追加 `goods_return.warehouse_verify`；OPERATOR/SALES（现有持有
-  `dispatch.trip.read_returns` 的角色）追加 `goods_return.register` + `goods_return.review`
-- `lib/rbac/catalog.ts`：补上这 3 个新权限点的中英文标签，供权限配置页展示
+| 路由 | 变化 |
+|---|---|
+| `GET/POST /api/order-returns` | 不变 |
+| `PUT /api/order-returns/[id]/warehouse-verify` | 改：verify 成功分支里追加自动发帖 |
+| `PUT /api/order-returns/[id]/review` | 改：approve/reject 都写 `salesNote`，不再覆盖 `warehouseNote` |
+| `PUT /api/trips/[id]/returns/warehouse-verify` | 改：verify 成功分支里追加自动发帖 |
+| `PUT /api/trips/[id]/returns`（review） | 不变（`refundNote` 已独立） |
+| `POST /api/credit-notes/generate-from-returns` | 改：body 加 `orderReturnIds?` |
+| `POST /api/invoices/[id]/reissue` | **新增**，需登记 `lib/rbac/route-map.ts` |
+| `GET /api/accounting/returns`（或等价列表接口） | 改：返回体加退换货标记字段 |
+| 司机端提交（`driver/trip/[id]` 页内 fetch，走现有 Trip returns 接口） | body 加 `lateReportNote?`，服务端按字段原样落 JSON，无需改路由签名（已是自由字段透传） |
 
 ## 风险点
 
-1. **历史数据迁移**：生产 0 条 ReturnItem 记录，不存在"旧数据要不要搬进 OrderReturn"的问题——这次是
-   少有的、完全不用考虑历史数据迁移的大改，直接按新模型建表即可。
-2. **②③路径的既有用户习惯**：如果仓库/销售已经习惯用"调整库存"或"报废管理"记客退，上线后短期内可能
-   还有人走旧路径——这次只是去掉 UI 上的诱导文案和选项，没有在后端拦截（后端仍接受调用），防止真有
-   仓库盘点场景被误拦；但如果一段时间后发现野路子记录仍在增长，需要再回来加后端硬拦截。
-3. **loss-dashboard / 司金分析等聚合口径**：`OrderReturn` 走 SCRAP 处置时需要确认 `lib/analytics/loss-dashboard.ts`
-   同时统计 Trip 版和 OrderReturn 版的 StockMove，否则报表会漏掉手动登记产生的报废量。
-4. **`returns-engine.ts` 抽取的回归风险**：Trip 版审核逻辑是生产已验证过的（17/17 探针），抽取成共用函数
-   时必须保证 Trip 版的现有测试/探针全部不变地继续通过，不能因为"顺手"改了它的行为。
+1. **Trip 路径在核销列表里的覆盖局限**：`Order.goodsReturnStatus` 只在终态（APPROVED/REJECTED）写入，
+   WAREHOUSE_PENDING/PENDING_REVIEW 阶段的 Trip 退货在核销列表看不到"待确认"状态——这是现有架构
+   （`returns-engine.ts` 的 `GoodsReturnOrderSync` 接口只接受终态两个值）决定的既有限制，本轮不新建
+   一套 Trip 全表实时扫描去补这个边界情况（过度设计），按 CLAUDE.md 判断权属于我自己拍板。
+2. **发票换开的资金前提**：`reissue` 只允许旧票 `amountPaid=0 且 amountCredited=0` 时执行——已有
+   收款/核销记录的发票如果也要换开，涉及把历史资金记录迁到新票还是留在旧票的二次设计，本轮不做，
+   超出此范围会报错提示改走现有 Credit Note 流程。这是我的假设，写进假设清单。
+3. **历史兼容**：`OrderReturn`/`BulletinPost.linkUrl`/`Invoice` 新字段全部可空，`InvoiceStatus`/
+   `BulletinCategory` 加枚举值不影响现有行；生产 `OrderReturn` 当前 0 条、`BulletinPost` 现有行
+   `linkUrl` 为空走不影响旧逻辑的展示分支——迁移风险低。
+3. **TS 穷尽性检查**：新增 `InvoiceStatus.SUPERSEDED` 后要 `grep` 现有 switch/if 链判断是否有
+   "未覆盖新值就默认当某种已知状态处理"的隐患（例如发票列表的状态徽章渲染），执行阶段用
+   `tsc --noEmit` + 人工过一遍，不能只信编译器穷尽性检查（大部分现有代码是 if 链不是
+   exhaustive switch，编译器未必会报错）。
+4. **消息广场自动发帖的触达范围**：现有 `BulletinPost` 无受众过滤，所有内部角色都能看到自动发的
+   退换货通知——沿用现状，不新增"只给销售看"的定向推送（过度设计）。
 
-## 附录A：技术验收标准（`scripts/verify.sh` / `scripts/verify-returns-consolidation.*`）
+## Appendix A：验收脚本
 
-- `npx tsc --noEmit`、`npm run build`、`npx prisma migrate status` 全绿
-- 路由探针：`/classic/operator/inventory`（含 `?tab=returns`）对 WAREHOUSE-only 和 OPERATOR-only 两种
-  权限的账号分别请求，断言都不是 403；`/classic/warehouse/returns`、`/classic/operator/returns` 两个
-  旧路由断言 404（确认真的删掉了，不是只摘导航）
-- 鉴权探针：`POST/PUT /api/order-returns*` 分别用「无 token / 错 token / 低权限(DRIVER)」请求，断言
-  401/401/403
-- 状态机探针（仿 `scripts/verify-return-flow.py` 的模式，新开一份针对 `OrderReturn` 的版本）：
-  WAREHOUSE_PENDING→PENDING_REVIEW→APPROVED(disposition=SELLABLE，断言 StockMove RETURN 生成且
-  Product.qtyOnHand 回补)→另开一条 REJECTED 路径
-  →另开一条 APPROVED(disposition=SCRAP，断言 StockMove SCRAP 生成)
-  全部用完即用 try/finally 删除自己建的测试数据，不留脏数据
-- 回归探针：原 Trip/ReturnItem 的 17 条既有探针（`scripts/verify-return-flow.py`）全部仍通过，证明抽取
-  `returns-engine.ts` 没有改坏老流程
-- Order 回写探针：审核通过后断言 `Order.goodsReturnStatus` 与 `OrderAuditLog` 新记录都正确写入
-- 查询探针：`GET /api/order-returns` 开 Prisma query log，断言查询数不随 Trip/OrderReturn 数据量线性增长
+新建 `scripts/verify-return-gaps.sh`（沿用本项目"每个专题一个 verify 脚本"的既有命名习惯，对齐
+`verify-return-flow.sh`），至少包含：
 
-铁律：以上脚本不全绿不写完成报告；没有命令输出的条目标 ⚠️ 未验证，不标 ✅。
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== tsc =="
+npx tsc --noEmit
+
+echo "== build =="
+npm run build
+
+echo "== migrate status =="
+npx prisma migrate status
+
+echo "== 路由探针：reissue 鉴权 =="
+# 无 token → 401；低权限 token(RESTAURANT) → 403；finance 权限 token → 200/409(按前提条件)
+# 参照 api-auth-templates skill 的标准 curl 写法，具体 token 由脚本内生成/读取 .env.test
+
+echo "== DB 字段探针 =="
+# 断言 OrderReturn.salesNote / BulletinPost.linkUrl / Invoice.supersedesInvoiceId 列存在
+# 断言 BulletinCategory 含 GOODS_RETURN、InvoiceStatus 含 SUPERSEDED
+
+echo "== 业务探针 =="
+# 1) 构造一条 OrderReturn WAREHOUSE_PENDING → PUT warehouse-verify → 断言 BulletinPost 新增一条
+#    category=GOODS_RETURN source=AUTO，且 linkUrl 非空
+# 2) 该记录 → PUT review(reject, note=X) → 断言 salesNote=X 且 warehouseNote 未被覆盖
+# 3) 构造一张 POSTED 发票（amountPaid=0）→ POST reissue → 断言旧票 status=SUPERSEDED、
+#    新票 status=DRAFT 且 lines 内容一致；ar-summary 总额不因换开产生双计
+```
+
+退出码即结论；无命令输出的条目标 ⚠️ 未验证，不写 ✅。
 
 ---
 
 📋 计划已生成。三块内容，只有第 1 块需要你判断：
 
 【需要你判断 — 场景清单】
-用你的话描述做完之后是什么样，逐条标注来源：
-- [你说的] 仓库和运营两边的人不用再因为权限问题在两个页面之间跳来跳去，核实+审核在同一个「退换货」看板里完成
-- [你说的] 日销售中心多一个平级的"退货登记"tab，跟缺货处理分开，可以按订单号手动登记退货
-- [你说的] 这三个按钮点完之后，订单上要能看到退货状态和完整操作记录
-- [我推断的] `warehouse/returns` 和 `operator/returns` 两个旧页面直接删除，不是像 20260821 那样"降级但保留文件"——因为留着就是给第三条野路子留后门，跟你"整合"的本意相反
-- [我推断的] 报废管理页(`operator/inventory/scrap`)和仓库调整库存弹窗不删除、不拦截后端调用，只去掉 UI 上诱导填"客户退货"的选项/文案——彻底禁止的话，万一真的有特殊场景（比如没有司机参与、也不走订单登记的纯仓库内部报废）会没有出口
-- [我推断的] 日销售中心新增的"退货登记"走一张新表 `OrderReturn`，不复用 Trip 占位行程的方案——这个我自己推翻过一次（一开始想借用空 Trip），最终决定是因为 Trip 语义上代表真实配送行程，硬塞会污染司机统计
-
-推断项最容易错，请重点看这几条，尤其是"旧页面要不要彻底删除"和"报废/调整弹窗要不要留后门"这两条——这两条如果判断反了，返工成本比其他模块都大。
+- [你说的] 司机/销售/调度各角色登录后应落到各自主页，不能落错
+- [你说的] 司机报备退换货必须带照片，不能不传；补报几天前的退换货要有独立备注，不能跟普通退货原因混一起
+- [你说的] 仓库次日验车这一步要搬到 inventory 页下新建的"车辆检查"tab，跟现有"退换货"tab 并存、互不影响
+- [你说的] 仓库确认后消息广场要自动出现一条，销售能点进去二次核实；司机/仓库/销售三条备注要彻底独立，不能互相覆盖
+- [你说的] 会计核销管理列表要能看到这单有没有退换货异常、仓库/销售各自有没有确认，没确认要标红；历史订单要能换开一张新发票取代旧的
+- [我推断的] "车辆检查"tab 只做"待核实"这一个队列（不像"退换货"tab 那样三栏），因为验车是仓库一次性动作，确认完就转到销售审核（在旧 tab 里走），不需要在新 tab 里也看"已处理"历史
+- [我推断的] 消息广场自动发帖面向全体内部角色可见（现有广场本身就没有受众过滤），不单独做"只推给销售"的定向通知
+- [我推断的] 发票换开只允许旧票还没有收款/核销记录时执行；已经有资金记录的发票换开，引导走现有 Credit Note 流程而不是本次新建的 reissue
+推断项最容易错，请重点看这 3 条。
 
 【我负责 — 你不用看】
-技术验收标准与 verify 脚本见附录A。权限点设计、schema 字段命名、后端函数怎么抽取由我定标准、我自证、我贴证据。
-技术栈沿用现有 Next.js/Prisma/PostgreSQL，不涉及新选型；不部署 GCP 专有服务，符合项目 CLAUDE.md 部署铁律。
+技术验收标准与 verify.sh 见本文件 Appendix A。性能、鉴权、类型、查询效率由我定标准、我自证、我贴证据。
+技术栈/数据库托管方式不变（仍是现有 Next.js+Prisma+PostgreSQL，droplet 自动部署，不涉及新增云资源）。
 
 【一次性告知 — 不同意就说】
-歧义清单：无——这次三点方向都是你明确拍板的，没有需要我按保守解释兜底的歧义点。
-假设清单：`OrderReturn.quantity` 精度跟 `ReturnItem` 一样不设上限校验（现有 Trip 版本也没做数量上限校验，沿用同一宽松度，不额外加限制）。
+歧义清单：
+0. 你的原话我会原文存进 `docs/20261028-veggie-退换货5步流程-需求原话.md`，不转述。
+1. "三条备注独立"目前只有 OrderReturn 这条手动登记路径有 bug（Trip/司机上报路径的
+   `reason`/`warehouseNote`/`refundNote` 已经是三个独立字段，本来就没问题）——本轮只修
+   OrderReturn 这一条。
+2. 核销管理列表对"Trip 路径且还卡在待核实/待审核阶段"的退换货看不到标记（见风险点 1），
+   按保守方案不做全表扫描兜底。
+
+假设清单：
+1. 发票换开（reissue）限定旧票 `amountPaid=0 且 amountCredited=0` 才能执行（风险点 2）。
+2. "车辆检查"tab 只保留待核实队列，不重复旧 tab 的"待审核/已处理"两栏。
+3. 消息广场自动发帖不做角色定向推送，复用现状的"全员可见"。
 
 回复"确认"后我不再就实现细节打断你。
