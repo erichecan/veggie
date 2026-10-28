@@ -25,7 +25,7 @@ interface CustomerRow { id: string; name: string; street?: string; city?: string
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
 interface UserRow { id: string; name: string }
 interface CategoryRow { id: string; name: string }
-interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
+interface OrderLine { id: string; productId?: string | null; productName?: string | null; spec?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
 
 /** 一条摊平的订单行，携带派生的分类/单位/库存/目录顺序号，供四种查看方式共用 */
 interface ReportLine {
@@ -34,6 +34,9 @@ interface ReportLine {
   customerName: string
   productId: string
   productName: string
+  /** 订单行 Description 快照（OrderLine.spec = 单位规格 · 销售描述，见 lib/order-line-description.ts），
+   *  与订单详情页 Description 列同一字段；行上为空就留空，不拿商品当前描述冒充历史快照 */
+  spec: string
   categoryName: string
   uomName: string
   qty: number
@@ -53,16 +56,17 @@ function FragmentRows({ day, isEn }: { day: { date: string; dateQty: number; dat
   return (
     <>
       <tr className="bg-gray-100">
-        <td colSpan={4} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
+        <td colSpan={5} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
       </tr>
       {day.customers.map(custLines => (
         <Fragment key={day.date + custLines[0].customerId}>
           <tr className="bg-gray-50/60">
-            <td colSpan={4} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
+            <td colSpan={5} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
           </tr>
           {custLines.map((l, i) => (
             <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
               <td className="px-4 py-1.5 pl-8 text-gray-700">{l.productName}</td>
+              <td className="px-4 py-1.5 text-gray-500">{l.spec}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(2)}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(l.unitPrice)}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(l.amount)}</td>
@@ -72,6 +76,7 @@ function FragmentRows({ day, isEn }: { day: { date: string; dateQty: number; dat
       ))}
       <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
         <td className="px-4 py-1.5">{isEn ? `Subtotal ${day.date}` : `小计 ${day.date}`}</td>
+        <td />
         <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(2)}</td>
         <td />
         <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
@@ -230,6 +235,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
           customerName: o.restaurantName,
           productId: l.productId ?? '',
           productName: name,
+          spec: l.spec?.trim() ?? '',
           categoryName: prod?.category ?? (isEn ? 'Uncategorized' : '未分类'),
           uomName: l.uomName ?? prod?.uomName ?? '',
           qty: Number(l.orderedQty ?? 0),
@@ -275,16 +281,18 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // 查看方式②：按商品（跨区间聚合）
   const productReport = useMemo(() => {
-    const m = new Map<string, { name: string; qty: number; amount: number; customers: Set<string>; sequence: number }>()
+    const m = new Map<string, { name: string; qty: number; amount: number; customers: Set<string>; specs: Set<string>; sequence: number }>()
     for (const l of reportLines) {
-      const e = m.get(l.productName) ?? { name: l.productName, qty: 0, amount: 0, customers: new Set<string>(), sequence: l.sequence }
+      const e = m.get(l.productName) ?? { name: l.productName, qty: 0, amount: 0, customers: new Set<string>(), specs: new Set<string>(), sequence: l.sequence }
       e.qty += l.qty
       e.amount += l.amount
       e.customers.add(l.customerId)
+      // 按商品名聚合，同名商品不同单位/规格的行会并到一起——把出现过的规格都列出来，不只取第一条
+      if (l.spec) e.specs.add(l.spec)
       m.set(l.productName, e)
     }
     return [...m.values()]
-      .map(v => ({ name: v.name, qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence }))
+      .map(v => ({ name: v.name, spec: [...v.specs].join(' / '), qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence }))
       .sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.amount - a.amount)
   }, [reportLines, sortBySequence])
 
@@ -684,6 +692,7 @@ ${catsHtml}
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr className="border-b border-gray-200">
                   <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product' : '产品'}</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Spec / Description' : '规格 / 描述'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Qty' : '数量'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Unit Price' : '单价'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">{isEn ? 'Amount' : '金额'}</th>
@@ -693,6 +702,7 @@ ${catsHtml}
                 {groupedReport.map(day => <FragmentRows key={day.date} day={day} isEn={isEn} />)}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
                   <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
+                  <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
@@ -707,6 +717,7 @@ ${catsHtml}
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr className="border-b border-gray-200">
                   <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product' : '产品'}</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Spec / Description' : '规格 / 描述'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'Customers' : '客户数'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Total Qty' : '数量合计'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Avg Price' : '均价'}</th>
@@ -717,6 +728,7 @@ ${catsHtml}
                 {productReport.map(p => (
                   <tr key={p.name} className="border-b border-gray-50 hover:bg-purple-50/30">
                     <td className="px-4 py-1.5 text-gray-700">{p.name}</td>
+                    <td className="px-4 py-1.5 text-gray-500">{p.spec}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{p.customerCount}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{p.qty.toFixed(2)}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(p.avgPrice)}</td>
@@ -725,6 +737,7 @@ ${catsHtml}
                 ))}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
                   <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
+                  <td className="px-4 py-2" />
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
                   <td className="px-4 py-2" />
