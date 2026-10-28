@@ -182,6 +182,11 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
   }, [])
 
   const addToCart = useCallback((p: Product, qty = 1) => {
+    // 各入口按钮已对缺货商品置灰，这里再兜一层：任何调用方都加不进购物车（20261028 客户需求）
+    if (p.outOfStock) {
+      toast.error(isEn ? `${p.name} is out of stock` : `${p.name} 暂时缺货`)
+      return
+    }
     setCart((prev) => {
       const next = mergeCartItems(prev, [{
         productId: p.id, name: p.name, spec: p.spec, uomId: p.uomId ?? undefined, uomName: p.uomName,

@@ -38,6 +38,35 @@ export type ProductRowWithUom = Prisma.ProductGetPayload<{
   }
 }>
 
+/**
+ * 门户「缺货」口径（20261028 客户需求：缺货不能加入购物车、不能下单）：现存量 qtyOnHand <= 0，
+ * 不分商品类型。卡片的 outOfStock 与下单闸门 portalOrderBlockers 共用这一处，避免两边口径漂移。
+ * ⚠️ 已知取舍：库存数据维护不全时会挡掉不少商品（开发库曾实测 46.5% 为 <= 0）——这是客户
+ * 明确选择的规则，不是疏漏。
+ */
+export function isPortalOutOfStock(qtyOnHand: unknown): boolean {
+  return toNum(qtyOnHand) <= 0
+}
+
+/**
+ * 门户下单前的商品闸门：返回不能下单的商品名，按原因分组。
+ * - unavailable：取消了 Can be Sold，或取消了「在客户门户显示」——客户端看不到它，
+ *   但购物车（localStorage）里可能还留着之前加进去的
+ * - outOfStock：现存量 <= 0（见 isPortalOutOfStock）
+ * 同一商品两者都命中时只算 unavailable，提示里不重复出现。
+ */
+export function portalOrderBlockers(
+  products: ReadonlyArray<{ name: string; canBeSold: boolean; showInPortal: boolean; qtyOnHand: unknown }>,
+): { unavailable: string[]; outOfStock: string[] } {
+  const unavailable: string[] = []
+  const outOfStock: string[] = []
+  for (const p of products) {
+    if (!p.canBeSold || !p.showInPortal) unavailable.push(p.name)
+    else if (isPortalOutOfStock(p.qtyOnHand)) outOfStock.push(p.name)
+  }
+  return { unavailable, outOfStock }
+}
+
 /** 20260926：客户门户"新品"角标阈值——超过这个天数不再算新品，可按需调整 */
 const NEW_PRODUCT_DAYS = 30
 
@@ -58,7 +87,7 @@ export interface CustomerProductCard {
   categoryId: string | null
   /** ACTIVE / INACTIVE 等，商品状态快照 —— "再来一单"要靠它判断商品是否还能买 */
   status: string
-  /** qtyOnHand <= 0，门户只做提示不锁购物车（见 DEV-PLAN 风险点：开发库缺货占比 46.5%，锁死会挡掉近一半商品） */
+  /** qtyOnHand <= 0（isPortalOutOfStock）。20261028 起门户据此禁用加入购物车，下单接口同口径拒收 */
   outOfStock: boolean
   /** createdAt 在 NEW_PRODUCT_DAYS 天内 */
   isNew: boolean
@@ -166,7 +195,7 @@ export async function buildCustomerProductCards(
       internalRef: p.internalRef,
       categoryId: p.categoryId ?? null,
       status: p.status ?? 'ACTIVE',
-      outOfStock: toNum(p.qtyOnHand) <= 0,
+      outOfStock: isPortalOutOfStock(p.qtyOnHand),
       isNew,
       promoLabel: resolution.promoLabel ?? null,
       originalPrice: resolution.originalPrice ?? null,

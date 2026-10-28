@@ -14,7 +14,7 @@ const HIDDEN_CATEGORY_NAMES = new Set([
 export type CustomerFacingCategory = { id: string; name: string; nameZh: string | null; count: number }
 
 export async function listCustomerFacingCategories(
-  extraWhere: { canBeSold?: boolean } = {},
+  extraWhere: { canBeSold?: boolean; showInPortal?: boolean } = {},
 ): Promise<CustomerFacingCategory[]> {
   const grouped = await prisma.product.groupBy({
     by: ['categoryId'],

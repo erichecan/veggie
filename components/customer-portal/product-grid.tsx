@@ -43,13 +43,9 @@ export function ProductGrid({
           return (
             <div key={p.id} className="bg-white rounded-xl border p-4 flex flex-col justify-between hover:shadow-md transition-shadow">
               <div>
-                {(p.outOfStock || p.promoLabel || p.isNew) && (
+                {/* 缺货不再用卡片顶部的灰色角标提示，改为下方按钮置灰并写明「暂时缺货」（20261028 客户需求） */}
+                {(p.promoLabel || p.isNew) && (
                   <div className="flex flex-wrap gap-1 mb-1.5">
-                    {p.outOfStock && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">
-                        {isEn ? 'Out of stock' : '暂时缺货'}
-                      </span>
-                    )}
                     {p.promoLabel && (
                       <span className="text-[10px] font-medium px-1.5 py-0.5 rounded text-white bg-rose-600">
                         {p.promoLabel}
@@ -94,7 +90,14 @@ export function ProductGrid({
                     {effectivePrice != null ? eur(effectivePrice) : (isEn ? 'Price on request' : '询价')}
                   </span>
                 </span>
-                {effectivePrice != null ? (
+                {p.outOfStock ? (
+                  // 缺货不能加入购物车（20261028 客户需求）；已在购物车里的同样不给加数量——
+                  // 下单接口按同一口径拒收，见 lib/customer-portal-products.ts isPortalOutOfStock
+                  <button disabled
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-200 text-gray-500 cursor-not-allowed">
+                    {isEn ? 'Out of stock' : '暂时缺货'}
+                  </button>
+                ) : effectivePrice != null ? (
                   inCart ? (
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => setQty(p.id, inCart.quantity - 1, effectiveUomName)}

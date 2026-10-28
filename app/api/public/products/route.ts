@@ -36,6 +36,8 @@ export async function GET(req: Request) {
     const where = {
       status: 'ACTIVE' as const,
       canBeSold: true,
+      // 后台取消「在客户门户显示」的商品，匿名 /shop 目录同样不展示（20261028）
+      showInPortal: true,
       ...(categoryId ? { categoryId } : {}),
       ...(search
         ? {

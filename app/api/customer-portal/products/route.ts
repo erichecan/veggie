@@ -62,7 +62,7 @@ export async function GET(req: Request) {
         const ids = [...new Set(idsParam.split(',').map((s) => s.trim()).filter(Boolean))].slice(0, MAX_IDS_LOOKUP)
         const products = await prisma.product.findMany({
           // 按 id 回查(购物车/常购卡片)也只返回可售的，取消 Can be Sold 的商品客户端看不到也下不了单
-          where: { id: { in: ids }, canBeSold: true },
+          where: { id: { in: ids }, canBeSold: true, showInPortal: true },
           include: PRODUCT_INCLUDE,
         })
         const cards = await buildCustomerProductCards(prisma, customer, products)
@@ -82,6 +82,8 @@ export async function GET(req: Request) {
         status: 'ACTIVE' as const,
         // 不可售(Can be Sold 未勾)的商品不出现在客户下单目录里(20261009)
         canBeSold: true,
+        // 后台取消「在客户门户显示」的商品不出现在门户目录（20261028），内部下单不受影响
+        showInPortal: true,
         ...(productId ? { id: productId } : {}),
         ...(categoryId ? { categoryId } : {}),
         // 20260926（code-review 发现）：`spec` 是废弃字段，绝大多数商品早已清空（历史数据见
