@@ -583,7 +583,7 @@ export interface ReturnItem {
   /// WAREHOUSE_PENDING（20260922 新增）= 司机刚上报，待仓库核实实物；仓库核实通过后
   /// 转 PENDING_REVIEW 才进入现有销售/运营审核队列。此前已存在的记录不受影响——
   /// 没有回填迁移，各调用点缺失时仍按 `?? 'PENDING_REVIEW'` 兜底（如
-  /// `app/[locale]/classic/operator/returns/page.tsx` 的 `flatten()`）
+  /// `app/[locale]/classic/operator/inventory/_components/ReturnsBoard.tsx` 的 `flattenTripReturns()`）
   status?: 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
   restaurantId?: string
   restaurantName?: string
@@ -607,6 +607,36 @@ export interface ReturnItem {
   driverSignedAt?: string
   /// 换货场景关联的新开订单 id（20260922 拍板：换货一律新开单，不在本记录里维护第二套商品明细）
   exchangeOrderId?: string
+}
+
+/**
+ * 日销售中心「退货登记」手动入口（20261027，退货/报废整合 M3），直接挂 orderId，
+ * 与司机上报的 ReturnItem 是两套互不迁移的数据源，状态机/核实/审核/处置规则完全一致
+ * （共用 `lib/returns-engine.ts`），在 M1 看板里合并展示。字段比 ReturnItem 少很多——
+ * 没有退款相关字段，审核只需选 disposition，不涉及退款金额/比例。
+ */
+export interface OrderReturn {
+  id: string
+  orderId: string
+  order?: { code: string; restaurantId: string; restaurantName: string }
+  productId: string
+  productName: string
+  quantity: number
+  reason?: string
+  actionType: 'return' | 'exchange'
+  exchangeOrderId?: string
+  status: 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
+  disposition?: 'SELLABLE' | 'SCRAP'
+  warehouseVerifiedById?: string
+  warehouseVerifiedByName?: string
+  warehouseVerifiedAt?: string
+  warehouseNote?: string
+  approvedById?: string
+  approvedByName?: string
+  approvedAt?: string
+  registeredById: string
+  registeredByName?: string
+  createdAt: string
 }
 
 export interface TripRestaurant {
