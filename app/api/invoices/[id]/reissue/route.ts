@@ -15,6 +15,10 @@ import { nextInvoiceName, type InvoiceTx } from '@/lib/invoice-from-order'
  * 规则：
  *   - 旧票不能已经是 SUPERSEDED（不能重复换开）
  *   - 旧票不能已有 supersededBy（@unique 约束兜底，这里先查一次给出更友好的错误）
+ *   - 旧票不能已有收款（amountPaid>0）或 credit note 核销（amountCredited>0）——否则新票
+ *     amountDue 会按全额重算，旧票收款/核销记录随 SUPERSEDED 状态被 ar-summary 排除，
+ *     造成已收款金额从应收账款里消失、同时凭空多出一笔全额应收（security-review 20261028
+ *     识别为业务逻辑缺口，非安全漏洞，此处直接修复）
  *   - 事务：新建 DRAFT 发票（复制 lines/金额/客户/账期信息）+ 旧票状态改 SUPERSEDED
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -34,6 +38,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       if (old.supersededBy) {
         return NextResponse.json({ error: `该发票已换开为 ${old.supersededBy.name}` }, { status: 409 })
+      }
+      if (Number(old.amountPaid) > 0 || Number(old.amountCredited) > 0) {
+        return NextResponse.json(
+          { error: '该发票已有收款或credit note核销记录，换开会丢失这部分记录，请先在旧票上处理完收款/核销再换开' },
+          { status: 409 },
+        )
       }
 
       const result = await prisma.$transaction(async (tx) => {
