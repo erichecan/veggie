@@ -13,6 +13,7 @@ import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { openAuthedPdf, downloadAuthedFile } from '@/lib/print/open-pdf'
 import { downloadCsv } from '@/lib/csv-export'
+import { escapeHtml } from '@/lib/print-export'
 import { compareSequenceThenName } from '@/lib/print/line-sort'
 import {
   buildSalesMatrix,
@@ -298,18 +299,20 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // 查看方式③：按分类（分类 → 商品，带 Forecast Quantity）—— 调度备货
   const categoryReport = useMemo(() => {
-    const catMap = new Map<string, Map<string, { productId: string; name: string; uomName: string; qty: number; qtyOnHand: number; sequence: number }>>()
+    const catMap = new Map<string, Map<string, { productId: string; name: string; specs: Set<string>; uomName: string; qty: number; qtyOnHand: number; sequence: number }>>()
     for (const l of reportLines) {
       if (!catMap.has(l.categoryName)) catMap.set(l.categoryName, new Map())
       const prods = catMap.get(l.categoryName)!
       const key = l.productId || l.productName
-      const ex = prods.get(key)
+      let ex = prods.get(key)
       if (ex) ex.qty += l.qty
-      else prods.set(key, { productId: l.productId, name: l.productName, uomName: l.uomName, qty: l.qty, qtyOnHand: l.qtyOnHand, sequence: l.sequence })
+      else prods.set(key, ex = { productId: l.productId, name: l.productName, specs: new Set<string>(), uomName: l.uomName, qty: l.qty, qtyOnHand: l.qtyOnHand, sequence: l.sequence })
+      // 同一商品按不同可售单位下单时规格不同——全部列出，同「按商品」
+      if (l.spec) ex.specs.add(l.spec)
     }
     return [...catMap.entries()]
       .map(([catName, prods]) => {
-        const products = [...prods.values()].sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.qty - a.qty)
+        const products = [...prods.values()].map(({ specs, ...p }) => ({ ...p, spec: [...specs].join(' / ') })).sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.qty - a.qty)
         return { catName, products, totalQty: products.reduce((s, p) => s + p.qty, 0) }
       })
       .sort((a, b) => a.catName.localeCompare(b.catName))
@@ -348,8 +351,8 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     const { headers, rows } = matrixToCsvRows(
       { ...salesMatrix, rows: matrixRowsSorted },
       isEn
-        ? { product: 'Product', uom: 'Unit', total: 'Total Qty', amount: 'Amount', onHand: 'On Hand', forecastQuantity: 'Forecast Quantity', grand: 'Grand Total' }
-        : { product: '产品', uom: '单位', total: '数量合计', amount: '金额合计', onHand: '当前库存', forecastQuantity: '预测数量', grand: '合计' },
+        ? { product: 'Product', spec: 'Spec / Description', uom: 'Unit', total: 'Total Qty', amount: 'Amount', onHand: 'On Hand', forecastQuantity: 'Forecast Quantity', grand: 'Grand Total' }
+        : { product: '产品', spec: '规格 / 描述', uom: '单位', total: '数量合计', amount: '金额合计', onHand: '当前库存', forecastQuantity: '预测数量', grand: '合计' },
     )
     const kind = granularity === 'week' ? (isEn ? 'by-weekday' : '按星期') : (isEn ? 'by-day' : '按日')
     downloadCsv(`${isEn ? 'sales-matrix' : '销售矩阵'}-${kind}-${fromDate}_${toDate}`, headers, rows)
@@ -416,7 +419,8 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   // 打印内容(送到仓库调度备货用的实体单据)按团队约定始终保持中文，不随界面 locale 切换——
   // 与 lib/print/* 系列单据同一原则(纸质单据是给一线员工用的)
   function handleCategoryPrint() {
-    const w = window.open('', '_blank', 'noopener,width=800,height=700')
+    // ⛔ 不能传 noopener——传了 window.open 按规范返回 null，写不进内容、按钮点了没反应（见 lib/print-export.ts）
+    const w = window.open('', '_blank', 'width=800,height=700')
     if (!w) return
     const unitLabel = '件'
     const catsHtml = categoryReport.map(cat => `
@@ -426,6 +430,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
           <thead>
             <tr style="background:#f9fafb;">
               <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">产品名称</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">规格 / 描述</th>
               <th style="text-align:center;padding:6px 8px;border-bottom:1px solid #e5e7eb;">单位</th>
               <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">数量</th>
               <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Forecast Quantity</th>
@@ -437,6 +442,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
               const color = forecastQuantity > 0 ? '#10B981' : forecastQuantity === 0 ? '#F59E0B' : '#8B5CF6'
               return `<tr style="border-bottom:1px solid #f3f4f6;">
                 <td style="padding:5px 8px;">${p.name}</td>
+                <td style="padding:5px 8px;color:#6b7280;">${escapeHtml(p.spec)}</td>
                 <td style="padding:5px 8px;text-align:center;color:#6b7280;">${p.uomName || '—'}</td>
                 <td style="padding:5px 8px;text-align:right;font-weight:500;">${fmtQty(p.qty)}</td>
                 <td style="padding:5px 8px;text-align:right;color:${color};font-weight:500;">${fmtQty(forecastQuantity)}</td>
@@ -760,6 +766,7 @@ ${catsHtml}
                     <thead>
                       <tr className="border-b border-gray-100">
                         <th className="px-3 py-2 text-left text-gray-400 font-normal">{isEn ? 'Product Name' : '产品名称'}</th>
+                        <th className="px-3 py-2 text-left text-gray-400 font-normal">{isEn ? 'Spec / Description' : '规格 / 描述'}</th>
                         <th className="px-3 py-2 text-center text-gray-400 font-normal w-16">{isEn ? 'Unit' : '单位'}</th>
                         <th className="px-3 py-2 text-right text-gray-400 font-normal w-20">{isEn ? 'Qty' : '数量'}</th>
                         <th className="px-3 py-2 text-right text-gray-400 font-normal w-24">{isEn ? 'Forecast Quantity' : '预测数量'}</th>
@@ -772,6 +779,7 @@ ${catsHtml}
                         return (
                           <tr key={p.productId || p.name} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
                             <td className="px-3 py-2 text-gray-800">{p.name}</td>
+                            <td className="px-3 py-2 text-gray-500">{p.spec}</td>
                             <td className="px-3 py-2 text-center text-gray-500">{p.uomName || '—'}</td>
                             <td className="px-3 py-2 text-right text-gray-700 tabular-nums font-medium">{fmtQty(p.qty)}</td>
                             <td className="px-3 py-2 text-right tabular-nums">
@@ -854,7 +862,11 @@ ${catsHtml}
                 <tbody>
                   {matrixRowsSorted.map(r => (
                     <tr key={r.productId || r.productName} className="border-b border-gray-50 hover:bg-purple-50/30">
-                      <td className="px-4 py-1.5 text-gray-700">{r.productName}</td>
+                      <td className="px-4 py-1.5 text-gray-700">
+                        {r.productName}
+                        {/* 规格放名字下方一行小字：按日时列数随区间增长，再单开一列会挤掉数量列 */}
+                        {r.spec && <div className="text-[11px] text-gray-400">{r.spec}</div>}
+                      </td>
                       {r.qty.map((q, i) => (
                         <td key={i} className="px-3 py-1.5 text-right tabular-nums text-gray-700">{q > 0 ? fmtQty(q) : ''}</td>
                       ))}
