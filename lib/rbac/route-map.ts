@@ -228,6 +228,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // ── 财务 ────────────────────────────────────────────────────────────────
   { pattern: '/api/invoices/*/post', permission: 'finance.invoice.pay' },
   { pattern: '/api/invoices/*/apply-prepayment', permission: 'finance.invoice.pay' },
+  { pattern: '/api/invoices/*/reissue', methods: ['POST'], permission: 'finance.invoice.create', note: '历史发票换开新发票（20261028 M8），复用开票权限' },
   { pattern: '/api/invoices/ar-summary', permission: 'finance.invoice.read' },
   { pattern: '/api/invoices', methods: R, permission: 'finance.invoice.read' },
   { pattern: '/api/invoices', methods: ['POST'], permission: 'finance.invoice.create' },

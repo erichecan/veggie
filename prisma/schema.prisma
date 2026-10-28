@@ -99,6 +99,9 @@ enum InvoiceStatus {
   POSTED
   PAID
   CANCELLED
+  /// 已被换开新发票取代（20261028 M8）。旧票本身金额/状态不再变动，
+  /// 新开的那张票通过 supersedesInvoiceId 指回它。
+  SUPERSEDED
 }
 
 enum StockMoveType {
@@ -1223,6 +1226,10 @@ model Invoice {
   paidAt            String?
   payments          Payment[]
   creditAllocations CreditNoteAllocation[]
+  /// 换开新发票时指回被取代的旧票（20261028 M8）。@unique：一张旧票只能被换开一次
+  supersedesInvoiceId String?              @unique
+  supersedesInvoice   Invoice?             @relation("InvoiceSupersession", fields: [supersedesInvoiceId], references: [id])
+  supersededBy        Invoice?             @relation("InvoiceSupersession")
 
   @@unique([name])
   @@index([customerId])
