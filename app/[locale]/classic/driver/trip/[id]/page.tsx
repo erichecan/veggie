@@ -523,9 +523,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       <NumericInput
                         step="0.01"
                         placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
-                        defaultValue={r.payment ?? ''}
+                        value={r.payment ?? dueIncTax}
                         onBlur={e => setPayment(r.restaurantId, parseFloat(e.target.value) || 0)}
-                        className="w-48"
+                        className="w-48 rounded-md border-2 border-purple-300 bg-white px-3 py-2 text-base text-gray-900 shadow-sm outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
                       />
                     </div>
                   )}
