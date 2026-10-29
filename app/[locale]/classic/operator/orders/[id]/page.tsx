@@ -297,9 +297,9 @@ export default function SalesOrderDetailPage() {
   async function loadOrderInvoices(orderId: string) {
     setInvoicesLoading(true)
     try {
-      const data = await apiGet<{ linked: OrderInvoiceSummary[]; candidates: OrderInvoiceSummary[] }>(`/api/orders/${orderId}/invoices`)
-      setOrderInvoices(data.linked ?? [])
-      setInvoiceCandidates(data.candidates ?? [])
+      const data = await apiGet<Order & { invoiceData?: { linked: OrderInvoiceSummary[]; candidates: OrderInvoiceSummary[] } }>(`/api/orders/${orderId}?includeInvoices=1`)
+      setOrderInvoices(data.invoiceData?.linked ?? [])
+      setInvoiceCandidates(data.invoiceData?.candidates ?? [])
     } catch {
       setOrderInvoices([])
       setInvoiceCandidates([])
@@ -326,9 +326,10 @@ export default function SalesOrderDetailPage() {
   async function load() {
     setLoading(true)
     try {
-      const ord = await apiGet<Order>(`/api/orders/${id}`)
+      const ord = await apiGet<Order & { invoiceData?: { linked: OrderInvoiceSummary[]; candidates: OrderInvoiceSummary[] } }>(`/api/orders/${id}?includeInvoices=1`)
       setOrder(ord)
-      void loadOrderInvoices(ord.id)
+      setOrderInvoices(ord.invoiceData?.linked ?? [])
+      setInvoiceCandidates(ord.invoiceData?.candidates ?? [])
       setInternalNote(ord.internalNote ?? '')
       setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
       setDeliveryNote((ord as unknown as { deliveryNote?: string }).deliveryNote ?? '')

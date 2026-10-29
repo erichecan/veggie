@@ -17,42 +17,6 @@ const invoiceSummarySelect = {
   createdAt: true,
 } as const
 
-/** Read invoices already linked to this order and recent invoices for the same customer. */
-export async function GET(req: Request, { params }: Context) {
-  const { id } = await params
-  return withAuth(req, async user => {
-    const order = await prisma.order.findUnique({
-      where: { id },
-      select: { id: true, restaurantId: true, salesUserId: true, createdById: true, salesUser: { select: { managerId: true } } },
-    })
-    if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-    if (!isRowVisible(order, salesRowScope(user), record => (record as { createdById?: string | null }).createdById === user.userId)) {
-      return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-    }
-
-    const [linked, recent] = await Promise.all([
-      prisma.invoice.findMany({
-        where: { saleOrderIds: { has: id } },
-        select: invoiceSummarySelect,
-        orderBy: { createdAt: 'desc' },
-      }),
-      order.restaurantId
-        ? prisma.invoice.findMany({
-            where: { customerId: order.restaurantId },
-            select: invoiceSummarySelect,
-            orderBy: { createdAt: 'desc' },
-            take: 100,
-          })
-        : Promise.resolve([]),
-    ])
-
-    return NextResponse.json(serializeApi({
-      linked,
-      candidates: recent.filter(invoice => !invoice.saleOrderIds.includes(id)),
-    }))
-  }, { require: 'sales.order.read' })
-}
-
 /** Link an existing same-customer invoice to this order without changing invoice amounts/status. */
 export async function POST(req: Request, { params }: Context) {
   const { id } = await params

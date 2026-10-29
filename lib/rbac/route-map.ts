@@ -94,7 +94,6 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/orders/*/audit', methods: R, permission: 'sales.order.read_audit' },
   { pattern: '/api/orders/*/audit', methods: ['POST'], permission: 'sales.order.write_audit' },
   { pattern: '/api/orders/*/lines/*', methods: ['DELETE'], permission: 'sales.order.delete_line' },
-  { pattern: '/api/orders/*/invoices', methods: R, permission: 'sales.order.read' },
   { pattern: '/api/orders/*/invoices', methods: ['POST'], permission: 'sales.order.update' },
   { pattern: '/api/orders/*/lines/*', methods: ['PATCH'], permission: 'sales.order.update' },
   { pattern: '/api/orders/*/lines', methods: ['POST'], permission: 'sales.order.update' },

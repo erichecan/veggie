@@ -2225,20 +2225,6 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
- "GET /api/orders/[id]/invoices": {
-  "BOSS": "y",
-  "OPERATOR": "y",
-  "FINANCE": "y",
-  "WAREHOUSE": "y",
-  "DISPATCH": "y",
-  "SALES": "y",
-  "EXTERNAL_SALES": "y",
-  "SORTER": "n",
-  "PICKER": "n",
-  "DRIVER": "n",
-  "RESTAURANT": "n",
-  "OTHER": "n"
- },
  "POST /api/orders/[id]/invoices": {
   "BOSS": "y",
   "OPERATOR": "y",
