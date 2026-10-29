@@ -8,6 +8,7 @@ import {
   computeDuplicateCounts, mergeDuplicateLines as mergeDuplicateLinesCore,
 } from '@/lib/sale-uom'
 import { useSaleUomOptions } from '@/hooks/use-sale-uom-options'
+import { cycleIndex } from '@/lib/cycle-index'
 import { DuplicateProductAlert } from '@/components/classic/DuplicateProductAlert'
 import { round2 } from '@/lib/decimal-helpers'
 import { createPortal } from 'react-dom'
@@ -547,10 +548,10 @@ export default function ClassicPlaceOrderPage() {
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setCustHighlight(i => Math.min(i + 1, filteredCustomers.length - 1))
+      setCustHighlight(i => cycleIndex(i, 1, filteredCustomers.length))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setCustHighlight(i => Math.max(i - 1, 0))
+      setCustHighlight(i => cycleIndex(i, -1, filteredCustomers.length))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (filteredCustomers[custHighlight]) selectCustomer(filteredCustomers[custHighlight])
@@ -569,10 +570,10 @@ export default function ClassicPlaceOrderPage() {
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setPlHighlight(i => Math.min(i + 1, total - 1))
+      setPlHighlight(i => cycleIndex(i, 1, total))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setPlHighlight(i => Math.max(i - 1, 0))
+      setPlHighlight(i => cycleIndex(i, -1, total))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (plHighlight === 0) {

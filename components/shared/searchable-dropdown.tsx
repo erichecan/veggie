@@ -11,6 +11,7 @@
  *   - 外部点击关闭
  */
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { cycleIndex } from '@/lib/cycle-index'
 
 export interface DropdownOption {
   value: string
@@ -108,11 +109,11 @@ export const SearchableDropdown = forwardRef<HTMLDivElement, SearchableDropdownP
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        setHighlightIdx(i => Math.min(i + 1, filtered.length - 1))
+        setHighlightIdx(i => cycleIndex(i, 1, filtered.length))
         break
       case 'ArrowUp':
         e.preventDefault()
-        setHighlightIdx(i => Math.max(i - 1, 0))
+        setHighlightIdx(i => cycleIndex(i, -1, filtered.length))
         break
       case 'Enter':
         e.preventDefault()

@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { DriverSlotInfo } from '@/lib/driver-slot'
+import { cycleIndex } from '@/lib/cycle-index'
 
 interface Props {
   slots: DriverSlotInfo[]
@@ -80,8 +81,8 @@ export function DriverSlotCombobox({ slots, value, onSelect, onClose }: Props) {
   }
 
   function onKey(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, items.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => cycleIndex(h, 1, items.length)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => cycleIndex(h, -1, items.length)) }
     else if (e.key === 'Enter') { e.preventDefault(); choose(highlight) }
     else if (e.key === 'Escape') { e.preventDefault(); onClose() }
   }

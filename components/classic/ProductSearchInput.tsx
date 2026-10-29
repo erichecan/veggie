@@ -2,6 +2,7 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { rankByRelevance } from '@/lib/search-rank'
+import { cycleIndex } from '@/lib/cycle-index'
 
 interface Props<P extends { id: string; name: string; internalRef?: string | null; category?: string | null; qtyOnHand?: number | null; purchaseUomSpec?: string | null }> {
   value: string
@@ -177,10 +178,10 @@ export default function ProductSearchInput<
           if (!open || filtered.length === 0) return
           if (e.key === 'ArrowDown') {
             e.preventDefault()
-            setHighlight(h => Math.min(h + 1, filtered.length - 1))
+            setHighlight(h => cycleIndex(h, 1, filtered.length))
           } else if (e.key === 'ArrowUp') {
             e.preventDefault()
-            setHighlight(h => Math.max(h - 1, 0))
+            setHighlight(h => cycleIndex(h, -1, filtered.length))
           } else if (e.key === 'Enter') {
             e.preventDefault()
             const idx = highlight >= 0 ? highlight : 0
