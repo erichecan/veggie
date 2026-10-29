@@ -319,7 +319,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           </div>
           <h1 className="text-xl font-bold text-gray-900">{isEn ? 'Delivery Execution' : '配送执行'}</h1>
           <div className="flex items-center gap-2 mt-1">
-            <span className="font-mono text-xs text-gray-400">{trip.id}</span>
+            <span className="text-sm font-medium text-gray-600">{trip.name || `Trip · ${trip.id.slice(-6).toUpperCase()}`}</span>
+            <span className="font-mono text-[10px] text-gray-400" title={trip.id}>{trip.id.slice(0, 8)}…</span>
             <TripStatusBadge status={trip.status} />
           </div>
         </div>
@@ -355,7 +356,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           <div className="space-y-2 mb-4">
             {trip.restaurants.map(r => (
               <div key={r.restaurantId} className="flex items-center justify-between text-sm">
-                <span className="text-gray-700">🏪 {r.restaurantName}</span>
+                <span className="text-gray-700">🏪 {r.restaurantName}{r.orderCodes?.length ? <span className="ml-2 text-xs text-purple-700">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</span> : null}</span>
                 <div className="flex items-center gap-2">
                   <span className="text-gray-500">{isEn ? `${r.items.length} SKUs` : `${r.items.length} 种商品`}</span>
                   {r.cargoVerified
@@ -438,6 +439,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   >
                     🏪 {r.restaurantName}
                   </button>
+                  {r.orderCodes?.length ? <span className="text-xs text-purple-700 font-medium">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</span> : null}
                   {r.delivered && <span className="text-xs text-green-600 font-medium">{isEn ? '✓ Delivered' : '✓ 已送达'}</span>}
                   {!r.delivered && hasException && (
                     <span className="text-xs text-orange-600 font-medium">{isEn ? '⚠ Exception' : '⚠ 有异常'}</span>

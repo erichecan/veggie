@@ -65,7 +65,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       // 刻意返回 404 而不是 403：403 会告诉对方"这个 id 确实存在，只是你看不了"
       return NextResponse.json({ error: '行程不存在' }, { status: 404 })
     }
-    return NextResponse.json(serializeApi(trip))
+    const restaurants = trip.restaurants as Array<{ orderIds?: string[]; [key: string]: unknown }>
+    const orderIds = [...new Set(restaurants.flatMap(restaurant => restaurant.orderIds ?? []))]
+    const orders = orderIds.length > 0
+      ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, code: true } })
+      : []
+    const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
+    const tripWithOrderCodes = {
+      ...trip,
+      restaurants: restaurants.map(restaurant => ({
+        ...restaurant,
+        orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
+      })),
+    }
+    return NextResponse.json(serializeApi(tripWithOrderCodes))
   } catch (error) {
     console.error('[GET /api/trips/[id]]', error)
     return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
@@ -104,6 +117,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
 
       const newStatus = data.status?.toUpperCase()
+      if (newStatus === 'IN_PROGRESS' && String(before.status).toUpperCase() !== 'IN_PROGRESS' && !data.departTime) {
+        data.departTime = new Date().toISOString()
+      }
       const trip = await prisma.trip.update({
         where: { id },
         data: {

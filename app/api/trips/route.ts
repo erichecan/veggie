@@ -33,7 +33,21 @@ export async function GET(req: Request) {
         }, driverRowScope(user)),
         orderBy: { createdAt: 'desc' },
       })
-      return NextResponse.json(serializeApi(trips))
+      const allOrderIds = [...new Set(trips.flatMap(trip =>
+        (trip.restaurants as Array<{ orderIds?: string[] }>).flatMap(r => r.orderIds ?? []),
+      ))]
+      const orders = allOrderIds.length > 0
+        ? await prisma.order.findMany({ where: { id: { in: allOrderIds } }, select: { id: true, code: true } })
+        : []
+      const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
+      const tripsWithOrderCodes = trips.map(trip => ({
+        ...trip,
+        restaurants: (trip.restaurants as Array<{ orderIds?: string[]; [key: string]: unknown }>).map(restaurant => ({
+          ...restaurant,
+          orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
+        })),
+      }))
+      return NextResponse.json(serializeApi(tripsWithOrderCodes))
     } catch (error) {
       console.error('[GET /api/trips]', error)
       return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
@@ -110,15 +124,17 @@ export async function POST(req: Request) {
         }
 
         // 按餐馆分组，构建 TripRestaurant[]
-        const grouped = new Map<string, { restaurantId: string; restaurantName: string; orderIds: string[]; items: OrderItem[] }>()
+        const grouped = new Map<string, { restaurantId: string; restaurantName: string; orderIds: string[]; orderCodes: string[]; items: OrderItem[] }>()
         for (const order of orders) {
           const entry = grouped.get(order.restaurantId) ?? {
             restaurantId: order.restaurantId,
             restaurantName: order.restaurantName,
             orderIds: [],
+            orderCodes: [],
             items: [],
           }
           entry.orderIds.push(order.id)
+          entry.orderCodes.push(order.code ?? order.id.slice(-8).toUpperCase())
           // 司机端「应收」按 items 的 subtotal × (1+taxRate) 算含税——必须从 lines 投影（带 taxRate、
           // 且是最新的），与 lib/trip-from-wave.ts 同口径；旧 Order.items 列可能已过期/缺税率。
           // 没有 lines 的历史订单才退回旧 items 列

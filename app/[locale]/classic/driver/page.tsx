@@ -27,7 +27,9 @@ function TripRow({ trip, onClick }: { trip: Trip; onClick: () => void }) {
       onMouseLeave={() => setHover(false)}
       onClick={onClick}
     >
-      <td className="px-4 py-3 font-mono text-xs" style={{ color: PURPLE }}>{trip.id.slice(0, 8)}…</td>
+      <td className="px-4 py-3 text-xs" style={{ color: PURPLE }} title={trip.id}>
+        <span className="font-medium">{trip.name || `Trip · ${trip.id.slice(-6).toUpperCase()}`}</span>
+      </td>
       <td className="px-4 py-3 text-center">
         <TripStatusBadge status={trip.status} />
       </td>
@@ -88,7 +90,7 @@ export default function ClassicDriverPage() {
   }
 
   const searched = searchInput
-    ? trips.filter(t => t.id.toLowerCase().includes(searchInput.toLowerCase()))
+    ? trips.filter(t => t.id.toLowerCase().includes(searchInput.toLowerCase()) || (t.name ?? '').toLowerCase().includes(searchInput.toLowerCase()))
     : trips
   const filtered = filterByFacets(searched, facets, FACET_DEFS)
 
@@ -121,7 +123,7 @@ export default function ClassicDriverPage() {
                   <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Restaurants' : '餐馆数'}</th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Progress' : '完成进度'}</th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Amount Collected' : '实收金额'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Departure Time' : '出发时间'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Start Time' : '开始时间'}</th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Action' : '操作'}</th>
                 </tr>
               </thead>

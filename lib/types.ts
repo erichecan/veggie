@@ -655,6 +655,8 @@ export interface TripRestaurant {
   restaurantName: string
   address?: string
   orderIds: string[]
+  /** 对应销售单号，顺序与 orderIds 一致 */
+  orderCodes?: string[]
   items: OrderItem[]
   delivered: boolean
   payment?: number
