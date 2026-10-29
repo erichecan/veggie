@@ -129,7 +129,8 @@ export default function SendEmailDialog({
                 return (
                   <div
                     key={r.email}
-                    className={`flex items-center gap-3 border-b border-gray-100 px-3 py-2 last:border-b-0 ${
+                    onClick={() => pickTo(r.email)}
+                    className={`flex items-center gap-3 border-b border-gray-100 px-3 py-2 last:border-b-0 cursor-pointer ${
                       isTo ? 'bg-green-50' : ''
                     }`}
                   >
@@ -150,6 +151,7 @@ export default function SendEmailDialog({
                       </div>
                     </div>
                     <label
+                      onClick={e => e.stopPropagation()}
                       className={`flex shrink-0 items-center gap-1 text-xs ${
                         isTo ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-gray-600'
                       }`}

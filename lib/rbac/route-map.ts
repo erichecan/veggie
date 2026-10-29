@@ -277,6 +277,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/customers/bulk', permission: 'master.customer.bulk_import' },
   // 删除/批量删除(20261007)：只删没有业务单据的档案，见 lib/customer-delete.ts；供应商同表共用
   { pattern: '/api/customers/bulk-delete', methods: ['POST'], permission: 'master.customer.delete' },
+  // 客户列表批量修改定价模式(20261028)：沿用改客户权限，并排在 /api/customers/* 通配之前。
+  { pattern: '/api/customers/bulk-price-type', methods: ['POST'], permission: 'master.customer.update' },
   // 供应商批量导入 = Customer{isVendor:true} 批量创建，复用同一个权限点（与 suppliers
   // 导出复用 master.customer.read 是同一个理由：不为同一张表的供应商视图另开权限点）。
   { pattern: '/api/suppliers/bulk', permission: 'master.customer.bulk_import' },

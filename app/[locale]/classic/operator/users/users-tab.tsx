@@ -430,7 +430,7 @@ export default function UsersTab({
       }
       const av = value(a), bv = value(b)
       const compared = typeof av === 'number' && typeof bv === 'number'
-        ? av - bv : String(av).localeCompare(String(bv), isEn ? 'en' : 'zh', { numeric: true })
+        ? av - bv : String(av).localeCompare(String(bv), isEn ? 'en' : 'zh', { numeric: sort.key !== 'email' })
       return (sort.descending ? -compared : compared) || a.userNo - b.userNo
     })
 
