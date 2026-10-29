@@ -629,6 +629,7 @@ export default function ClassicProductsPage() {
       width: 95,
       label: 'Product Spec',
       align: 'center',
+      sortable: true,
       editable: hasDefaultSaleUnit,
       editDisabledHint: noDefaultSaleUnitHint,
       editType: 'text',
