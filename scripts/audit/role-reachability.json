@@ -1777,6 +1777,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "POST /api/invoices/[id]/reissue": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "DELETE /api/invoices/[id]": {
   "BOSS": "y",
   "OPERATOR": "y",
