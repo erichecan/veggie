@@ -360,6 +360,10 @@ model Product {
   // 恒为 1:1，从未真正用过多变体，模板层是多余的一层。
   type             ProductType @default(PRODUCT)
   canBeSold        Boolean     @default(true)
+  /// 客户门户（含匿名 /shop 目录）是否展示、能否在门户下单（20261028）。false = 门户里看不到、
+  /// 门户下单被拒，但内部下单 / 报价单照常可用——与 canBeSold（内外都停售）是两回事。默认 true，
+  /// 上线时不会有任何商品消失
+  showInPortal     Boolean     @default(true)
   canBePurchased   Boolean     @default(true)
   description      String?
   saleDescription  String?

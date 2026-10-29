@@ -54,6 +54,13 @@ interface AllProduct {
 }
 
 interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
+interface OrderInvoiceSummary {
+  id: string
+  name: string
+  totalIncTax: number
+  status: string
+  createdAt: string
+}
 
 // 与报价单详情页(quotations/[id])同一份信用冻结口径:重新确认(PENDING→CONFIRMED)
 // 也要过这道闸，否则这里新加的 Confirm 按钮就成了绕过信用冻结的后门。
@@ -144,6 +151,12 @@ export default function SalesOrderDetailPage() {
   const [externalNote, setExternalNote] = useState('')
   const [deliveryNote, setDeliveryNote] = useState('')
   const [showDeliveryNoteModal, setShowDeliveryNoteModal] = useState(false)
+  const [showInvoicesModal, setShowInvoicesModal] = useState(false)
+  const [orderInvoices, setOrderInvoices] = useState<OrderInvoiceSummary[]>([])
+  const [invoiceCandidates, setInvoiceCandidates] = useState<OrderInvoiceSummary[]>([])
+  const [invoiceToLink, setInvoiceToLink] = useState('')
+  const [invoicesLoading, setInvoicesLoading] = useState(false)
+  const [linkingInvoice, setLinkingInvoice] = useState(false)
   const [savingDeliveryNote, setSavingDeliveryNote] = useState(false)
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [deliveryDate, setDeliveryDate] = useState('')
@@ -281,11 +294,42 @@ export default function SalesOrderDetailPage() {
 
   // P1-5: audit log
 
+  async function loadOrderInvoices(orderId: string) {
+    setInvoicesLoading(true)
+    try {
+      const data = await apiGet<Order & { invoiceData?: { linked: OrderInvoiceSummary[]; candidates: OrderInvoiceSummary[] } }>(`/api/orders/${orderId}?includeInvoices=1`)
+      setOrderInvoices(data.invoiceData?.linked ?? [])
+      setInvoiceCandidates(data.invoiceData?.candidates ?? [])
+    } catch {
+      setOrderInvoices([])
+      setInvoiceCandidates([])
+    } finally {
+      setInvoicesLoading(false)
+    }
+  }
+
+  async function linkInvoiceToOrder() {
+    if (!order || !invoiceToLink) return
+    setLinkingInvoice(true)
+    try {
+      await apiPost(`/api/orders/${order.id}/invoices`, { invoiceId: invoiceToLink })
+      toast.success(isEn ? 'Invoice linked to order' : '发票已关联到订单')
+      setInvoiceToLink('')
+      await loadOrderInvoices(order.id)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (isEn ? 'Failed to link invoice' : '关联发票失败'))
+    } finally {
+      setLinkingInvoice(false)
+    }
+  }
+
   async function load() {
     setLoading(true)
     try {
-      const ord = await apiGet<Order>(`/api/orders/${id}`)
+      const ord = await apiGet<Order & { invoiceData?: { linked: OrderInvoiceSummary[]; candidates: OrderInvoiceSummary[] } }>(`/api/orders/${id}?includeInvoices=1`)
       setOrder(ord)
+      setOrderInvoices(ord.invoiceData?.linked ?? [])
+      setInvoiceCandidates(ord.invoiceData?.candidates ?? [])
       setInternalNote(ord.internalNote ?? '')
       setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
       setDeliveryNote((ord as unknown as { deliveryNote?: string }).deliveryNote ?? '')
@@ -1029,6 +1073,19 @@ export default function SalesOrderDetailPage() {
                   <div className="text-gray-500">{isEn ? 'Stock' : '库存'}</div>
                 </div>
               </button>
+              <button
+                type="button"
+                onClick={() => setShowInvoicesModal(true)}
+                title={isEn ? 'View and link invoices for this order' : '查看并关联这张订单的发票'}
+                data-testid="order-invoices"
+                className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 transition-colors"
+              >
+                <span className="text-xl">🧾</span>
+                <div className="text-xs text-left">
+                  <div className="font-bold text-gray-800">{orderInvoices.length}</div>
+                  <div className="text-gray-500">Invoices</div>
+                </div>
+              </button>
             </div>
           </div>
 
@@ -1474,6 +1531,76 @@ export default function SalesOrderDetailPage() {
               >
                 {savingDeliveryNote ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
               </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInvoicesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowInvoicesModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-xl mx-4" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">{isEn ? 'Invoices' : '关联发票'}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{displayOrderCode(order)} · {orderInvoices.length} {isEn ? 'linked' : '张已关联'}</p>
+              </div>
+              <button type="button" onClick={() => setShowInvoicesModal(false)} className="text-gray-400 hover:text-gray-700 text-xl">×</button>
+            </div>
+            <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">
+              {invoicesLoading ? (
+                <p className="text-sm text-gray-500">{isEn ? 'Loading invoices…' : '正在加载发票…'}</p>
+              ) : orderInvoices.length === 0 ? (
+                <p className="text-sm text-gray-500">{isEn ? 'No invoices are linked to this order yet.' : '这张订单暂时没有关联发票。'}</p>
+              ) : (
+                <div className="divide-y divide-gray-100 border border-gray-200 rounded">
+                  {orderInvoices.map(invoice => (
+                    <button
+                      type="button"
+                      key={invoice.id}
+                      onClick={() => router.push(`${prefix}/classic/finance/invoices/${invoice.id}`)}
+                      className="w-full px-3 py-2.5 text-left hover:bg-purple-50 flex items-center justify-between gap-3"
+                    >
+                      <span>
+                        <span className="block text-sm font-medium text-[#714b67]">{invoice.name}</span>
+                        <span className="block text-xs text-gray-500">{invoice.status} · {new Date(invoice.createdAt).toLocaleDateString('en-GB')}</span>
+                      </span>
+                      <span className="text-sm font-medium text-gray-800">€{Number(invoice.totalIncTax).toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 pt-4">
+                <div className="text-sm font-medium text-gray-800 mb-2">{isEn ? 'Link an existing invoice' : '关联已有发票'}</div>
+                {invoiceCandidates.length === 0 ? (
+                  <p className="text-xs text-gray-500">{isEn ? 'No unlinked invoices for this customer.' : '该客户没有可关联的未关联发票。'}</p>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <SearchableDropdown
+                      options={invoiceCandidates.map(invoice => ({
+                        value: invoice.id,
+                        label: invoice.name,
+                        sublabel: `${invoice.status} · €${Number(invoice.totalIncTax).toFixed(2)}`,
+                      }))}
+                      value={invoiceToLink}
+                      onChange={setInvoiceToLink}
+                      placeholder={isEn ? 'Choose an invoice…' : '选择发票…'}
+                      searchPlaceholder={isEn ? 'Search invoice…' : '搜索发票…'}
+                      className="flex-1 min-w-0"
+                      maxHeight="max-h-48"
+                    />
+                    <button
+                      type="button"
+                      onClick={linkInvoiceToOrder}
+                      disabled={!invoiceToLink || linkingInvoice}
+                      className="px-3 py-2 text-sm rounded bg-[#714b67] text-white hover:bg-[#5d3d55] disabled:opacity-40 whitespace-nowrap"
+                    >
+                      {linkingInvoice ? (isEn ? 'Linking…' : '关联中…') : (isEn ? 'Link' : '关联')}
+                    </button>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-gray-500">{isEn ? 'Only invoices for this order’s customer are listed. Linking does not change invoice amounts or status.' : '只显示同一客户的发票；关联操作不会修改发票金额或状态。'}</p>
               </div>
             </div>
           </div>

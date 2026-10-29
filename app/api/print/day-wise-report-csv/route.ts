@@ -22,8 +22,8 @@ const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'DRIVER', 'FINANCE', 'SALES']
 // 「赠品」是独立一列而不是把金额写成 GIFT —— CSV 给 Excel 算，金额列混进文字
 // 会让整列变文本、求和失效。理由与 lib/export/order-export-rows.ts giftFlag 一致。
 const DETAIL_HEADERS = {
-  zh: ['日期', '订单号', '客户', '配送批次', '产品', '赠品', '数量', '单价', '税率(%)', '金额'],
-  en: ['Date', 'Order No', 'Customer', 'Batch', 'Product', 'Gift', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
+  zh: ['日期', '订单号', '客户', '配送批次', '产品', '规格 / 描述', '赠品', '数量', '单价', '税率(%)', '金额'],
+  en: ['Date', 'Order No', 'Customer', 'Batch', 'Product', 'Spec / Description', 'Gift', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
 } as const
 const FILENAME = {
   zh: { detail: '产品明细', summary: '订单汇总' },
@@ -52,6 +52,7 @@ export async function GET(req: Request) {
       weekdays: searchParams.get('weekdays')?.split(',').map(Number).filter(n => !isNaN(n)) ?? [],
       categoryIds: searchParams.get('categoryIds')?.split(',').filter(Boolean) ?? [],
       salesUserId: searchParams.get('salesUserId') ?? '',
+      orderCodes: searchParams.get('orderCodes')?.split(',').filter(Boolean) ?? [],
     })
 
     const rangeTag = fromDate === toDate ? fromDate : `${fromDate}_${toDate}`
@@ -63,6 +64,7 @@ export async function GET(req: Request) {
         l.customerName,
         l.deliveryBatch,
         l.productName,
+        l.spec ?? '',
         giftFlag(l.isGift, lang),
         l.qty,
         money(l.unitPrice),

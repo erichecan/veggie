@@ -64,7 +64,7 @@ export async function GET(req: Request) {
       // 回头去跟"商品网格"那份已加载列表做 join —— 网格分页后，常购的商品未必在当前页里，
       // 那种 join 会随机丢商品（见本次改动背景）。
       const products = await prisma.product.findMany({
-        where: { id: { in: topStats.map((s) => s.productId) }, canBeSold: true },
+        where: { id: { in: topStats.map((s) => s.productId) }, canBeSold: true, showInPortal: true },
         include: { uom: { select: { id: true, name: true } }, saleUoms: CUSTOMER_PRODUCT_SALE_UOM_INCLUDE },
       })
       const cards = await buildCustomerProductCards(prisma, customer, products)

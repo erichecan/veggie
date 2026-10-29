@@ -146,6 +146,7 @@ function BatchCard({
   onConfirmReprint,
   canUnlock,
   filter,
+  batchSeqs,
   isEn,
   onPrint,
   onLockChange,
@@ -162,6 +163,8 @@ function BatchCard({
   /** 当前生效的内容筛选（客户/商品）；必须原样带进每一个打印入口，
       否则会出现"屏幕上筛了、打出来是全量"的错打 */
   filter: PrintContentFilter
+  /** 当前批次号筛选（托盘 seq）；整卡打印按钮必须带上，否则会把同波次其它批次一起打出来 */
+  batchSeqs: number[] | undefined
   isEn: boolean
   onPrint: () => void
   onLockChange: () => void
@@ -208,9 +211,9 @@ function BatchCard({
       notifyFirstLock()
       if (type === 'summary') {
         // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], lang, ...filter }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], batchSeqs, lang, ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], lang, ...filter })
+        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], batchSeqs, lang, ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -235,7 +238,7 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
       // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant, expand: expandMode, lang, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], batchSeqs, variant, expand: expandMode, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -553,6 +556,7 @@ function BatchSections({
   onConfirmReprint,
   canUnlock,
   filter,
+  batchSeqs,
   isEn,
   onPrint,
   onLockChange,
@@ -564,6 +568,7 @@ function BatchSections({
   onConfirmReprint: (waveId: string, docType: string, label: string) => boolean
   canUnlock: boolean
   filter: PrintContentFilter
+  batchSeqs: number[] | undefined
   isEn: boolean
   onPrint: (waveId: string) => void
   onLockChange: () => void
@@ -584,6 +589,7 @@ function BatchSections({
         onConfirmReprint={(docType: string, label: string) => onConfirmReprint(g.waveId, docType, label)}
         canUnlock={canUnlock}
         filter={filter}
+        batchSeqs={batchSeqs}
         isEn={isEn}
         onPrint={() => onPrint(g.waveId)}
         onLockChange={onLockChange}
@@ -938,6 +944,9 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   const isFiltered = driverFilter.length > 0 || timeFilter.length > 0 || batchFilter.length > 0
     || hasContentFilter(contentFilter)
   const filteredWaveIds = isFiltered ? batchGroups.map(g => g.waveId) : undefined
+  // 批次号筛选是「波次内」的（裁到托盘），光传 waveIds 服务端会打整个波次——
+  // 勾「批次 2」却连批次 1 一起打出来（20261028 客户反馈）。所有打印入口都要带上它
+  const filteredBatchSeqs = batchFilter.length > 0 ? batchFilter.map(Number) : undefined
   const visibleOrderCount = batchGroups.reduce((s, g) => s + g.orders.length, 0)
 
   // 顶部「全部打印」也要给每个可见波次自动上锁，跟拣货单一致——否则批量打印销售单后
@@ -966,7 +975,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, lang, ...contentFilter })
+      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, batchSeqs: filteredBatchSeqs, lang, ...contentFilter })
       queuePrint(html)
     } catch {
       toast.error(isEn ? 'Print failed' : '打印失败')
@@ -988,7 +997,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant, expand: bulkExpandMode, lang, ...contentFilter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, batchSeqs: filteredBatchSeqs, variant, expand: bulkExpandMode, lang, ...contentFilter }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }
@@ -1213,6 +1222,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
           onConfirmReprint={confirmReprint}
           canUnlock={canUnlock}
           filter={contentFilter}
+          batchSeqs={filteredBatchSeqs}
           isEn={isEn}
           onPrint={markPrinted}
           onLockChange={refresh}

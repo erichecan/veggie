@@ -8,6 +8,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { rankByRelevance } from '@/lib/search-rank'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
+import { cycleIndex } from '@/lib/cycle-index'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -129,8 +130,8 @@ export default function InventoryAdjustmentsPage() {
 
   function handleAdjKey(e: React.KeyboardEvent) {
     const items = prodMatches
-    if (e.key === 'ArrowDown') { e.preventDefault(); setProdHighlight(i => Math.min(i + 1, items.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setProdHighlight(i => Math.max(i - 1, 0)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setProdHighlight(i => cycleIndex(i, 1, items.length)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setProdHighlight(i => cycleIndex(i, -1, items.length)) }
     else if (e.key === 'Enter') { e.preventDefault(); if (items[prodHighlight]) selectAdjProduct(items[prodHighlight]) }
     else if (e.key === 'Escape') { e.preventDefault(); setProdSearch(''); setProdHighlight(0) }
   }

@@ -127,6 +127,8 @@ export interface ProductTemplate {
   customerTaxRate?: number   // 客户税率 0.135 / 0.23 / 0，可为空（未填写）
   type: ProductType
   canBeSold: boolean
+  /** 客户门户是否展示 / 能否在门户下单，默认 true（见 schema Product.showInPortal） */
+  showInPortal?: boolean
   canBePurchased: boolean
   description?: string       // 内部备注
   saleDescription?: string   // 销售描述（打印到报价单）
@@ -227,6 +229,7 @@ export interface Product {
   // ↓ 20260825 从 ProductTemplate 并入（合表重构，ProductTemplate 已删）
   type?: ProductType
   canBeSold?: boolean
+  showInPortal?: boolean
   canBePurchased?: boolean
   description?: string
   saleDescription?: string

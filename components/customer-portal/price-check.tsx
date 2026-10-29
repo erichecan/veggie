@@ -22,6 +22,8 @@ interface DiffRow extends PriceCheckSourceLine {
   newPrice: number | null
   taxRate: number
   available: boolean
+  /** 现存量 <= 0：门户不允许下单（20261028），同 available=false 不会加入，但提示文案不同 */
+  outOfStock: boolean
   changed: boolean
   checked: boolean
 }
@@ -33,6 +35,7 @@ interface ProductCard {
   customerPrice: number | null
   customerTaxRate: number
   status: string
+  outOfStock?: boolean
 }
 
 /**
@@ -55,7 +58,8 @@ export function usePriceCheck(isEn: boolean) {
       const byId = new Map(data.products.map((p) => [p.id, p]))
       const nextRows: DiffRow[] = lines.map((l) => {
         const card = byId.get(l.productId)
-        const available = !!card && card.status === 'ACTIVE' && card.customerPrice != null
+        const outOfStock = !!card?.outOfStock
+        const available = !!card && card.status === 'ACTIVE' && card.customerPrice != null && !outOfStock
         const newPrice = card?.customerPrice ?? null
         const changed = available && newPrice != null && Math.abs(newPrice - l.referencePrice) > 0.01
         return {
@@ -65,6 +69,7 @@ export function usePriceCheck(isEn: boolean) {
           newPrice,
           taxRate: toPercent(card?.customerTaxRate) ?? 0,
           available,
+          outOfStock,
           changed,
           checked: available,
         }
@@ -118,7 +123,11 @@ export function usePriceCheck(isEn: boolean) {
               <div className="min-w-0 flex-1">
                 <p className="truncate">{r.name} × {r.quantity}{r.uomName ? ` ${r.uomName}` : ''}</p>
                 {!r.available && (
-                  <p className="text-xs text-red-500">{isEn ? 'No longer available — will not be added' : '已下架/暂无报价，不会加入'}</p>
+                  <p className="text-xs text-red-500">
+                    {r.outOfStock
+                      ? (isEn ? 'Out of stock — will not be added' : '暂时缺货，不会加入')
+                      : (isEn ? 'No longer available — will not be added' : '已下架/暂无报价，不会加入')}
+                  </p>
                 )}
                 {r.available && r.changed && (
                   <p className="text-xs text-amber-600">

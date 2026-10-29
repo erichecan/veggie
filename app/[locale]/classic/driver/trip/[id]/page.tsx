@@ -12,6 +12,7 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import { TripStatusBadge } from '@/components/shared/status-badge'
 import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
 import SignaturePad from '@/components/driver/SignaturePad'
+import { orderIncTaxTotal } from '@/lib/order-items'
 
 const PURPLE = '#875A7B'
 
@@ -398,7 +399,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       {(tripStatus === 'in_progress' || tripStatus === 'completed') && (
         <div className="rounded-xl p-4 mb-5 flex justify-between items-center" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
           <span className="font-medium" style={{ color: PURPLE }}>{isEn ? '💰 Total Collected' : '💰 累计实收'}</span>
-          <span className="text-2xl font-bold" style={{ color: PURPLE }}>€{trip.totalPayment.toFixed(2)}</span>
+          {/* 直接按各站已填实收求和，而不是读 trip.totalPayment：后者建行程时预填的是**税前**计划金额
+              （lib/trip-from-wave.ts），司机还没收任何钱时这里就显示一个不含税的数，标签却是「累计实收」。
+              各站填完实收后两者本来就相等（markDelivered / complete 时同样按 payment 求和回写） */}
+          <span className="text-2xl font-bold" style={{ color: PURPLE }}>€{trip.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0).toFixed(2)}</span>
         </div>
       )}
 
@@ -406,6 +410,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       <div className="space-y-3">
         {trip.restaurants.map((r, i) => {
           const hasException = r.returns.length > 0
+          // 应收必须是**含税**金额：item.subtotal 是税前（SSOT），之前直接求和当「应收」，
+          // 司机照着少收了税（20261028 客户反馈：司机端 €29.37、客户门户 €30.95）。
+          // 与会计核销司机现金（lib/accounting/driver-cash.ts）、销售单打印同一个 orderIncTaxTotal
+          const dueExTax = Math.round(r.items.reduce((s, i) => s + i.subtotal, 0) * 100) / 100
+          const dueIncTax = orderIncTaxTotal(r.items)
+          const dueTax = Math.round((dueIncTax - dueExTax) * 100) / 100
           const isProcessed = r.delivered || hasException
           const borderColor = r.delivered ? 'border-green-300' : hasException ? 'border-orange-300' : 'border-gray-200'
           const headerBg = r.delivered ? 'bg-green-50' : hasException ? 'bg-orange-50' : 'bg-gray-50'
@@ -456,7 +466,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   className="flex items-center gap-3 text-sm text-gray-500 shrink-0 ml-2"
                   onClick={() => setExpandedRest(expandedRest === r.restaurantId ? null : r.restaurantId)}
                 >
-                  <span>{isEn ? 'Due' : '应收'} €{r.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}</span>
+                  <span>{isEn ? 'Due' : '应收'} €{dueIncTax.toFixed(2)}</span>
                   {r.payment !== undefined && <span className="font-medium" style={{ color: PURPLE }}>{isEn ? 'Collected' : '实收'} €{r.payment.toFixed(2)}</span>}
                   <span className="text-gray-400">{expandedRest === r.restaurantId ? '▲' : '▼'}</span>
                 </button>
@@ -484,10 +494,24 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t border-gray-200">
-                        <td colSpan={3} className="pt-2 text-right font-medium text-gray-700">{isEn ? 'Total Due' : '应收合计'}</td>
+                      {dueTax > 0 && (
+                        <>
+                          <tr className="border-t border-gray-200">
+                            <td colSpan={3} className="pt-2 text-right text-gray-500">{isEn ? 'Subtotal (excl. tax)' : '合计（不含税）'}</td>
+                            <td className="pt-2 text-right text-gray-600">€{dueExTax.toFixed(2)}</td>
+                          </tr>
+                          <tr>
+                            <td colSpan={3} className="pt-1 text-right text-gray-500">{isEn ? 'Tax' : '税额'}</td>
+                            <td className="pt-1 text-right text-gray-600">€{dueTax.toFixed(2)}</td>
+                          </tr>
+                        </>
+                      )}
+                      <tr className={dueTax > 0 ? '' : 'border-t border-gray-200'}>
+                        <td colSpan={3} className="pt-2 text-right font-medium text-gray-700">
+                          {dueTax > 0 ? (isEn ? 'Total Due (incl. tax)' : '应收合计（含税）') : (isEn ? 'Total Due' : '应收合计')}
+                        </td>
                         <td className="pt-2 text-right font-bold" style={{ color: PURPLE }}>
-                          €{r.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}
+                          €{dueIncTax.toFixed(2)}
                         </td>
                       </tr>
                     </tfoot>

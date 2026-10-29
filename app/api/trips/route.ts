@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import type { OrderItem, TripRestaurant } from '@/lib/types'
+import { orderItemsFromLines } from '@/lib/order-items'
 import { driverRowScope, withDriverScope } from '@/lib/row-scope'
 import { syncOrderStock } from '@/lib/order-stock'
 
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
         // 查订单
         const orders = await prisma.order.findMany({
           where: { id: { in: orderIds } },
+          include: { lines: { orderBy: { sequence: 'asc' } } },
         })
         if (orders.length === 0) {
           return NextResponse.json({ error: '所选订单不存在' }, { status: 400 })
@@ -117,7 +119,12 @@ export async function POST(req: Request) {
             items: [],
           }
           entry.orderIds.push(order.id)
-          const orderItems = order.items as unknown as OrderItem[]
+          // 司机端「应收」按 items 的 subtotal × (1+taxRate) 算含税——必须从 lines 投影（带 taxRate、
+          // 且是最新的），与 lib/trip-from-wave.ts 同口径；旧 Order.items 列可能已过期/缺税率。
+          // 没有 lines 的历史订单才退回旧 items 列
+          const orderItems = order.lines.length > 0
+            ? orderItemsFromLines(serializeApi(order.lines) as unknown as Parameters<typeof orderItemsFromLines>[0])
+            : (order.items as unknown as OrderItem[])
           entry.items.push(...orderItems)
           grouped.set(order.restaurantId, entry)
         }

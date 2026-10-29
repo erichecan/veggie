@@ -20,6 +20,8 @@ export interface MatrixSourceLine {
   date: string
   productId: string
   productName: string
+  /** 订单行 Description 快照（OrderLine.spec），可缺省 */
+  spec?: string
   uomName: string
   qty: number
   amount: number
@@ -39,6 +41,9 @@ export interface MatrixColumn {
 export interface MatrixRow {
   productId: string
   productName: string
+  /** 该商品在区间内出现过的全部规格（去重，按首次出现顺序，' / ' 分隔）——
+   *  同一商品按不同可售单位下单时规格不同，只取一条会误导采购 */
+  spec: string
   uomName: string
   sequence: number
   /** 与 columns 同序的数量 */
@@ -89,6 +94,7 @@ export function buildSalesMatrix(
 
   const colIndex = new Map(columns.map((c, i) => [c.key, i]))
   const rowMap = new Map<string, MatrixRow>()
+  const specsByKey = new Map<string, Set<string>>()
 
   for (const l of lines) {
     const key = l.productId || l.productName
@@ -97,6 +103,7 @@ export function buildSalesMatrix(
       row = {
         productId: l.productId,
         productName: l.productName,
+        spec: '',
         uomName: l.uomName,
         sequence: l.sequence,
         qty: new Array(columns.length).fill(0),
@@ -107,7 +114,9 @@ export function buildSalesMatrix(
         forecastQuantity: 0,
       }
       rowMap.set(key, row)
+      specsByKey.set(key, new Set())
     }
+    if (l.spec) specsByKey.get(key)!.add(l.spec)
     const ci = colIndex.get(granularity === 'week' ? String(weekdayIndex(l.date)) : l.date)
     if (ci === undefined) continue
     row.qty[ci] += l.qty
@@ -115,6 +124,8 @@ export function buildSalesMatrix(
     row.totalQty += l.qty
     row.totalAmount += l.amount
   }
+
+  for (const [key, row] of rowMap) row.spec = [...specsByKey.get(key)!].join(' / ')
 
   const rows = [...rowMap.values()]
   for (const r of rows) {
@@ -137,6 +148,7 @@ export function buildSalesMatrix(
 
 export interface MatrixCsvLabels {
   product: string
+  spec: string
   uom: string
   total: string
   amount: string
@@ -157,6 +169,7 @@ export function matrixToCsvRows(
 ): { headers: string[]; rows: (string | number)[][] } {
   const headers = [
     labels.product,
+    labels.spec,
     labels.uom,
     ...matrix.columns.map(c => c.label),
     labels.total,
@@ -166,6 +179,7 @@ export function matrixToCsvRows(
   ]
   const rows: (string | number)[][] = matrix.rows.map(r => [
     r.productName,
+    r.spec,
     r.uomName,
     ...r.qty,
     r.totalQty,
@@ -175,6 +189,7 @@ export function matrixToCsvRows(
   ])
   rows.push([
     labels.grand,
+    '',
     '',
     ...matrix.grand.qty,
     matrix.grand.totalQty,

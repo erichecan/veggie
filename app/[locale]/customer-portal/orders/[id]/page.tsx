@@ -83,8 +83,12 @@ export default function CustomerOrderDetailPage() {
   // 行上的 taxRate 存的是百分数（13.5）。order.totalAmount 是**税前**口径（系统 SSOT），
   // 此前本页只显示这一个数且不加标注，客户无从知道账单上还要加 VAT。
   // 注意：这是普通常量不是 hook，放在提前 return 之后没有 hooks 顺序问题。
-  const orderTax = (order.lines ?? []).reduce(
-    (s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
+  // 税率归一与 lib/order-items.ts orderIncTaxTotal 同口径（>1 视为百分数，否则视为小数）——
+  // 早期餐馆下单入口存的是小数（0.135），一律 /100 会把税算成近乎 0
+  const orderTax = (order.lines ?? []).reduce((s, l) => {
+    const rate = Number(l.taxRate ?? 0)
+    return s + Number(l.subtotal) * (rate > 1 ? rate / 100 : rate)
+  }, 0)
 
   return (
     <div className="space-y-5">

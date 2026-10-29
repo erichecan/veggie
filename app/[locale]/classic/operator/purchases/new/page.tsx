@@ -21,6 +21,7 @@ import PdfSidePanel from './_components/PdfSidePanel'
 import PriceHistoryModal from './_components/PriceHistoryModal'
 import CopyFromHistoryModal, { type HistoryPO } from './_components/CopyFromHistoryModal'
 import { rankByRelevance } from '@/lib/search-rank'
+import { cycleIndex } from '@/lib/cycle-index'
 import { PURCHASE_TAX_RATES, nearestPurchaseTaxRate, defaultPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
@@ -287,10 +288,10 @@ export default function NewPurchaseOrderPage() {
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setSupHighlight(i => Math.min(i + 1, filteredSuppliers.length - 1))
+      setSupHighlight(i => cycleIndex(i, 1, filteredSuppliers.length))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setSupHighlight(i => Math.max(i - 1, 0))
+      setSupHighlight(i => cycleIndex(i, -1, filteredSuppliers.length))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (filteredSuppliers[supHighlight]) selectSupplier(filteredSuppliers[supHighlight])

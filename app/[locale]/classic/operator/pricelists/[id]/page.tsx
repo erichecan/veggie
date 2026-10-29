@@ -70,7 +70,7 @@ interface PriceReference {
 }
 
 /** Pricelist Items 表格可点击表头排序的列；点第三次回到默认的 sequence 顺序 */
-type ItemSortKey = 'productNo' | 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'price' | 'priceDiscount' | 'cost' | 'publicPrice'
+type ItemSortKey = 'productNo' | 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'price' | 'priceDiscount' | 'cost'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -600,25 +600,19 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     const baseCost = scopedProduct?.standardPrice
     const basePublicPrice = scopedProduct?.listPrice
     // computeItemPrice 必须吃未换算的牌价（决策#6：formula/percentage 规则永远拿基础单位
-    // 牌价算折扣），只有下面两列"给人看"的参考数字才按规则自己的 uomId 换算。
+    // 牌价算折扣）；成本参考值再按规则限定的单位换算。
     const estimatedPrice = scopedProduct
       ? computeItemPrice(item, scopedProduct, basePublicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
       : undefined
-    // 20261025 客户反馈：同一商品 CASE 规则和 PACK 规则，Public Cost Price/Sale Price
-    // 两列显示成一模一样的数字——因为之前这两列恒读商品主档基础单位的值，不看 item.uomId。
-    // 跟编辑弹窗里"定价参考"面板用同一套换算（priceOf/factorOf），口径对齐。
+    // 20261025 客户反馈：成本参考值需与编辑弹窗一致，按所选销售单位换算。
     const saleUomRows = scopedProduct?.saleUoms
     const cost = item.uomId && saleUomRows && baseCost != null
       ? baseCost * factorOf(saleUomRows, item.uomId)
       : baseCost
-    const publicPrice = item.uomId && saleUomRows && basePublicPrice != null
-      ? priceOf(saleUomRows, item.uomId, basePublicPrice)
-      : basePublicPrice
     return {
       item,
       productNo: scopedProduct?.productNo,
       cost,
-      publicPrice,
       estimatedPrice,
       applyLabel: applyOnLabel(item, allProductsForLabels, categories, isEn),
       categoryLabel: productCategoryLabel(item, scopedProduct, categories, isEn),
@@ -652,7 +646,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           case 'price': return (a.priceValue - b.priceValue) * dir
           case 'priceDiscount': return (a.priceDiscountValue - b.priceDiscountValue) * dir
           case 'cost': return ((a.cost ?? 0) - (b.cost ?? 0)) * dir
-          case 'publicPrice': return ((a.publicPrice ?? 0) - (b.publicPrice ?? 0)) * dir
           default: return 0
         }
       })
@@ -910,9 +903,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               <table className="w-full text-xs" style={{ borderTop: '1px solid #e9e9e9' }}>
                 <thead style={{ background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
                   <tr>
-                    {/* 上/下移+删除紧跟在 Applicable On 前面（20260907 客户反馈：这几个按钮之前
-                        排在最后一列 Sale Price 之后，表格一宽就要横向滚很远才找得到，
-                        看起来像"这个功能没有了"）。 */}
+                    {/* 上/下移+删除紧跟在 Applicable On 前面，方便在宽表中找到。 */}
                     {editMode && <th className="w-16 px-2 py-2" />}
                     <SortableTh sortKey="productNo" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2 w-16">{isEn ? 'Product No' : '商品编号'}</SortableTh>
                     <SortableTh sortKey="applyOn" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-4 py-2 min-w-[220px]">Applicable On</SortableTh>
@@ -920,10 +911,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
                     <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">End Date</SortableTh>
                     <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Product Category</SortableTh>
-                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2 min-w-[160px]">Price</SortableTh>
+                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2 min-w-[160px]">Public Price</SortableTh>
                     <SortableTh sortKey="priceDiscount" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Price Discount</SortableTh>
                     <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Cost Price</SortableTh>
-                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Sale Price</SortableTh>
                     <th className="text-center px-3 py-2">{isEn ? 'Selectable' : '可售'}</th>
                   </tr>
                 </thead>
@@ -953,7 +943,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         categories={categories}
                         uoms={uoms}
                         cost={row.cost}
-                        publicPrice={row.publicPrice}
                         estimatedPrice={row.estimatedPrice}
                         productCategoryLabel={row.categoryLabel}
                         showDelete={editMode}
@@ -1169,7 +1158,7 @@ function SortableTh({ sortKey, itemSort, onSort, className, children }: {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, onEditTiers, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
+function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, cost, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, onEditTiers, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
   item: OdooPricelistItem
   productNo: number | undefined
   inlineEdit: boolean
@@ -1178,7 +1167,6 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
   categories: ProductCategory[]
   uoms: Uom[]
   cost: number | undefined
-  publicPrice: number | undefined
   estimatedPrice: number | undefined
   productCategoryLabel: string
   showDelete: boolean
@@ -1316,9 +1304,6 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
         {cost != null ? cost.toFixed(2) : ''}
-      </td>
-      <td className="px-3 py-1.5 text-right text-gray-500">
-        {publicPrice != null ? publicPrice.toFixed(2) : ''}
       </td>
       <td className="px-3 py-1.5 text-center" onClick={e => e.stopPropagation()}>
         {inlineEdit ? (
@@ -1506,10 +1491,7 @@ function ItemDialog({
   // "基准单位成本 ÷ 这个单位的价"算出一个没有意义的数字（同类问题在订单侧 20260827 修过）。
   const uomFactor = item.uomId ? (saleUomOptions.find(o => o.uomId === item.uomId)?.factor ?? 1) : 1
   const scopedCostVal = templateCostVal * uomFactor
-  // Public Price 这一行只是给人看的参考，不喂进 computeItemPrice（那边决策#6 要求 formula/
-  // percentage 规则永远拿未换算的牌价去算折扣）——所以这里单独用 priceOf() 算"选中单位自己卖多少钱"，
-  // 跟上面 Cost 那行放在一起才不会出现"成本是一罐的价，牌价却是一箱的价"这种对不上的错觉
-  // (20261025 客户反馈：Snapzy 截图里 cost 按 can 换算了、public price 没换算)。
+  // 商品主档 Public Price 作为公式基准；按所选单位单独换算，仅用于定价参考展示。
   const scopedPublicPriceVal = item.uomId ? priceOf(saleUomOptions, item.uomId, templatePublicPriceVal) : templatePublicPriceVal
   const estimatedPrice = scopedProduct
     ? computeItemPrice(item, scopedProduct, templatePublicPriceVal, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined

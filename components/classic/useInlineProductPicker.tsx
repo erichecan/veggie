@@ -23,6 +23,7 @@
  *    立刻量会拿到 null，所以隔一个 20ms 的 timeout 再量。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { cycleIndex } from '@/lib/cycle-index'
 import { createPortal } from 'react-dom'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -279,13 +280,13 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setArrowUsed(true)
-      setHighlight(i => Math.min(i + 1, items.length - 1))
+      setHighlight(i => cycleIndex(i, 1, items.length))
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
       setArrowUsed(true)
-      setHighlight(i => Math.max(i - 1, 0))
+      setHighlight(i => cycleIndex(i, -1, items.length))
       return
     }
     if (e.key === 'Enter') {
