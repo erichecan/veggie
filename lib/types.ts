@@ -885,6 +885,8 @@ export interface Invoice {
   customerId: string
   customerName: string
   saleOrderIds: string[]
+  /** 列表接口附带：关联销售单的订单号，顺序同 saleOrderIds（20261028） */
+  saleOrderCodes?: string[]
   lines: Array<InvoiceLine | InvoiceOrderLine>
   subtotalExTax: number
   totalTax: number

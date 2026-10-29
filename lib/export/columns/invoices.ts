@@ -30,6 +30,7 @@ export function invoiceExportColumns(isEn: boolean): readonly ExportColumn<Invoi
   const term = isEn ? TERM_EN : TERM_ZH
   return [
     { key: 'name', header: '发票号', headerEn: 'Invoice No.', get: i => i.name ?? '' },
+    { key: 'saleOrderCodes', header: '销售单号', headerEn: 'Sales Orders', get: i => (i.saleOrderCodes ?? []).join(', ') },
     { key: 'customerName', header: '客户', headerEn: 'Customer', get: i => i.customerName ?? '' },
     { key: 'status', header: '状态', headerEn: 'Status', get: i => status[String(i.status)] ?? i.status },
     { key: 'subtotalExTax', header: '未税金额 (€)', headerEn: 'Untaxed (€)', get: i => money(i.subtotalExTax) },

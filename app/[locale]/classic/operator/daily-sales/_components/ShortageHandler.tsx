@@ -6,7 +6,8 @@ import { apiGet, apiPost } from '@/lib/api'
 import { SHORTAGE_REASON_CODES, SHORTAGE_REASON_LABELS, type ShortageReasonCode } from '@/lib/shortage-reason'
 import { formatDateTime } from '@/lib/format-date'
 import type { Order, Customer } from '@/lib/types'
-import type { DriverSlotInfo } from '@/lib/driver-slot'
+import { formatDriverSlotFromOrder, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
+import { sortCustomerLines, type CustomerSortKey } from '@/lib/analytics/sales-stats-sort'
 import { today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -64,6 +65,9 @@ interface FlatLine {
   uomName: string | null
   driverName: string | null
   timeOfDay: string | null
+  /** 批次号（所在托盘序号，与打印中心 / 销售统计的「批次」同一口径：formatDriverSlotFromOrder 的
+   *  wave 派生显示 "2 am ANDRIUS" 里的 2）；未分配托盘为 0（20261028 客户需求） */
+  batchNum: number
   orderedQty: number
   /** 所在批次是否已被拣货锁锁住 */
   locked: boolean
@@ -107,6 +111,10 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([])
   const [productQuery, setProductQuery] = useState('')
   const [orderQuery, setOrderQuery] = useState('')
+  /** 批次号筛选（多选，空 = 全部）与列排序（null = 原顺序），20261028 客户需求 */
+  const [selectedBatchNums, setSelectedBatchNums] = useState<number[]>([])
+  const [sortKey, setSortKey] = useState<CustomerSortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
@@ -215,6 +223,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
       const wd = orderDriverMap.get(o.id)
       const driverName = wd?.driver ?? o.driverSlot?.driverName ?? null
       const timeOfDay = wd?.time ?? (o.driverSlot?.timeOfDay?.toLowerCase() ?? null)
+      const batchNum = parseDriverSlotKey(formatDriverSlotFromOrder(o)).num
       for (const l of (o.lines ?? [])) {
         const key = `${o.id}:${l.productId}`
         const existing = map.get(key)
@@ -232,6 +241,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           uomName: l.uomName ?? null,
           driverName,
           timeOfDay,
+          batchNum,
           orderedQty: Number(l.orderedQty),
           locked: wd?.locked ?? false,
         })
@@ -276,6 +286,11 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     return Array.from(set).sort()
   }, [allLines])
 
+  const availableBatchNums = useMemo(
+    () => [...new Set(allLines.map(l => l.batchNum).filter(n => n > 0))].sort((a, b) => a - b),
+    [allLines],
+  )
+
   // 缺货商品由仓库报上来，必须先搜索选中商品、或输入订单号才展示对应订单行
   // allLines 已按 orderId+productId 合并去重，这里只需按条件过滤
   const filteredLines = useMemo(() => {
@@ -284,11 +299,36 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     return allLines.filter(l => {
       if (timeFilter !== 'all' && l.timeOfDay !== timeFilter) return false
       if (selectedDrivers.length > 0 && (!l.driverName || !selectedDrivers.includes(l.driverName))) return false
+      if (selectedBatchNums.length > 0 && !selectedBatchNums.includes(l.batchNum)) return false
       if (selectedProducts.length > 0 && !selectedProducts.some(p => p.id === l.productId)) return false
       if (q && !l.orderCode.toLowerCase().includes(q)) return false
       return true
     })
-  }, [allLines, timeFilter, selectedDrivers, selectedProducts, orderQuery])
+  }, [allLines, timeFilter, selectedDrivers, selectedBatchNums, selectedProducts, orderQuery])
+
+  // 只影响显示顺序；勾选 / 保存 / 打印都按 lineId 走，与顺序无关
+  const displayLines = useMemo(() => {
+    if (!sortKey) return filteredLines
+    const rows = filteredLines.map(l => ({
+      line: l,
+      customerName: l.customerName,
+      productName: l.productName,
+      orderCode: l.orderCode,
+      batchNum: l.batchNum,
+      timeOfDay: l.timeOfDay ?? '',
+      driverName: l.driverName ?? '',
+      qty: l.orderedQty,
+      amount: 0,
+    }))
+    return sortCustomerLines(rows, sortKey, sortDir).map(r => r.line)
+  }, [filteredLines, sortKey, sortDir])
+
+  /** 点表头：升序 → 降序 → 回到原顺序 */
+  function toggleSort(key: CustomerSortKey) {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return }
+    if (sortDir === 'asc') { setSortDir('desc'); return }
+    setSortKey(null)
+  }
 
   // 已保存成功的行要排除在外，否则 newQtys 里的旧值会在下次点「保存修改」时被重新提交一遍
   // （若该行当时是清零删行，重复提交会因行已不存在而报错，污染这次保存的失败计数）
@@ -582,6 +622,30 @@ ${bodyHtml}
           </div>
         )}
 
+        {availableBatchNums.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500 shrink-0">{isEn ? 'Batch' : '批次'}</span>
+            {availableBatchNums.map(n => (
+              <button
+                key={n}
+                onClick={() => setSelectedBatchNums(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
+                className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                  selectedBatchNums.includes(n)
+                    ? 'bg-[#875A7B] text-white border-[#875A7B]'
+                    : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'
+                }`}
+              >
+                #{n}
+              </button>
+            ))}
+            {selectedBatchNums.length > 0 && (
+              <button onClick={() => setSelectedBatchNums([])} className="text-xs text-gray-400 hover:text-gray-600">
+                {isEn ? 'Clear' : '清除'}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500 shrink-0">{isEn ? 'Product' : '商品'}</span>
           {selectedProducts.map(p => (
@@ -650,19 +714,31 @@ ${bodyHtml}
                       title={isEn ? 'Select all' : '全选'}
                     />
                   </th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Order No.' : '单号'}</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Customer' : '客户名'}</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Product' : '产品名'}</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Driver' : '司机'}</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Time' : '时段'}</th>
-                  <th className="px-3 py-2 text-right text-xs text-gray-400 font-medium">{isEn ? 'Original Qty' : '原始数量'}</th>
+                  {([
+                    ['order', isEn ? 'Order No.' : '单号', 'text-left'],
+                    ['customer', isEn ? 'Customer' : '客户名', 'text-left'],
+                    ['product', isEn ? 'Product' : '产品名', 'text-left'],
+                    ['driver', isEn ? 'Driver' : '司机', 'text-left'],
+                    ['time', isEn ? 'Time' : '时段', 'text-left'],
+                    ['batch', isEn ? 'Batch' : '批次', 'text-left'],
+                    ['qty', isEn ? 'Original Qty' : '原始数量', 'text-right'],
+                  ] as Array<[CustomerSortKey, string, string]>).map(([key, label, align]) => (
+                    <th
+                      key={key}
+                      onClick={() => toggleSort(key)}
+                      className={`px-3 py-2 ${align} text-xs text-gray-400 font-medium cursor-pointer select-none hover:text-gray-600 whitespace-nowrap`}
+                      title={isEn ? 'Click to sort (again: descending, third click: original order)' : '点击排序（再点降序，第三次点恢复原顺序）'}
+                    >
+                      {label}{sortKey === key && <span className="ml-0.5">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                    </th>
+                  ))}
                   <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">{isEn ? 'Unit' : '单位'}</th>
                   <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">{isEn ? 'New Qty' : '新数量'}</th>
                   <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">{isEn ? 'Status' : '状态'}</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredLines.map((l, i) => {
+                {displayLines.map((l, i) => {
                   const status = getLineStatus(l.lineId)
                   return (
                     <tr
@@ -694,6 +770,7 @@ ${bodyHtml}
                       <td className="px-3 py-2 text-xs text-gray-600">
                         {l.timeOfDay === 'am' ? 'AM' : l.timeOfDay === 'pm' ? 'PM' : '—'}
                       </td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{l.batchNum > 0 ? `#${l.batchNum}` : '—'}</td>
                       <td className="px-3 py-2 text-right text-xs font-medium text-gray-700">{l.orderedQty}</td>
                       <td className="px-3 py-2 text-center text-xs text-gray-500">{l.uomName ?? ''}</td>
                       <td className="px-3 py-2 text-center">

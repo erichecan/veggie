@@ -19,6 +19,26 @@ import { nextInvoiceName, type InvoiceTx } from '@/lib/invoice-from-order'
  */
 const FLAT_LIMIT = 500
 
+/** 按订单号搜索时最多取多少张命中订单去反查发票——关键词太短（如 "D-"）会命中几万张单，截断防止 hasSome 数组过大 */
+const SEARCH_ORDER_LIMIT = 500
+
+/**
+ * 给发票附上关联销售单的订单号（20261028 客户需求：发票列表显示关联 SO 号）。
+ * Invoice 只存 saleOrderIds，订单号要一次批量反查，不能逐张查。
+ * 顺序与 saleOrderIds 一致；查不到的订单（已删）不显示，没有 code 的老单显示 id 尾 6 位。
+ */
+async function attachSaleOrderCodes<T extends { saleOrderIds: string[] }>(invoices: T[]): Promise<Array<T & { saleOrderCodes: string[] }>> {
+  const ids = [...new Set(invoices.flatMap(i => i.saleOrderIds))]
+  const orders = ids.length > 0
+    ? await prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, code: true } })
+    : []
+  const codeById = new Map(orders.map(o => [o.id, o.code ?? o.id.slice(-6).toUpperCase()]))
+  return invoices.map(i => ({
+    ...i,
+    saleOrderCodes: i.saleOrderIds.map(id => codeById.get(id)).filter((c): c is string => !!c),
+  }))
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -29,6 +49,9 @@ export async function GET(req: Request) {
     // 不必再为判断 20 张单的开票状态而扫全表。
     const orderIdsRaw = searchParams.get('orderIds')?.trim()
     const orderIds = orderIdsRaw ? orderIdsRaw.split(',').map((s) => s.trim()).filter(Boolean) : null
+    // ?saleOrder=a,b → 关联销售单号包含任一关键词的发票（20261028 客户需求：发票页按 SO 号搜索）。
+    // 发票页列表只加载最近 200 张，SO 号分面若只在前端过滤会漏掉更早的发票，所以命中集合由服务端给
+    const saleOrderTerms = (searchParams.get('saleOrder') ?? '').split(',').map(t => t.trim()).filter(Boolean)
 
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
     const rawPageSize = parseInt(searchParams.get('pageSize') ?? '0', 10)
@@ -39,6 +62,19 @@ export async function GET(req: Request) {
     if (customerId) where.customerId = customerId
     // saleOrderIds 是 String[]，hasSome 命中"这张发票涉及了其中任一订单"
     if (orderIds && orderIds.length > 0) where.saleOrderIds = { hasSome: orderIds }
+    if (saleOrderTerms.length > 0) {
+      const matchedOrders = await prisma.order.findMany({
+        where: { OR: saleOrderTerms.map(t => ({ code: { contains: t, mode: 'insensitive' as const } })) },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+        take: SEARCH_ORDER_LIMIT,
+      })
+      // 没有任何订单命中 → 必然没有发票命中；用一个不可能的 id 让查询返回空，而不是退化成不过滤
+      const soCond = { saleOrderIds: { hasSome: matchedOrders.length > 0 ? matchedOrders.map(o => o.id) : ['__none__'] } }
+      // 与 ?orderIds= 同时出现时两者 AND，不互相覆盖
+      if (where.saleOrderIds) where.AND = [soCond]
+      else Object.assign(where, soCond)
+    }
 
     if (slim) {
       const invoices = await prisma.invoice.findMany({
@@ -63,7 +99,7 @@ export async function GET(req: Request) {
         }),
       ])
       return NextResponse.json(serializeApi({
-        data: invoices,
+        data: await attachSaleOrderCodes(invoices),
         total,
         page,
         pageSize,

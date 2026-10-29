@@ -56,6 +56,16 @@ describe('sortCustomerLines', () => {
     assert.deepEqual(names(sortCustomerLines(ls, 'amount', 'asc')), ['x', 'y', 'big'])
   })
 
+  test('客户列（缺货处理页用）按客户名排，同客户按订单号兜底', () => {
+    const ls = [
+      line({ productName: 'z2', customerName: 'Zen', orderCode: 'D-2' }),
+      line({ productName: 'a', customerName: 'Afanti', orderCode: 'D-9' }),
+      line({ productName: 'z1', customerName: 'Zen', orderCode: 'D-1' }),
+    ]
+    assert.deepEqual(names(sortCustomerLines(ls, 'customer', 'asc')), ['a', 'z1', 'z2'])
+    assert.deepEqual(names(sortCustomerLines(ls, 'customer', 'desc')), ['z1', 'z2', 'a'])
+  })
+
   test('不修改传入数组', () => {
     const ls = [line({ productName: 'b', qty: 2 }), line({ productName: 'a', qty: 1 })]
     sortCustomerLines(ls, 'qty', 'asc')

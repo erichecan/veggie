@@ -115,6 +115,16 @@ function buildInvoicePayload(
   }
 }
 
+function normalizeInvoice(inv: Record<string, unknown>): Invoice {
+  return {
+    ...(inv as unknown as Invoice),
+    status: (inv.status as string).toLowerCase() as Invoice['status'],
+    lines: (inv.lines as Invoice['lines']) ?? [],
+    saleOrderIds: (inv.saleOrderIds as string[]) ?? [],
+    saleOrderCodes: (inv.saleOrderCodes as string[] | undefined) ?? [],
+  }
+}
+
 function InvoiceRow({ inv, locale, isEn, onClick }: {
   inv: Invoice
   locale: string
@@ -133,6 +143,13 @@ function InvoiceRow({ inv, locale, isEn, onClick }: {
     >
       <td className="px-4 py-3 font-mono font-medium" style={{ color: '#875A7B' }}>
         {inv.name}
+      </td>
+      {/* 关联销售单号（20261028）：一张发票可合并多张单，最多列 3 个，其余用 +N 收起，悬停看全部 */}
+      <td className="px-4 py-3 font-mono text-xs text-gray-600" title={(inv.saleOrderCodes ?? []).join(', ')}>
+        {(inv.saleOrderCodes ?? []).slice(0, 3).map(c => <div key={c}>{c}</div>)}
+        {(inv.saleOrderCodes ?? []).length > 3 && (
+          <div className="text-gray-400">+{(inv.saleOrderCodes ?? []).length - 3}</div>
+        )}
       </td>
       <td className="px-4 py-3 text-gray-800">{inv.customerName}</td>
       <td className="px-4 py-3 text-center">
@@ -197,12 +214,7 @@ export default function ClassicInvoicesPage() {
         apiGet<Record<string, unknown>[]>('/api/orders?status=COMPLETED,IN_DELIVERY,WAVE_ASSIGNED,CONFIRMED&include_lines=false'),
         apiGet<Customer[]>('/api/customers'),
       ])
-      const normalizedInvoices: Invoice[] = (invPage.data ?? []).map(inv => ({
-        ...(inv as unknown as Invoice),
-        status: (inv.status as string).toLowerCase() as Invoice['status'],
-        lines: (inv.lines as Invoice['lines']) ?? [],
-        saleOrderIds: (inv.saleOrderIds as string[]) ?? [],
-      }))
+      const normalizedInvoices: Invoice[] = (invPage.data ?? []).map(normalizeInvoice)
       const normalizedOrders: Order[] = rawOrders.map(o => ({
         ...(o as unknown as Order),
         status: (o.status as string).toLowerCase() as Order['status'],
@@ -295,17 +307,36 @@ export default function ClassicInvoicesPage() {
     setPage(1)
   }
 
+  // 销售单号分面（20261028）：列表只加载了最近 200 张，SO 号对应的发票可能更早——有这个维度时
+  // 向服务端按 ?saleOrder= 拉命中集合作为过滤底表；其它分面 / 状态照常在其上做前端过滤
+  const saleOrderTerms = useMemo(
+    () => facets.filter(f => f.key === 'saleOrder').map(f => f.value.trim()).filter(Boolean),
+    [facets],
+  )
+  const [soResults, setSoResults] = useState<Invoice[] | null>(null)
+  useEffect(() => {
+    if (saleOrderTerms.length === 0) { setSoResults(null); return }
+    let cancelled = false
+    apiGet<{ data: Record<string, unknown>[] }>(
+      `/api/invoices?page=1&pageSize=200&saleOrder=${encodeURIComponent(saleOrderTerms.join(','))}`,
+    )
+      .then(r => { if (!cancelled) setSoResults((r.data ?? []).map(normalizeInvoice)) })
+      .catch(() => { if (!cancelled) setSoResults(null) })
+    return () => { cancelled = true }
+  }, [saleOrderTerms])
+
   const filtered = useMemo(() => {
-    let base = invoices
+    let base = saleOrderTerms.length > 0 && soResults ? soResults : invoices
     if (statusFilter) base = base.filter(inv => inv.status === statusFilter)
     if (searchInput) base = base.filter(inv =>
       inv.name.toLowerCase().includes(searchInput.toLowerCase()) ||
-      inv.customerName.toLowerCase().includes(searchInput.toLowerCase())
+      inv.customerName.toLowerCase().includes(searchInput.toLowerCase()) ||
+      (inv.saleOrderCodes ?? []).some(c => c.toLowerCase().includes(searchInput.toLowerCase()))
     )
     // 分面：同维度 OR、跨维度 AND（与服务端类页面同一套语义，见 lib/facet-client.ts）
     base = filterByFacets(base, facets, INVOICE_FACET_DEFS)
     return sortRows(base, sortKey, sortDir)
-  }, [invoices, searchInput, statusFilter, sortKey, sortDir, facets])
+  }, [invoices, soResults, saleOrderTerms, searchInput, statusFilter, sortKey, sortDir, facets])
 
   // 这一页是全量拉取 + 客户端筛选，所以导出走本地模式：导的就是屏幕上这批已筛好的行。
   // 走服务端导出的话，服务端不认识这些客户端筛选条件，会变成「导出全部」。
@@ -376,6 +407,7 @@ export default function ClassicInvoicesPage() {
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
                 <SortTh sk="name" cur={sortKey} dir={sortDir} label={isEn ? 'Invoice No.' : '发票号'} onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Sales Orders' : '销售单号'}</th>
                 <SortTh sk="customerName" cur={sortKey} dir={sortDir} label={isEn ? 'Customer' : '客户'} onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
                 <SortTh sk="totalIncTax" cur={sortKey} dir={sortDir} label={isEn ? 'Total (incl. tax)' : '含税总额'} align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
@@ -388,7 +420,7 @@ export default function ClassicInvoicesPage() {
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
                     {isEn ? 'No invoices yet. Click "New" to generate one from completed orders.' : '暂无发票，点击「生成发票」从已完成订单创建'}
                   </td>
                 </tr>
@@ -408,7 +440,7 @@ export default function ClassicInvoicesPage() {
                 }
                 return Array.from(groups.entries()).flatMap(([key, groupInvs]) => [
                   <tr key={`__group__${key}`} style={{ background: '#f5f0f7', borderBottom: '2px solid #d4b8d0' }}>
-                    <td colSpan={8} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
+                    <td colSpan={9} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
                       {groupBy === 'status' ? STATUS_LABEL[key as Invoice['status']] ?? key
                         : groupBy === 'paymentTerms' ? PAYMENT_LABELS[key] ?? key
                         : key || (isEn ? '(empty)' : '（空）')}
