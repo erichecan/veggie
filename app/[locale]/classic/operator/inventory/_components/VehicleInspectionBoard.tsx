@@ -1,13 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
-import type { Trip, OrderReturn } from '@/lib/types'
+import type { OrderReturn } from '@/lib/types'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { Dialog } from '@/components/ui/dialog'
-import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useGoodsReturnData } from '@/lib/hooks/use-goods-return-data'
 import { VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
 import { OrderReturnDialog } from './OrderReturnDialog'
 import { buildWarehousePendingRows, type WarehousePendingRow } from './warehouse-pending-rows'
@@ -30,32 +28,12 @@ export default function VehicleInspectionBoard() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
 
-  const [trips, setTrips] = useState<Trip[]>([])
-  const [orderReturns, setOrderReturns] = useState<OrderReturn[]>([])
-  const [loading, setLoading] = useState(false)
   const [dialog, setDialog] = useState<DialogState>(null)
 
   const ability = useAbility()
   const canVerify = hasPermission(ability, 'dispatch.goods_return.warehouse_verify')
 
-  async function load() {
-    setLoading(true)
-    try {
-      const [tripsData, returnsData] = await Promise.all([
-        apiGet<Record<string, unknown>[]>('/api/trips'),
-        apiGet<{ returns: OrderReturn[] }>('/api/order-returns'),
-      ])
-      setTrips(tripsData as unknown as Trip[])
-      setOrderReturns(returnsData.returns ?? [])
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load data' : '加载数据失败'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { load() }, [])
-  useRefetchOnFocus([load])
+  const { trips, orderReturns, loading, reload: load } = useGoodsReturnData(isEn)
 
   const rows = buildWarehousePendingRows(trips, orderReturns)
 

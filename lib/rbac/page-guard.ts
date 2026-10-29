@@ -25,6 +25,20 @@ export interface GuardSession {
 }
 
 /**
+ * 旧会话（无位图）的角色兜底口径：roles[] 优先，空则回退单 role
+ * （与 lib/auth.ts 的 effectiveRoles 同口径）。canEnterPage 和
+ * getDefaultLandingPath 原来各写了一份一字不差的三元表达式（code-review
+ * high 发现 #9），抽成一处避免以后改一处漏一处。
+ */
+function effectiveSessionRoles(session: GuardSession): string[] {
+  return Array.isArray(session.roles) && session.roles.length > 0
+    ? session.roles.map(String)
+    : session.role
+      ? [String(session.role)]
+      : []
+}
+
+/**
  * @param pagePath 去掉 locale 前缀的路径，如 `/classic/finance/statements`
  * @param legacyRoles 旧口径的兜底角色名单。会话里没有位图时（旧登录态）按它判，
  *                    行为与改造前一致 —— 少了这个，部署后没重新登录的人会被自己的页面踢出去
@@ -43,15 +57,8 @@ export function canEnterPage(
     return decodePermissions(session.pm).hasAny(required)
   }
 
-  // 旧会话回退：roles[] 优先，空则回退单 role（与 lib/auth.ts 的 effectiveRoles 同口径）。
   // 顺带修掉了老写法只看 user.role 的毛病 —— 兼任角色现在也算数。
-  const own =
-    Array.isArray(session.roles) && session.roles.length > 0
-      ? session.roles.map(String)
-      : session.role
-        ? [String(session.role)]
-        : []
-  return own.some((r) => legacyRoles.includes(r))
+  return effectiveSessionRoles(session).some((r) => legacyRoles.includes(r))
 }
 
 /** 有 quotations 页面权限（page.operator.access）的预置角色，供旧会话（无位图）兜底判断用 */
@@ -83,12 +90,6 @@ export function getDefaultLandingPath(
 
   // 多角色账号按 homeFor 的既定优先级（RESTAURANT 等粘性角色优先，否则按 roles[] 顺序）落地，
   // 不再只看 session.role 单值 —— 单值兜底会让兼任角色的落地页随机漂移到主角色的主页
-  const roles =
-    Array.isArray(session.roles) && session.roles.length > 0
-      ? session.roles.map(String)
-      : session.role
-        ? [String(session.role)]
-        : []
-  const home = homeFor(roles)
+  const home = homeFor(effectiveSessionRoles(session))
   return `${pagePrefix}${home === '/enter' ? UNIVERSAL_FALLBACK_PATH : home}`
 }

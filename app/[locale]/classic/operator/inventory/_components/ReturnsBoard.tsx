@@ -3,12 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
-import type { Trip, OrderReturn } from '@/lib/types'
+import type { OrderReturn } from '@/lib/types'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { Dialog } from '@/components/ui/dialog'
-import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useGoodsReturnData } from '@/lib/hooks/use-goods-return-data'
 import { VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
 import {
   flattenTripReturns,
@@ -63,9 +61,6 @@ export default function ReturnsBoard() {
   const STATUS_LABELS = isEn ? TRIP_STATUS_LABELS_EN : TRIP_STATUS_LABELS_ZH
 
   const searchParams = useSearchParams()
-  const [trips, setTrips] = useState<Trip[]>([])
-  const [orderReturns, setOrderReturns] = useState<OrderReturn[]>([])
-  const [loading, setLoading] = useState(false)
   const [dialog, setDialog] = useState<DialogState>(null)
   const highlightHandled = useRef(false)
 
@@ -76,25 +71,7 @@ export default function ReturnsBoard() {
   const canVerify = hasPermission(ability, 'dispatch.goods_return.warehouse_verify')
   const canReview = hasPermission(ability, 'dispatch.goods_return.review')
 
-  async function load() {
-    setLoading(true)
-    try {
-      const [tripsData, returnsData] = await Promise.all([
-        apiGet<Record<string, unknown>[]>('/api/trips'),
-        apiGet<{ returns: OrderReturn[] }>('/api/order-returns'),
-      ])
-      setTrips(tripsData as unknown as Trip[])
-      setOrderReturns(returnsData.returns ?? [])
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load data' : '加载数据失败'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { load() }, [])
-  // 波次/订单在别的 tab 改了之后，切回来希望看到最新结果
-  useRefetchOnFocus([load])
+  const { trips, orderReturns, loading, reload: load } = useGoodsReturnData(isEn)
 
   const allTripRows = flattenTripReturns(trips)
 
@@ -167,7 +144,11 @@ export default function ReturnsBoard() {
     if (!highlight || !source) return
     const match = [...warehousePending, ...pendingReview, ...done].find(r => {
       if (source === 'order_return') return r.source === 'order_return' && r.orderReturnRow?.id === highlight
-      if (source === 'trip') return r.source === 'trip' && (r.pendingRow?.id === highlight || r.tripRow?.id === highlight)
+      // tripRow 是 FlatReturn：.id 是 `${tripId}-${ri}-${ei}` 合成行 key，不是真实
+      // ReturnItem.id（真实 id 存在 .returnId，跟 bulletin linkUrl 里带的 highlight 同源，
+      // 见 TripReturnReviewDialog.tsx 的 FlatReturn 定义）；之前拿 .id 比会恒不匹配，
+      // 待审核/已处理状态的退货点广场帖子永远弹不出弹窗（code-review high 发现 #5）
+      if (source === 'trip') return r.source === 'trip' && (r.pendingRow?.id === highlight || r.tripRow?.returnId === highlight)
       return false
     })
     if (match) {
