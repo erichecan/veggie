@@ -614,11 +614,16 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     const publicPrice = item.uomId && saleUomRows && basePublicPrice != null
       ? priceOf(saleUomRows, item.uomId, basePublicPrice)
       : basePublicPrice
+    // 价格表公式的最终价属于当前规则：列表中的 Sale Price 显示公式结果，
+    // 商品主档的 Public Price 仍作为公式基准，不被写回或覆盖。
+    const salePrice = item.computeType === 'formula' && estimatedPrice != null
+      ? estimatedPrice
+      : publicPrice
     return {
       item,
       productNo: scopedProduct?.productNo,
       cost,
-      publicPrice,
+      publicPrice: salePrice,
       estimatedPrice,
       applyLabel: applyOnLabel(item, allProductsForLabels, categories, isEn),
       categoryLabel: productCategoryLabel(item, scopedProduct, categories, isEn),
@@ -1506,14 +1511,16 @@ function ItemDialog({
   // "基准单位成本 ÷ 这个单位的价"算出一个没有意义的数字（同类问题在订单侧 20260827 修过）。
   const uomFactor = item.uomId ? (saleUomOptions.find(o => o.uomId === item.uomId)?.factor ?? 1) : 1
   const scopedCostVal = templateCostVal * uomFactor
-  // Public Price 这一行只是给人看的参考，不喂进 computeItemPrice（那边决策#6 要求 formula/
-  // percentage 规则永远拿未换算的牌价去算折扣）——所以这里单独用 priceOf() 算"选中单位自己卖多少钱"，
-  // 跟上面 Cost 那行放在一起才不会出现"成本是一罐的价，牌价却是一箱的价"这种对不上的错觉
-  // (20261025 客户反馈：Snapzy 截图里 cost 按 can 换算了、public price 没换算)。
+  // 公式计算仍以商品主档牌价为基准（未换算值传给 computeItemPrice）；界面上的 Public Price
+  // 对 formula 行显示当前价格表的计算结果，并同时标出基础牌价，避免把来源和公式结果混为一谈。
+  // 非 formula 行仍显示选中单位对应的商品主档牌价。
   const scopedPublicPriceVal = item.uomId ? priceOf(saleUomOptions, item.uomId, templatePublicPriceVal) : templatePublicPriceVal
   const estimatedPrice = scopedProduct
     ? computeItemPrice(item, scopedProduct, templatePublicPriceVal, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
     : undefined
+  const displayedPublicPriceVal = item.computeType === 'formula' && estimatedPrice != null
+    ? estimatedPrice
+    : scopedPublicPriceVal
   const marginAmount = estimatedPrice != null ? estimatedPrice - scopedCostVal : null
   const marginPct = estimatedPrice != null && estimatedPrice > 0 && marginAmount != null
     ? (marginAmount / estimatedPrice) * 100
@@ -1621,8 +1628,14 @@ function ItemDialog({
               </div>
               <div className="flex items-center gap-4 text-sm mt-1">
                 <span className="text-gray-600">Public Price</span>
-                <span className="text-gray-800">{scopedPublicPriceVal.toFixed(2)}</span>
-                {item.uomId && (
+                <span className="text-gray-800">{displayedPublicPriceVal.toFixed(2)}</span>
+                {item.computeType === 'formula' && estimatedPrice != null ? (
+                  <span className="text-[11px] text-gray-400">
+                    {isEn
+                      ? `(formula result; base public price ${scopedPublicPriceVal.toFixed(2)})`
+                      : `（公式结果；基础牌价 ${scopedPublicPriceVal.toFixed(2)}）`}
+                  </span>
+                ) : item.uomId && (
                   <span className="text-[11px] text-gray-400">
                     {isEn ? '(scaled to selected unit)' : '（已按选定单位换算）'}
                   </span>
