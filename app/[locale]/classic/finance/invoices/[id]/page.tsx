@@ -32,6 +32,7 @@ const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   posted: '已确认',
   paid: '已付款',
   cancelled: '已取消',
+  superseded: '已换开新票',
 }
 
 const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
@@ -39,6 +40,7 @@ const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
   posted: 'Posted',
   paid: 'Paid',
   cancelled: 'Cancelled',
+  superseded: 'Superseded',
 }
 
 const STATUS_COLOR: Record<Invoice['status'], string> = {
@@ -46,6 +48,7 @@ const STATUS_COLOR: Record<Invoice['status'], string> = {
   posted: 'bg-purple-100 text-purple-700',
   paid: 'bg-green-100 text-green-700',
   cancelled: 'bg-red-100 text-red-700',
+  superseded: 'bg-amber-100 text-amber-700',
 }
 
 export default function ClassicInvoiceDetailPage() {

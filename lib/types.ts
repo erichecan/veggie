@@ -831,7 +831,7 @@ export interface OdooPricelist {
 }
 
 // ─── 发票 ─────────────────────────────────────────────────────────────────────
-export type InvoiceStatus = 'draft' | 'posted' | 'paid' | 'cancelled'
+export type InvoiceStatus = 'draft' | 'posted' | 'paid' | 'cancelled' | 'superseded'
 
 export interface InvoiceLine {
   productId: string

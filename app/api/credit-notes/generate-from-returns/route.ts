@@ -103,18 +103,30 @@ export async function POST(req: Request) {
 
       // 手工登记路径（OrderReturn，20261028 M7）：按 id 精确查已批准的记录，
       // unitPrice 没有存在 OrderReturn 上（创建时只做了存在性校验），在这里按
-      // orderId+productId 补查一次 OrderLine，跟登记时的查法一致
+      // orderId+productId 补查一次 OrderLine，跟登记时的查法一致。
+      // 批量查（而非逐条 findFirst），同批 Trip 路径早就是这么做的。
       const settledOrderReturnIds: string[] = []
       if (orderReturnIds.length > 0) {
         const orderReturns = await prisma.orderReturn.findMany({
           where: { id: { in: orderReturnIds }, status: 'APPROVED' },
           include: { order: { select: { restaurantId: true, restaurantName: true } } },
         })
+        const orderIds = [...new Set(orderReturns.map(r => r.orderId))]
+        const productIds = [...new Set(orderReturns.map(r => r.productId))]
+        const priceLines = orderIds.length > 0 ? await prisma.orderLine.findMany({
+          where: { orderId: { in: orderIds }, productId: { in: productIds } },
+          select: { orderId: true, productId: true, unitPrice: true },
+        }) : []
+        const priceMap = new Map(priceLines.map(l => [`${l.orderId}:${l.productId}`, l.unitPrice]))
+
+        const unpriced = orderReturns.filter(ret => !priceMap.has(`${ret.orderId}:${ret.productId}`))
+        if (unpriced.length > 0) {
+          return NextResponse.json({
+            error: `以下退货记录在原订单里找不到对应商品行，无法确定单价，已中止生成：${unpriced.map(r => r.id).join(', ')}`,
+          }, { status: 400 })
+        }
+
         for (const ret of orderReturns) {
-          const line = await prisma.orderLine.findFirst({
-            where: { orderId: ret.orderId, productId: ret.productId },
-            select: { unitPrice: true },
-          })
           const customerId = ret.order.restaurantId
           if (!customerReturns.has(customerId)) {
             customerReturns.set(customerId, {
@@ -126,7 +138,7 @@ export async function POST(req: Request) {
             productId: ret.productId,
             productName: ret.productName,
             quantity: toNum(ret.quantity),
-            unitPrice: toNum(line?.unitPrice ?? 0),
+            unitPrice: toNum(priceMap.get(`${ret.orderId}:${ret.productId}`)!),
             reason: ret.reason ?? null,
             sourceOrderId: ret.orderId,
             sourceTripId: null,
@@ -161,12 +173,16 @@ export async function POST(req: Request) {
           })
         }
 
-        // 更新手工登记退货状态（20261028 M7）
+        // 更新手工登记退货状态（20261028 M7）。where 带 status:'APPROVED' + 校验受影响行数，
+        // 防止与另一个并发请求结算同一条 OrderReturn 产生两张 CreditNote（TOCTOU）。
         if (settledOrderReturnIds.length > 0) {
-          await tx.orderReturn.updateMany({
-            where: { id: { in: settledOrderReturnIds } },
+          const settleResult = await tx.orderReturn.updateMany({
+            where: { id: { in: settledOrderReturnIds }, status: 'APPROVED' },
             data: { status: 'SETTLED', settledAt: today },
           })
+          if (settleResult.count !== settledOrderReturnIds.length) {
+            throw new Error('ORDER_RETURN_ALREADY_SETTLED')
+          }
         }
 
         // 为每个客户创建 CreditNote
@@ -236,6 +252,9 @@ export async function POST(req: Request) {
         creditNotes: createdNotes,
       }), { status: 201 })
     } catch (error) {
+      if (error instanceof Error && error.message === 'ORDER_RETURN_ALREADY_SETTLED') {
+        return NextResponse.json({ error: '部分退货记录已被其他请求结算，请刷新后重试' }, { status: 409 })
+      }
       console.error('[POST /api/credit-notes/generate-from-returns]', error)
       return NextResponse.json({ error: '生成退款单失败' }, { status: 500 })
     }

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { nextInvoiceName, type InvoiceTx } from '@/lib/invoice-from-order'
+import { nextInvoiceName, isUniqueViolation, type InvoiceTx } from '@/lib/invoice-from-order'
 
 /**
  * POST /api/invoices/:id/reissue
@@ -46,33 +46,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         )
       }
 
-      const result = await prisma.$transaction(async (tx) => {
-        const name = await nextInvoiceName(tx as unknown as InvoiceTx)
-        const created = await tx.invoice.create({
-          data: {
-            name,
-            customerId: old.customerId,
-            customerName: old.customerName,
-            saleOrderIds: old.saleOrderIds,
-            lines: old.lines as object,
-            subtotalExTax: old.subtotalExTax,
-            totalTax: old.totalTax,
-            totalIncTax: old.totalIncTax,
-            amountPaid: 0,
-            amountCredited: 0,
-            amountDue: old.totalIncTax,
-            status: 'DRAFT',
-            paymentTerms: old.paymentTerms,
-            dueDate: old.dueDate,
-            supersedesInvoiceId: old.id,
-          },
-        })
-        const updatedOld = await tx.invoice.update({
-          where: { id: old.id },
-          data: { status: 'SUPERSEDED' },
-        })
-        return { created, updatedOld }
-      })
+      // 两个人同时换开可能取到同一个发票号：撞唯一约束就重新取号重试，最多 3 次
+      // （跟 lib/invoice-from-order.ts::createDraftInvoiceForOrder 同一套重试约定）
+      let result: { created: { id: string; name: string }; updatedOld: { id: string; name: string; status: string } } | undefined
+      for (let attempt = 0; ; attempt++) {
+        try {
+          result = await prisma.$transaction(async (tx) => {
+            const name = await nextInvoiceName(tx as unknown as InvoiceTx)
+            const created = await tx.invoice.create({
+              data: {
+                name,
+                customerId: old.customerId,
+                customerName: old.customerName,
+                saleOrderIds: old.saleOrderIds,
+                lines: old.lines as object,
+                subtotalExTax: old.subtotalExTax,
+                totalTax: old.totalTax,
+                totalIncTax: old.totalIncTax,
+                amountPaid: 0,
+                amountCredited: 0,
+                amountDue: old.totalIncTax,
+                status: 'DRAFT',
+                paymentTerms: old.paymentTerms,
+                dueDate: old.dueDate,
+                supersedesInvoiceId: old.id,
+              },
+            })
+            const updatedOld = await tx.invoice.update({
+              where: { id: old.id },
+              data: { status: 'SUPERSEDED' },
+            })
+            return { created, updatedOld }
+          })
+          break
+        } catch (e) {
+          if (!isUniqueViolation(e) || attempt >= 2) throw e
+        }
+      }
+      if (!result) throw new Error('reissue transaction did not produce a result')
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

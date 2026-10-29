@@ -43,7 +43,7 @@ export async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
   return `INV-${String(n + 1).padStart(5, '0')}`
 }
 
-const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === 'P2002'
+export const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === 'P2002'
 
 export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string): Promise<{ id: string } | null> {
   // 幂等:已被任何发票引用则跳过
