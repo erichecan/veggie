@@ -1049,6 +1049,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           onDiscard={() => setDialogOpen(false)}
           onRemove={isNewItem ? undefined : () => { handleDeleteItem(editingItem.id); setDialogOpen(false) }}
           pricelistId={id}
+          currentCurrency={pl.currency}
           products={products}
           categories={categories}
           uoms={uoms}
@@ -1378,7 +1379,7 @@ function InlineNumber({ value, min, max, onCommit, isEn }: {
 
 function ItemDialog({
   item, onChange, onSaveClose, onSaveNew, onDiscard, onRemove,
-  pricelistId, products, categories, uoms, allLists, isNew, scopeTitle, isEn,
+  pricelistId, currentCurrency, products, categories, uoms, allLists, isNew, scopeTitle, isEn,
 }: {
   item: OdooPricelistItem
   onChange: (item: OdooPricelistItem) => void
@@ -1387,6 +1388,7 @@ function ItemDialog({
   onDiscard: () => void
   onRemove?: () => void
   pricelistId: string
+  currentCurrency: string
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
@@ -1491,6 +1493,8 @@ function ItemDialog({
   const [productQuery, setProductQuery] = useState(
     () => products.find(p => p.id === scopedProductId(item))?.name ?? '',
   )
+  const [showAllOtherPricelists, setShowAllOtherPricelists] = useState(false)
+  const [otherPricelistQuery, setOtherPricelistQuery] = useState('')
 
   const scopedProduct = products.find(p => p.id === scopedProductId(item))
   const templateCostVal = scopedProduct?.standardPrice ?? 0
@@ -1522,6 +1526,21 @@ function ItemDialog({
         return { id: otherPl.id, name: otherPl.name, currency: otherPl.currency, price: r.price, isFallback: r.isFallback }
       })
     : []
+  const samePriceLists = otherPricelistPrices.filter(p =>
+    estimatedPrice != null && p.currency === currentCurrency && p.price.toFixed(2) === estimatedPrice.toFixed(2),
+  )
+  const differentPriceLists = otherPricelistPrices.filter(p => !samePriceLists.includes(p))
+  const visibleOtherPricelistPrices = (showAllOtherPricelists ? otherPricelistPrices : differentPriceLists)
+    .filter(p => p.name.toLowerCase().includes(otherPricelistQuery.trim().toLowerCase()))
+    .sort((a, b) => {
+      const aComparable = estimatedPrice != null && a.currency === currentCurrency
+      const bComparable = estimatedPrice != null && b.currency === currentCurrency
+      if (aComparable !== bComparable) return aComparable ? -1 : 1
+      const difference = aComparable && bComparable
+        ? Math.abs(b.price - estimatedPrice!) - Math.abs(a.price - estimatedPrice!)
+        : 0
+      return difference || a.name.localeCompare(b.name, isEn ? 'en' : 'zh')
+    })
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4">
@@ -1548,10 +1567,13 @@ function ItemDialog({
                   ['category', 'Product Category'],
                   ['variant', 'Product'],
                 ] as [PricelistApplyOn, string][]).map(([opt, label]) => (
-                  <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
+                  <label
+                    key={opt}
+                    onClick={() => setApplyOn(opt)}
+                    className="flex min-h-8 items-center gap-2 rounded px-2 -mx-2 cursor-pointer text-sm hover:bg-purple-50"
+                  >
                     <OdooRadio
                       checked={item.applyOn === opt || (opt === 'variant' && item.applyOn === 'product')}
-                      onChange={() => setApplyOn(opt)}
                     />
                     <span className="text-gray-700">{label}</span>
                   </label>
@@ -1811,18 +1833,75 @@ function ItemDialog({
                 {/* 同商品在别的价格表里的价，防止不同表之间倒挂 */}
                 {otherPricelistPrices.length > 0 && (
                   <div>
-                    <span className="text-gray-600 block mb-1">
-                      {isEn ? 'This Product on Other Pricelists' : '该商品在其他价格表'}
-                    </span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {otherPricelistPrices.map(p => (
-                        <span key={p.id} className="text-xs" title={p.isFallback ? (isEn ? 'No rule for this product — falls back to public price' : '没有对应规则，回退到牌价') : undefined}>
-                          <span className="text-gray-500">{p.name}:</span>{' '}
-                          <span className={p.isFallback ? 'text-gray-400' : 'text-gray-800 font-medium'}>
-                            {p.currency} {p.price.toFixed(2)}
-                          </span>
-                        </span>
-                      ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <span className="text-gray-600">
+                        {isEn ? 'This Product on Other Pricelists' : '该商品在其他价格表'}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {isEn
+                          ? `${otherPricelistPrices.length} lists · ${samePriceLists.length} same · ${differentPriceLists.length} different`
+                          : `${otherPricelistPrices.length} 张 · ${samePriceLists.length} 张同价 · ${differentPriceLists.length} 张异价`}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllOtherPricelists(false)}
+                        className={`text-xs px-2 py-1 rounded border ${!showAllOtherPricelists ? 'border-[#875A7B] text-[#875A7B] bg-purple-50' : 'border-gray-200 text-gray-500'}`}
+                      >
+                        {isEn ? `Different (${differentPriceLists.length})` : `只看异价 (${differentPriceLists.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllOtherPricelists(true)}
+                        className={`text-xs px-2 py-1 rounded border ${showAllOtherPricelists ? 'border-[#875A7B] text-[#875A7B] bg-purple-50' : 'border-gray-200 text-gray-500'}`}
+                      >
+                        {isEn ? `All (${otherPricelistPrices.length})` : `显示全部 (${otherPricelistPrices.length})`}
+                      </button>
+                      <input
+                        type="search"
+                        value={otherPricelistQuery}
+                        onChange={e => setOtherPricelistQuery(e.target.value)}
+                        placeholder={isEn ? 'Search pricelists…' : '搜索价格表…'}
+                        aria-label={isEn ? 'Search other pricelists' : '搜索其他价格表'}
+                        className="ml-auto min-w-0 flex-1 max-w-48 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-[#875A7B]"
+                      />
+                    </div>
+                    <div className="border border-gray-100 rounded max-h-36 overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-50 text-gray-500">
+                          <tr>
+                            <th className="text-left font-medium px-2 py-1.5">{isEn ? 'Pricelist' : '价格表'}</th>
+                            <th className="text-right font-medium px-2 py-1.5">{isEn ? 'Price' : '价格'}</th>
+                            <th className="text-right font-medium px-2 py-1.5">{isEn ? 'Source' : '来源'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleOtherPricelistPrices.map(p => {
+                            const samePrice = samePriceLists.includes(p)
+                            return (
+                              <tr key={p.id} className={`border-t border-gray-50 ${!samePrice ? 'bg-amber-50' : ''}`}>
+                                <td className="px-2 py-1.5 text-gray-700">{p.name}</td>
+                                <td className={`px-2 py-1.5 text-right tabular-nums ${samePrice ? 'text-gray-600' : 'font-semibold text-amber-800'}`}>
+                                  {p.currency} {p.price.toFixed(2)}
+                                </td>
+                                <td className="px-2 py-1.5 text-right text-gray-400">
+                                  {p.isFallback
+                                    ? (isEn ? 'Public price' : '牌价回退')
+                                    : (isEn ? 'Rule price' : '规则价')}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          {visibleOtherPricelistPrices.length === 0 && (
+                            <tr><td colSpan={3} className="px-2 py-3 text-center text-gray-400">
+                              {otherPricelistQuery
+                                ? (isEn ? 'No matching pricelists' : '没有匹配的价格表')
+                                : (isEn ? 'No different prices' : '没有异价价格表')}
+                            </td></tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -1844,8 +1923,12 @@ function ItemDialog({
                   ['percentage', 'Percentage (discount)'],
                   ['formula', 'Formula'],
                 ] as [PricelistComputeType, string][]).map(([opt, label]) => (
-                  <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
-                    <OdooRadio checked={item.computeType === opt} onChange={() => set('computeType', opt)} />
+                  <label
+                    key={opt}
+                    onClick={() => set('computeType', opt)}
+                    className="flex min-h-8 items-center gap-2 rounded px-2 -mx-2 cursor-pointer text-sm hover:bg-purple-50"
+                  >
+                    <OdooRadio checked={item.computeType === opt} />
                     <span className="text-gray-700">{label}</span>
                   </label>
                 ))}
@@ -2228,16 +2311,16 @@ function TierPriceDialog({ seedItems, onSave, onDiscard, products, isEn }: {
 
 // ─── OdooRadio ────────────────────────────────────────────────────────────────
 
-function OdooRadio({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+function OdooRadio({ checked }: { checked: boolean }) {
   return (
     <span
-      onClick={onChange}
-      className="w-4 h-4 rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center"
+      aria-hidden="true"
+      className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
       style={checked
         ? { borderColor: PURPLE, background: PURPLE }
         : { borderColor: '#d1d5db', background: '#fff' }}
     >
-      {checked && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
+      {checked && <span className="w-2 h-2 rounded-full bg-white block" />}
     </span>
   )
 }
