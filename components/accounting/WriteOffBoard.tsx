@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
 import type { Order } from '@/lib/types'
 import type { ReturnRow, ReturnOrderLineRow } from '@/lib/accounting/returns'
+import type { GoodsReturnFlag } from '@/lib/accounting/goods-return-flags'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -468,6 +469,23 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   )
 }
 
+/**
+ * 退换货异常徽章（20261028 M6）——仓库确认/销售确认两个未完成子状态标红「待确认」，
+ * 已批准/已拒绝/已结算标灰，纯提示会计这单货还有退换货没走完，不挡核销操作。
+ */
+function GoodsReturnBadge({ flag }: { flag: GoodsReturnFlag }) {
+  if (flag.stage === 'warehouse_pending' || flag.stage === 'sales_pending') {
+    const label = flag.stage === 'warehouse_pending' ? '待仓库确认' : '待销售确认'
+    return (
+      <div className="text-[11px] text-red-600 font-medium mt-0.5">
+        ⚠️ 退换货：{label}{flag.productName ? ` · ${flag.productName}` : ''}
+      </div>
+    )
+  }
+  const label = flag.stage === 'approved' ? '已批准' : flag.stage === 'rejected' ? '已拒绝' : '已结算'
+  return <div className="text-[11px] text-gray-400 mt-0.5">退换货：{label}</div>
+}
+
 function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onReset, onEditQty }: {
   row: ReturnRow
   isSelected: boolean
@@ -498,7 +516,10 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
       <td className="px-4 py-2.5 text-gray-500 text-xs">{scanOrder != null ? `#${scanOrder}` : <span className="text-gray-300">—</span>}</td>
       <td className="px-4 py-2.5 text-gray-700 text-xs whitespace-nowrap">{o.deliveryDate ?? '—'}</td>
       <td className="px-4 py-2.5 font-mono text-xs text-gray-700 whitespace-nowrap">{o.code ?? o.id.slice(-8)}</td>
-      <td className="px-4 py-2.5 text-gray-800 max-w-[160px] truncate" title={o.restaurantName}>{o.restaurantName}</td>
+      <td className="px-4 py-2.5 text-gray-800 max-w-[160px]">
+        <div className="truncate" title={o.restaurantName}>{o.restaurantName}</div>
+        {o.goodsReturn && <GoodsReturnBadge flag={o.goodsReturn} />}
+      </td>
       <td className="px-4 py-2.5 text-center text-xs text-gray-600">{TIME_TEXT[o.timeOfDay] ?? <span className="text-gray-300">—</span>}</td>
       <td className="px-4 py-2.5 text-gray-700">{o.driver || <span className="text-gray-300">未分配</span>}</td>
       <td className="px-4 py-2.5 text-right font-semibold text-gray-800">€{o.amount.toFixed(2)}</td>

@@ -258,6 +258,9 @@ export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readO
                 {(ret.reason as string | undefined) && (
                   <div className="mt-1 ml-3.5 text-xs text-orange-600">{isEn ? 'Reason: ' : '原因：'}{ret.reason as string}</div>
                 )}
+                {(ret.lateReportNote as string | undefined) && (
+                  <div className="mt-0.5 ml-3.5 text-xs text-amber-700">{isEn ? 'Late report — why: ' : '补报原因：'}{ret.lateReportNote as string}</div>
+                )}
                 {ret.refundNote && (
                   <div className="mt-0.5 ml-3.5 text-xs text-gray-400">{isEn ? 'Note: ' : '备注：'}{ret.refundNote as string}</div>
                 )}

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { rankByRelevance } from '@/lib/search-rank'
 import type { Customer } from '@/lib/types'
+import { cycleIndex } from '@/lib/cycle-index'
 
 const PURPLE = '#875A7B'
 
@@ -60,10 +61,10 @@ export default function CustomerPickerInline({
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setHighlight(i => Math.min(i + 1, filtered.length - 1))
+      setHighlight(i => cycleIndex(i, 1, filtered.length))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setHighlight(i => Math.max(i - 1, 0))
+      setHighlight(i => cycleIndex(i, -1, filtered.length))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (filtered[highlight]) pick(filtered[highlight])

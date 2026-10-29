@@ -109,6 +109,8 @@ export async function POST(
           reason?: string
           actionType?: 'return' | 'exchange'
           photo?: string
+          /// 补报场景专用备注（20261028 M3），跟 reason 彻底分开
+          lateReportNote?: string
         }>
       }
 
@@ -137,6 +139,26 @@ export async function POST(
           { error: `当前状态 ${trip.status} 不允许提交退货` },
           { status: 400 },
         )
+      }
+
+      // 20261028 M3 的"照片必填/补报原因必填"此前只在司机端页面校验，直接调 API
+      // 能绕过去——仓库/销售核实时就会缺现场证据或缺"为什么现在才报"的说明，
+      // 规则必须在服务端也兜一道（code-review high 发现 #2）。
+      const missingPhoto = returnItems.find(ri => !ri.photo || !ri.photo.trim())
+      if (missingPhoto) {
+        return NextResponse.json(
+          { error: `商品「${missingPhoto.productName}」缺少异常照片，请先拍照再提交` },
+          { status: 400 },
+        )
+      }
+      if (String(trip.status) === 'COMPLETED') {
+        const missingLateNote = returnItems.find(ri => !ri.lateReportNote || !ri.lateReportNote.trim())
+        if (missingLateNote) {
+          return NextResponse.json(
+            { error: `商品「${missingLateNote.productName}」是补报（行程已完成），请填写补报原因` },
+            { status: 400 },
+          )
+        }
       }
 
       const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
@@ -168,6 +190,7 @@ export async function POST(
         reason: ri.reason,
         actionType: ri.actionType ?? 'return',
         photo: ri.photo,
+        lateReportNote: ri.lateReportNote?.trim() || undefined,
         unitPrice: itemPriceMap.get(ri.productId),
         status: 'WAREHOUSE_PENDING' as const,
         restaurantId,

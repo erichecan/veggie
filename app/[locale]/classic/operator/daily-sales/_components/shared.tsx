@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { fmtMoney as canonicalFmtMoney } from '@/lib/format-money'
+import { cycleIndex } from '@/lib/cycle-index'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -119,8 +120,8 @@ export function InlineSearch({ placeholder, items, onSelect, disabled }: InlineS
   }, [open])
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setFocused(f => Math.min(f + 1, filtered.length - 1)) }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setFocused(f => Math.max(f - 1, 0)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocused(f => cycleIndex(f, 1, filtered.length)) }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setFocused(f => cycleIndex(f, -1, filtered.length)) }
     if (e.key === 'Enter' && filtered[focused]) {
       onSelect(filtered[focused])
       setOpen(false)

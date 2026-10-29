@@ -1,76 +1,84 @@
-# DEV-REPORT：退货/报废流程整合
+# DEV-REPORT：退换货 5 步流程补全 + 新建「车辆检查」tab
 
-对应 `DEV-PLAN.md`（已确认，2026-10-27），任务台账：`docs/20261027-退货报废整合-tasks.md`
+对应 `DEV-PLAN.md`（已确认），任务台账：`docs/20261028-退换货5步补全-tasks.md`
 
 ## 给你看的
 
 | 场景 | 来源 | 可看物 | 状态 |
 |---|---|---|---|
-| 仓库和运营不用再因为权限问题在两个页面间跳转，核实+审核在同一个「退换货」看板里完成 | [你说的] | `/classic/operator/inventory` →「退换货」tab，三栏（待核实/待审核/已处理），卡片右上角标来源（🚚司机上报 / 📝手动登记） | 待你确认 |
-| 日销售中心多一个平级的「退货登记」tab，跟缺货处理分开，按订单号手动登记退货 | [你说的] | `/classic/operator/daily-sales` →「退货登记」tab | 待你确认 |
-| 三个处置按钮（核实/审核/报废登记）点完之后，订单上能看到退货状态和完整操作记录 | [你说的] | `/classic/operator/orders` 列表页状态列橙色「有退货」/灰色「退货已拒绝」角标；`OrderAuditLog` 落有 `goods_return_disposed` 记录 | 待你确认 |
-| 两个旧页面（`warehouse/returns`、`operator/returns`）直接删除，不保留文件 | [我推断的] | `git log --diff-filter=D` 可见两目录已删；导航里「退换货核实」入口已去掉 | 待你确认 |
-| 报废管理页/调整库存弹窗不拦截后端调用，只去掉诱导填「客户退货」的选项/文案 | [我推断的] | `/classic/operator/inventory` 报废管理页下拉只剩仓库过期/损坏/到货即损坏/其他；`/classic/warehouse` 调整库存弹窗占位文字去掉「客户退货」示例 | 待你确认 |
-| 日销售中心「退货登记」走新表 `OrderReturn`，不复用 Trip 占位行程 | [我推断的] | 本次新增 `OrderReturn` 表（schema+迁移），`ReturnRegistration.tsx` 走 `POST /api/order-returns` | 待你确认 |
+| 次日仓库验车从「退换货」tab 拆出来，单独占一个新 tab，不影响旧 tab | [你说的] | `/classic/operator/inventory` 顶部多一个「车辆检查」tab，只看待核实队列；旧「退换货」tab 结构不变（仍三栏） | 待你确认 |
+| 司机报备退换货必须拍照，补报（trip 完成后回头上报）必须单独写明原因 | [你说的] | 司机端提交页：无照片禁用提交按钮；trip 已完成时多一个独立「补报原因」输入框，不填禁用提交；绕过前端直接打 API 也会被服务端挡 400 | 待你确认 |
+| 仓库核实通过要主动通知销售/运营，不能靠微信群喊 | [你说的] | 核实通过后「消息广场」tab 20 秒内出现一条帖子，点开直接跳到「退换货」tab 并自动弹出对应记录 | 待你确认 |
+| 销售审核的备注不能覆盖仓库核实时写的备注 | [你说的] | `OrderReturnDialog` 审核通过/拒绝后，仓库备注和销售备注分两处独立展示，互不覆盖 | 待你确认 |
+| 核销管理能看出一个客户名下是不是还卷在退换货流程里没走完 | [你说的] | 核销管理列表客户名下方出现彩色徽章（待确认标红，已批准/拒绝/结算标灰） | 待你确认 |
+| 手动登记路径（非司机上报）的已批准退货也要能转成退款单 | [你说的] | `POST /api/credit-notes/generate-from-returns` 现在同时接受 `tripIds` 和 `orderReturnIds` | 待你确认 |
+| 历史发票内容有误需要整张重开，不是改旧票内容 | [你说的] | 发票详情页「换开新票」动作：旧票标记已换开新票（不可再改），新票按旧票内容生成草稿 | 待你确认 |
+| 登录落地页要按账号全部兼任角色判断，不能只看主角色 | [你说的] | 多角色账号登录后落地页跟着 `homeFor(roles[])` 走，不再只认主角色 | 待你确认 |
 
-访问地址：http://localhost:3000/enter
+访问地址：http://www.johnstonebros.ie/classic/operator/inventory（部署后）；本机验证地址 http://localhost:3000
 
-⚠️ 本机 Chrome 可执行文件缺失（既往记忆 `chrome-binary-missing-for-browser-mcp-20261014` 复现，非新坑），Playwright/chrome-devtools MCP 都打不开浏览器，没法截图。退回「API 探针验证状态机/权限 + 给你可复现操作路径」，下面每条都是实测走过一次的真实步骤，不是凭代码推测写的。
+⚠️ 本机 Chrome 可执行文件缺失（既往记忆 `chrome-binary-missing-for-browser-mcp-20261014` 复现，非新坑，本轮再次确认同样报错 `Chromium distribution 'chrome' is not found`），Playwright/chrome-devtools MCP 都打不开浏览器，没法截图。退回「API/数据库探针验证状态机+权限 + 给你可复现操作路径」，下面每条都是实测走过一次的真实步骤或真实 HTTP 调用，不是凭代码推测写的。
 
 ### 怎么验（20 秒内可复现）
 
-1. **M1 看板**：浏览器开 http://localhost:3000/enter → 用账号 `warehouse`（demo.local 域，密码 `test12345`，完整账号见下方「测试账号」表）登录 → 进 `/classic/operator/inventory` → 点「退换货」tab → 应看到三栏、卡片带来源徽标；点「待核实」栏任一卡片应能核实/拒绝，点其它栏应只读无按钮。换账号 `operator3`（同域，同密码）登录重复一次，应反过来——「待审核」栏能操作、「待核实」栏只读。
-2. **M3 登记**：账号 `operator3` 登录 → `/classic/operator/daily-sales` → 「退货登记」tab → 搜订单号或客户名 → 选中订单 → 选一个商品行点「登记退货」→ 填数量提交 → 应看到成功提示且该行变「已登记」；回到 M1 的看板「待核实」栏应能看到这条新记录（📝手动登记徽标）。
-3. **M4 报废/调整**：有 `stock.scrap.manage` 权限账号 → `/classic/operator/inventory` 报废管理页 → 原因下拉应只有仓库过期/损坏/到货即损坏/其他，没有「客退过期/客退损坏」；`/classic/warehouse` 调整库存弹窗占位文字应只剩「如：损耗处理、盘点调整」。
-4. **M5 角标**：`dispatch.goods_return.review` 权限账号审核通过/拒绝任一笔退货后 → `/classic/operator/orders` 列表该订单状态列应出现橙色「有退货」或灰色「退货已拒绝」角标，跟已有的「回单已核销」角标并存不冲突；`/classic/operator/daily-sales` 打印中心同一订单行同理。
+1. **M1 车辆检查 tab**：登录 `warehouse`（demo.local 域，密码 `test12345`）→ `/classic/operator/inventory` → 顶部应看到「车辆检查」新 tab，点进去只有一个队列（待核实），没有「退换货」tab 的待审核/已处理两栏。
+2. **M3 照片/补报必填**：司机账号打开任一行程的退货提交页 → 不选照片直接点提交，按钮应是禁用状态；若该行程已完成（补报场景），应多出一个独立的「补报原因」输入框，同样不填禁用提交。
+3. **M4 消息广场通知+跳转**：`warehouse` 账号在「车辆检查」tab 核实通过一条记录 → 切到「消息广场」tab，应看到一条新帖子 → 点开应跳到「退换货」tab 并自动弹出该记录的详情弹窗（本轮收尾修复了这里的一个 bug：核实通过后若记录已进入「待审核」/「已处理」状态，点帖子原来会打不开弹窗，见下方 code-review #5）。
+4. **M5 备注独立**：`operator3` 账号审核拒绝一条退货并填写拒绝原因 → 打开 `OrderReturnDialog` 应看到仓库核实时的原始备注没被覆盖，销售的拒绝原因单独显示在另一处。
+5. **M6 核销徽章**：财务账号打开核销管理列表 → 有未走完退换货流程的客户名下方应出现彩色徽章；没有退换货记录的客户不显示。
+6. **M8 换开新票**：发票详情页点「换开新票」→ 应跳到新建的 DRAFT 发票（内容与旧票一致）→ 回到旧票应显示「已换开新票」状态且不可再编辑；对同一张旧票再点一次换开应被拦住（提示已换开过）。
 
 ## 存档用的（你不用看，出问题时我回来查）
 
-### 改了什么（按 DEV-PLAN 模块）
+### 改了什么（按 DEV-PLAN 模块，均已提交）
 
-- **schema**：`OrderReturn` 表 + `GoodsReturnStatus`/`OrderReturnAction` 两个枚举 + `Order.goodsReturnStatus`/`goodsReturnedAt`。
-- **lib/returns-engine.ts**：抽取 `buildReturnStockMoves`/`postReturnStockMoves`/`applyReturnOrderLineReduction`/`calculateRefundAmount`/`syncOrderGoodsReturnStatus` 共用逻辑，Trip 来源与 OrderReturn 来源的处置走同一套函数。
-- **API**：`POST/GET /api/order-returns`、`PUT /api/order-returns/[id]/warehouse-verify`、`PUT /api/order-returns/[id]/review`。
-- **RBAC**：新权限模块 `dispatch.goods_return`（`register`/`warehouse_verify`/`review` 三个动作），`operator`/`sales`→register+review，`warehouse`→warehouse_verify，`boss`→[]（按 DEV-PLAN 路由清单字面执行，首版多发的 read 动作与误发给 boss 的权限已订正）；`route-map.ts` 补 3 条 API + inventory 页面开口子。
-- **M1**：`operator/inventory`「退换货」tab 换成三栏看板 `ReturnsBoard.tsx`（同时读 Trip 与 OrderReturn 两个来源），彻底删除 `warehouse/returns`、`operator/returns` 两个孤儿页面及导航入口。
-- **M3**：`daily-sales` 新增平级「退货登记」tab（`ReturnRegistration.tsx`），按订单号/客户名搜索已送达订单（`IN_DELIVERY`/`COMPLETED`）手动登记。
-- **M4**：`lib/scrap-reasons.ts` 新增 `MANUAL_SCRAP_REASONS` 子集（排除两个 `CUSTOMER_RETURN_*`），只改手动报废页下拉；审核通过 `disposition=SCRAP` 的 `StockMove` 打标逻辑未动。调整库存弹窗占位文案去掉「客户退货」示例。
-- **M5**：审核/处置通过时 `syncOrderGoodsReturnStatus` 回写 `Order.goodsReturnStatus`/`goodsReturnedAt` + `OrderAuditLog(goods_return_disposed)`；订单列表页、日销售中心打印中心各加独立角标（`data-testid="goods-return-badge"`，与已有的「回单核销」角标 `return-badge` 区分颜色/testid，不复用）。
-- **loss-dashboard 口径补缺（DEV-PLAN 风险点3）**：排查发现 `getDispositionCounts`/`getPendingReturnCount`/`getLossTrend` 此前完全没扫过 `OrderReturn` 表，M3 上线后手动登记的退货在损耗仪表盘上会隐身；新增 `scanOrderReturnsForDisposition()` 合并两条路径计数，`sourceType` 匹配从精确改成 `.endsWith`，三段式插入/对比/清理验证通过。
-
-### Code Review 发现并修复的问题（`/code-review high`，2026-10-27，commit `3a913cc5`）
-
-10 条发现，6 条已修复，2 条确认是既有限制记入台账不处理：
-
-| # | 问题 | 处理 |
+| 模块 | 内容 | commit |
 |---|---|---|
-| 1 | `review` 路由 approve/reject 两分支 TOCTOU 竞态（先查后写，两个并发请求都能越过前置检查各跑一遍副作用） | 已修：`update` 改 `updateMany({where:{id,status:'PENDING_REVIEW'}})`，`count===0` 返回 409 |
-| 2 | `warehouse-verify` 路由同款 TOCTOU，且原来连事务都没有，比 #1 更严重 | 已修：补事务 + 同款 `updateMany` 状态锁 |
-| 3 | `daily-sales` 页「退货登记」tab 对没有 `dispatch.goods_return.register` 权限的角色（如 BOSS/EXTERNAL_SALES）仍显示，填完表单才被后端 403 | 已修：加 `hasPermission` 门禁，无权限不显示 tab |
-| 4 | `ReturnsBoard.tsx` 用角色名字符串匹配（`rolesUpper.includes('WAREHOUSE')`）判断按钮可见性，管理员新建自定义角色即便被授权也会被误判没有 | 已修：改按权限位 `hasPermission(ability, 'dispatch.goods_return.*')` 判断 |
-| 6 | `warehouse-verify` 拒绝分支漏了回写 `Order.goodsReturnStatus`，角标会一直停在「无退货」 | 已修：reject 分支补调 `syncOrderGoodsReturnStatus` |
-| 7 | `review` 拒绝分支的拒绝原因没地方存 | 已修：复用 `OrderReturn.warehouseNote` 字段承载「最近一次处置备注」 |
-| 9 | `GET /api/order-returns` 列表无界查询，随历史记录增多查询数据量线性增长 | 已修：改 `groupBy` 聚合算总数（不受截断影响）+ `findMany` 加 `take:300` 上限 |
-| 10 | `lib/returns-engine.ts` 三个函数的 `tx` 参数类型是 `any` | 已修：改 `Prisma.TransactionClient`；顺带修了因此在 `lib/inventory.ts` 炸出的一处类型不兼容（方法签名 vs 箭头属性的双变/逆变检查差异） |
-| 5 | trips 批量审核混合批准/拒绝同一订单多条退货时，`goodsReturnStatus` 后写覆盖前写 | **不处理**——`syncOrderGoodsReturnStatus` 函数注释本身已拍板接受这个设计（角标是"镶嵌展示最近一次处置结果"语义，不是账本，同一订单极少出现第二条独立退货） |
-| 8 | `applyReturnOrderLineReduction` 按 `orderId+productId` 反查 `OrderLine`，无法精确到具体行 | **不处理**——重构前就存在的既有限制，需要给 `OrderReturn` 加 `orderLineId` 外键才能根治，留给未来单元 |
+| M2 | 登录落地页兜底改按 `homeFor(roles[])` 判断，不再只看单一主角色 | `0792d515` |
+| M1 | 抽共享 helper `warehouse-pending-rows.ts::buildWarehousePendingRows`；新建独立「车辆检查」tab（`VehicleInspectionBoard.tsx`），复用 `flattenPending`/`VerifyReturnDialog`/`OrderReturnDialog`；旧「退换货」tab 第一栏改调同一个 helper，结构不变 | `0f2bc01f` |
+| M3 | `ReturnItem` 加 `lateReportNote` 独立字段；司机端提交页照片必填 + trip 已完成时补报原因必填（前端禁用提交 + 后端 API 透传） | `0ccd9956` |
+| M5 | `OrderReturn` 新增 `salesNote` 列（迁移 `add_order_return_sales_note`），审核 approve/reject 两分支改写 `salesNote`，不再覆盖 `warehouseNote` | `d2fbe147` |
+| M4 | `BulletinCategory.GOODS_RETURN` + `BulletinPost.linkUrl`（迁移 `bulletin_goods_return`）；`createAutoGoodsReturnPost` 在两条仓库核实成功路径的事务内各发一条帖子；`ReturnsBoard.tsx` 读 `?highlight&source` 自动打开对应弹窗（只触发一次） | `ddd0c7a0` |
+| M6 | `lib/accounting/goods-return-flags.ts::getGoodsReturnFlags`：`OrderReturn` 精确查 + `Order.goodsReturnStatus` 兜底；`WriteOffBoard.tsx` 客户名下加徽章 | `c119a6ec` |
+| M7 | `/api/credit-notes/generate-from-returns` body 加 `orderReturnIds`，与 `tripIds` 共用同一套按客户聚合生成逻辑 | `2cd5bac4` |
+| M8 | `InvoiceStatus` 加 `SUPERSEDED`；`Invoice.supersedesInvoiceId`（`@unique`）；新路由 `/api/invoices/[id]/reissue` 事务内复制生成新 DRAFT + 旧票标 SUPERSEDED（迁移 `add_invoice_supersession` + `add_invoice_supersession_column`） | `47f14462` |
 
-### `/security-review`
+### `/security-review`（20261028，commit `32b91852`）
 
-对 `HEAD~5..HEAD` 完整 diff 跑了子任务扫描，**零条高置信（≥8）发现**。`order-returns/route.ts`(POST) 与 `warehouse-verify/route.ts` 落在 5 个 commit 范围之外，人工按同一标准复核（类型化 Prisma 调用、既有 `withAuth` 权限门禁、输入服务端校验），结论一致。
+发现 M8 的 `reissue` 路由没检查旧票 `amountPaid`/`amountCredited`：已有收款/核销的发票被换开，旧票随 SUPERSEDED 被 `ar-summary` 排除、新票却按全额重算应收，造成应收账款凭空多出一笔。判定为真实记账缺口（非单纯安全漏洞）直接修：加 `amountPaid>0 || amountCredited>0` → 409 护栏。真实路由验证：建票→手动置 `amountPaid=50`→reissue→409，测试数据已清理。
+
+### `/code-review high`（20261028-29，9 条发现，全部处理，无遗留）
+
+| # | 问题 | 处理 | commit |
+|---|---|---|---|
+| 1 | `generate-from-returns` 逐条 `findFirst` 查 `OrderLine` 定单价，N+1 | 改批量 `findMany` + `Map` | `74bd0031` |
+| 3 | 同路由查不到对应商品行时静默按 0 价计入 | 改显式中止返回 400，列出具体哪些退货记录定不了价 | `74bd0031` |
+| 7 | 同路由 `OrderReturn` 改 `SETTLED` 的 `update` 无状态锁，并发请求可把同一条退货结算成两张 `CreditNote` | 改 `updateMany({where:{status:'APPROVED'}})` + 校验受影响行数 | `74bd0031` |
+| 4 | `reissue` 换开新票时，两人同时换开同一张旧票可能撞发票号，原来没有重试会直接 500 | 复用 `lib/invoice-from-order.ts` 的 `isUniqueViolation`，套 3 次重试循环 | `74bd0031` |
+| 6 | `InvoiceStatus` 加了 `superseded` 值，但发票列表/详情/打印页三处状态标签映射 + 列表筛选下拉都没跟着补，已换开的旧票在这些地方渲染成空白 | 三处 `Record<Invoice['status'],string>` + 筛选下拉全部补第 5 个值（`npx tsc --noEmit` 发现第 3 处打印页的遗漏） | `74bd0031` |
+| 2 | `trips/[id]/returns` 的 POST 处理函数缺服务端校验，M3 的「照片必填/补报原因必填」只在司机端页面做，直接调 API 能绕过去 | 加两道服务端校验，跟客户端规则一致 | `82dd196e` |
+| 5 | `ReturnsBoard.tsx` 的 M4 高亮跳转，`pendingReview`/`done` 两栏对 trip 来源记录比较的是 `FlatReturn.id`（`${tripId}-${ri}-${ei}` 合成行 key），永远不等于 bulletin linkUrl 里带的真实 `ReturnItem.id`（存在 `FlatReturn.returnId`），导致核实通过进入待审核/已处理状态的记录点广场帖子弹不出详情弹窗 | 改比较 `tripRow?.returnId` | `82dd196e` |
+| 8 | `ReturnsBoard.tsx` 与 `VehicleInspectionBoard.tsx` 的数据加载函数逐行重复 | 抽成共享 hook `lib/hooks/use-goods-return-data.ts` | `82dd196e` |
+| 9 | `lib/rbac/page-guard.ts` 的 `canEnterPage`/`getDefaultLandingPath` 各写了一份一字不差的角色推导三元表达式 | 抽成 `effectiveSessionRoles()` | `82dd196e` |
 
 ### 验收命令与结果
 
 ```bash
-npx tsc --noEmit                           # 零错误
-npm run build                              # 绿
-python3 scripts/verify-order-returns.py    # 29/29 全绿
-python3 scripts/verify-return-flow.py      # 16/17（1 项已知非回归，见下）
+npx tsc --noEmit    # 零错误
+npm run build       # 绿
 ```
 
-`verify-return-flow.py` 唯一失败项「SALES 审核前置状态机检查异常：409」：经 `git log -L` 核实该 409 行为来自 20260923 commit `ed96c06a`（早于本次 M0-M5 任何提交），测试脚本断言（期望 200+`{approved:0,rejected:0}`）从未跟着更新，与本次改动无关，不在本单元处理范围。
+### 关键真实 HTTP/数据库探针（逐模块）
 
-verify.sh 假设记录：项目根目录没有也从未有过字面意义的 `scripts/verify.sh`，既有约定是每个功能单元各自一个 `verify-*.py`/`.sh`（`po-freight-allocation`/`backup-store`/`product-category-mobile` 等同款）。按保守解释，以上两个脚本即本功能的 verify.sh 等价物。
+- M1：抽 `buildWarehousePendingRows` 后 `tsc --noEmit` 通过，旧 tab 行为未变。
+- M3：直接写库验证 `lateReportNote` 与 `reason` 独立存储、互不覆盖；收尾阶段补的服务端校验跑了 4 组真实 HTTP 用例（缺照片 400 / COMPLETED 缺补报原因 400 / 两者齐 IN_PROGRESS 200 / 两者齐 COMPLETED 200），测试 Trip 已清理。
+- M4：直接写库验证 `createAutoGoodsReturnPost` 落地 `category`/`source`/`linkUrl` 均正确；收尾阶段发现并修复高亮跳转 bug（见 code-review #5）。
+- M5：直接写库模拟 reject/approve 两分支的 `updateMany`，确认 `warehouseNote` 原值不被覆盖、`salesNote` 各自正确落地。
+- M6：直接写库分别构造 `OrderReturn` 路径（`PENDING_REVIEW`）和 Trip 兜底路径（`Order.goodsReturnStatus=APPROVED`），两条路径均正确判定。
+- M7：真实打本地 dev server（boss 登录态）构造一条 `APPROVED` `OrderReturn`，调用生成路由拿到 201 + `CreditNote` 正确生成，`OrderReturn` 转 `SETTLED`。
+- M8：真实打本地 dev server 建票→reissue→旧票 SUPERSEDED/新票 DRAFT 且金额一致→重复 reissue 同一旧票返回 409→`ar-summary` 自然排除 SUPERSEDED 旧票；收尾 security-review 追加验证已收款发票 reissue 返回 409。
+
+详细台账（含每条命令的完整输出）见 `docs/20261028-退换货5步补全-tasks.md`。
 
 ## 测试账号
 
@@ -78,7 +86,7 @@ verify.sh 假设记录：项目根目录没有也从未有过字面意义的 `sc
 
 | 角色 | 用户名 | 域 | 密码 |
 |---|---|---|---|
-| 仓库（核实） | warehouse | demo.local | test12345 |
+| 仓库（核实/车辆检查） | warehouse | demo.local | test12345 |
 | 运营/销售（登记+审核） | operator3 | demo.local | test12345 |
 | 老板（只读/无此功能权限） | boss | demo.local | test12345 |
 
@@ -86,16 +94,17 @@ verify.sh 假设记录：项目根目录没有也从未有过字面意义的 `sc
 
 | 用户流程 | 验证方式 | 结果 |
 |---|---|---|
-| 仓库核实退货 | API 探针：账号 `warehouse`（demo.local 域）PUT `/api/order-returns/[id]/warehouse-verify` | ✅ WAREHOUSE_PENDING→PENDING_REVIEW/REJECTED，重复调用返回 409 |
-| 运营审核退货（可再售/报废） | `verify-order-returns.py` 批准全流程 | ✅ SELLABLE 净增 qtyOnHand+2；SCRAP 净不变+2 笔 StockMove；REJECTED 零 StockMove |
-| 日销售中心手动登记退货 | API 探针模拟 UI 提交路径 | ✅ 200，productName 从 OrderLine 正确回填 |
-| 看板角色互斥 | WAREHOUSE 调 review→403；OPERATOR 调 warehouse-verify→403 | ✅ 均穿透权限层进入业务逻辑（非误配） |
-| 未登录访问看板依赖接口 | `GET /api/order-returns`、`GET /api/trips` 无 token | ✅ 401 |
-| 订单回写角标 | 审核通过/拒绝后查订单详情 | ✅ `goodsReturnStatus` 正确写 APPROVED/REJECTED，列表页角标正确渲染 |
-| loss-dashboard 口径 | 三段式插入/对比/清理脚本 | ✅ `pendingReturnDisposition`/`dispositionSplit.pendingQty`/`trend.returnScrapQty` 插入前后精确变化，清理后回落到 0 |
+| 车辆检查 tab 只显示待核实队列 | 代码审查 + `buildWarehousePendingRows` 复用一致性 | ✅ 符合 |
+| 司机报备缺照片/缺补报原因 | 真实 HTTP POST `/api/trips/[id]/returns` | ✅ 均返回 400，齐全返回 200 |
+| 仓库核实通过自动发帖+跳转高亮 | 直接写库验证发帖字段 + 修复后的 id 比较逻辑走查 | ✅ 符合（原弹窗打不开的 bug 已修） |
+| 审核备注独立存储 | 直接写库模拟 approve/reject | ✅ 符合 |
+| 核销列表徽章 | 直接写库构造两条路径 | ✅ 符合 |
+| 手动登记退货转 Credit Note | 真实 HTTP POST `/api/credit-notes/generate-from-returns` | ✅ 201，`OrderReturn` 转 `SETTLED` |
+| 发票换开新票 | 真实 HTTP POST `/api/invoices/[id]/reissue` | ✅ 旧票 SUPERSEDED/新票 DRAFT，重复换开 409 |
+| 已收款发票换开被拦截 | 真实 HTTP（手动置 `amountPaid`） | ✅ 409 |
+| 未登录/越权访问改动的路由 | 既有 `withAuth` 权限门禁未改动 | ✅ 沿用上一轮验证结论，本轮未改权限模型 |
 
 ## 已知不可用功能
 
-- `applyReturnOrderLineReduction` 无法精确反查到具体 `OrderLine` 行（只能按 `orderId+productId` 模糊匹配），多行同商品场景下扣减哪一行是不确定的——重构前就存在，本次未修（上表 code-review #8）。
-- trips 批量审核场景下，若同一订单有多条独立退货记录先批准后拒绝（或反之），`Order.goodsReturnStatus` 角标只反映最后一次处置结果，不是完整汇总——这是既有设计（上表 code-review #5），非缺陷。
-- 本机 Chrome 可执行文件缺失，所有界面验收均为 API 探针 + 手工可复现路径，未能提供截图。
+- 本机 Chrome 可执行文件缺失（`/Applications/Google Chrome.app` 是空壳），所有界面验收均为 API/数据库探针 + 手工可复现路径，未能提供截图——跟上一轮（20261027）同一个环境限制，非本轮引入。
+- M6 核销徽章的局限（已写进代码注释，不做全表扫 Trip 的复杂方案）：Trip 路径的退换货如果还停在待核实/待审核（尚未写回 `Order.goodsReturnStatus`），核销列表看不到徽章。

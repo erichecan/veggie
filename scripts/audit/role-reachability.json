@@ -1175,6 +1175,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "POST /api/customers/bulk-price-type": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "POST /api/customers/bulk": {
   "BOSS": "y",
   "OPERATOR": "y",
@@ -2205,6 +2219,20 @@
   "DISPATCH": "y",
   "SALES": "n",
   "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
+ "POST /api/orders/[id]/invoices": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "y",
   "SORTER": "n",
   "PICKER": "n",
   "DRIVER": "n",

@@ -45,6 +45,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [exceptionPhoto, setExceptionPhoto] = useState<string | null>(null)
   /** 司机签名（20260922 拍板）：证明"这条异常是我本人记录的"，提交前必填 */
   const [exceptionDriverSignature, setExceptionDriverSignature] = useState<string | null>(null)
+  /** 补报备注（20261028，退换货补全 M3）：补报几天前的退换货时，说明"为什么现在才报"，
+   * 跟 reasonText（退换货本身的原因）彻底分开，不混在一起 */
+  const [exceptionLateNote, setExceptionLateNote] = useState('')
   const [submittingException, setSubmittingException] = useState(false)
   const exceptionPhotoInputRef = useRef<HTMLInputElement>(null)
 
@@ -160,6 +163,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     setExceptionAction('return')
     setExceptionPhoto(null)
     setExceptionDriverSignature(null)
+    setExceptionLateNote('')
     setExceptionModal({ restId })
   }
 
@@ -185,7 +189,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (selected.length === 0) { toast.error(isEn ? 'Please select the affected products' : '请勾选有异常的商品'); return }
     const reasonText = exceptionReasons.join(isEn ? ', ' : '、')
     if (!reasonText.trim()) { toast.error(isEn ? 'Please enter a reason' : '请填写异常原因'); return }
+    if (!exceptionPhoto) { toast.error(isEn ? 'Please take a photo as evidence' : '请拍照留存现场证据'); return }
     if (!exceptionDriverSignature) { toast.error(isEn ? 'Please sign to confirm this report' : '请签名确认本次上报'); return }
+    const isLateReport = tripStatus === 'completed'
+    if (isLateReport && !exceptionLateNote.trim()) {
+      toast.error(isEn ? 'Please explain why this is being reported late' : '请填写为什么现在才补报'); return
+    }
 
     setSubmittingException(true)
     try {
@@ -199,6 +208,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           reason: reasonText,
           actionType: exceptionAction,
           photo: exceptionPhoto ?? undefined,
+          lateReportNote: isLateReport ? exceptionLateNote.trim() : undefined,
         })),
       })
       load()
@@ -795,6 +805,25 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 />
               </div>
 
+              {tripStatus === 'completed' && (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">
+                    {isEn ? 'Why report this late?' : '为什么现在才补报'} <span className="text-red-500">*</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mb-2">
+                    {isEn ? 'This trip is already completed — explain the delay separately from the return reason above' : '这单已完成签收，补报原因跟上面的退换货原因分开记，方便核实时追溯'}
+                  </p>
+                  <textarea
+                    value={exceptionLateNote}
+                    onChange={e => setExceptionLateNote(e.target.value)}
+                    placeholder={isEn ? 'e.g. customer only reported this 3 days later' : '例如：客户 3 天后才反馈，今天补录'}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                    rows={2}
+                    maxLength={500}
+                  />
+                </div>
+              )}
+
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">
                   {isEn ? 'Driver Signature' : '司机签名'} <span className="text-red-500">*</span>
@@ -813,7 +842,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   className="flex-1 text-white"
                   style={{ background: '#ea580c' }}
                   onClick={submitException}
-                  disabled={submittingException || !exceptionDriverSignature}
+                  disabled={
+                    submittingException ||
+                    !exceptionDriverSignature ||
+                    !exceptionPhoto ||
+                    (tripStatus === 'completed' && !exceptionLateNote.trim())
+                  }
                 >
                   {submittingException ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Exception' : '确认报告异常')}
                 </Button>

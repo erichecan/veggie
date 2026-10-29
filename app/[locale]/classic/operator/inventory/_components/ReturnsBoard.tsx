@@ -1,14 +1,13 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
-import type { Trip, OrderReturn } from '@/lib/types'
+import type { OrderReturn } from '@/lib/types'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { Dialog } from '@/components/ui/dialog'
-import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
-import { flattenPending, VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
+import { useGoodsReturnData } from '@/lib/hooks/use-goods-return-data'
+import { VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
 import {
   flattenTripReturns,
   TripReturnReviewDialog,
@@ -19,6 +18,7 @@ import {
   type ReturnStatus,
 } from './TripReturnReviewDialog'
 import { OrderReturnDialog } from './OrderReturnDialog'
+import { buildWarehousePendingRows } from './warehouse-pending-rows'
 
 /**
  * 退货/报废整合 M1：`warehouse/returns`（仓库核实）+ `operator/returns`（销售审核+disposition）
@@ -60,10 +60,9 @@ export default function ReturnsBoard() {
   const isEn = locale !== routing.defaultLocale
   const STATUS_LABELS = isEn ? TRIP_STATUS_LABELS_EN : TRIP_STATUS_LABELS_ZH
 
-  const [trips, setTrips] = useState<Trip[]>([])
-  const [orderReturns, setOrderReturns] = useState<OrderReturn[]>([])
-  const [loading, setLoading] = useState(false)
+  const searchParams = useSearchParams()
   const [dialog, setDialog] = useState<DialogState>(null)
+  const highlightHandled = useRef(false)
 
   // 这里只做 UX 层面的按钮显隐，真正的拦截在后端 withAuth；
   // 按权限点而不是按角色名判断——角色名匹配对管理员新建的自定义角色会误判
@@ -72,55 +71,11 @@ export default function ReturnsBoard() {
   const canVerify = hasPermission(ability, 'dispatch.goods_return.warehouse_verify')
   const canReview = hasPermission(ability, 'dispatch.goods_return.review')
 
-  async function load() {
-    setLoading(true)
-    try {
-      const [tripsData, returnsData] = await Promise.all([
-        apiGet<Record<string, unknown>[]>('/api/trips'),
-        apiGet<{ returns: OrderReturn[] }>('/api/order-returns'),
-      ])
-      setTrips(tripsData as unknown as Trip[])
-      setOrderReturns(returnsData.returns ?? [])
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load data' : '加载数据失败'))
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { trips, orderReturns, loading, reload: load } = useGoodsReturnData(isEn)
 
-  useEffect(() => { load() }, [])
-  // 波次/订单在别的 tab 改了之后，切回来希望看到最新结果
-  useRefetchOnFocus([load])
-
-  const pendingTripRows = flattenPending(trips)
   const allTripRows = flattenTripReturns(trips)
 
-  const warehousePending: CardRow[] = [
-    ...pendingTripRows.map(r => ({
-      key: `trip-${r.tripId}-${r.id ?? r.productId}`,
-      source: 'trip' as const,
-      status: 'WAREHOUSE_PENDING' as ReturnStatus,
-      createdAt: r.createdAt ?? r.tripCreatedAt,
-      restaurantName: r.restaurantName,
-      productName: r.productName,
-      quantity: r.quantity,
-      reason: r.reason,
-      actionType: r.actionType,
-      pendingRow: r,
-    })),
-    ...orderReturns.filter(r => r.status === 'WAREHOUSE_PENDING').map(r => ({
-      key: `or-${r.id}`,
-      source: 'order_return' as const,
-      status: 'WAREHOUSE_PENDING' as ReturnStatus,
-      createdAt: r.createdAt,
-      restaurantName: r.order?.restaurantName ?? '—',
-      productName: r.productName,
-      quantity: r.quantity,
-      reason: r.reason,
-      actionType: r.actionType,
-      orderReturnRow: r,
-    })),
-  ].sort(byDateDesc)
+  const warehousePending: CardRow[] = buildWarehousePendingRows(trips, orderReturns)
 
   const pendingReview: CardRow[] = [
     ...allTripRows.filter(r => r.status === 'PENDING_REVIEW').map(r => ({
@@ -178,6 +133,30 @@ export default function ReturnsBoard() {
       orderReturnRow: r,
     })),
   ].sort(byDateDesc)
+
+  // 退换货补全 M4：消息广场自动发帖的 linkUrl 带 ?highlight=<id>&source=，跳转过来直接
+  // 弹出对应记录，不用用户自己在三栏里找。只在第一次成功匹配时打开一次，避免数据刷新
+  // （useRefetchOnFocus）时反复弹窗。
+  useEffect(() => {
+    if (highlightHandled.current || loading) return
+    const highlight = searchParams.get('highlight')
+    const source = searchParams.get('source')
+    if (!highlight || !source) return
+    const match = [...warehousePending, ...pendingReview, ...done].find(r => {
+      if (source === 'order_return') return r.source === 'order_return' && r.orderReturnRow?.id === highlight
+      // tripRow 是 FlatReturn：.id 是 `${tripId}-${ri}-${ei}` 合成行 key，不是真实
+      // ReturnItem.id（真实 id 存在 .returnId，跟 bulletin linkUrl 里带的 highlight 同源，
+      // 见 TripReturnReviewDialog.tsx 的 FlatReturn 定义）；之前拿 .id 比会恒不匹配，
+      // 待审核/已处理状态的退货点广场帖子永远弹不出弹窗（code-review high 发现 #5）
+      if (source === 'trip') return r.source === 'trip' && (r.pendingRow?.id === highlight || r.tripRow?.returnId === highlight)
+      return false
+    })
+    if (match) {
+      highlightHandled.current = true
+      openCard(match)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, warehousePending, pendingReview, done])
 
   function openCard(card: CardRow) {
     if (card.source === 'trip') {

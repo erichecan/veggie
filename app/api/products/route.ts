@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { buildProductTemplatesWhere, productStockAlertCounts, buildProductTemplatesOrderBy, sortProductIdsByPackSequence } from '@/lib/products-query'
+import { buildProductTemplatesWhere, productStockAlertCounts, buildProductTemplatesOrderBy, sortProductIdsByPackSequence, sortProductIdsBySpec } from '@/lib/products-query'
 
 export async function GET(req: Request) {
   try {
@@ -39,12 +39,14 @@ export async function GET(req: Request) {
 
       let total: number
       let products: Awaited<ReturnType<typeof prisma.product.findMany<{ where: typeof where; include: typeof productInclude }>>>
-      if (sortKey === 'packSequence') {
+      if (sortKey === 'packSequence' || sortKey === 'spec') {
         // Pack Sequence 列按可售单位的装货顺序值排——Prisma 的 findMany.orderBy 对一对多关系
         // 只支持按 _count 排，_min 不支持（见 lib/products-query.ts 里 sortProductIdsByPackSequence
         // 的注释），只能先拿候选 id 再原始 SQL 聚合排序、分页后按顺序查详情。
         const allCandidates = await prisma.product.findMany({ where, select: { id: true, name: true } })
-        const sortedIds = await sortProductIdsByPackSequence(allCandidates, sortDir)
+        const sortedIds = sortKey === 'spec'
+          ? await sortProductIdsBySpec(allCandidates, sortDir)
+          : await sortProductIdsByPackSequence(allCandidates, sortDir)
         total = sortedIds.length
         const pageIds = sortedIds.slice((page - 1) * limit, (page - 1) * limit + limit)
         const rows = await prisma.product.findMany({ where: { id: { in: pageIds } }, include: productInclude })

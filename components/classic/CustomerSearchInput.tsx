@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
+import { cycleIndex } from '@/lib/cycle-index'
 
 interface Props<C extends { id: string; name: string; city?: string | null }> {
   value: string
@@ -81,8 +82,8 @@ export default function CustomerSearchInput<
         onKeyDown={e => {
           if (e.key === 'Escape') { setOpen(false); setHighlight(-1); return }
           if (!open || filtered.length === 0) return
-          if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, filtered.length - 1)) }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)) }
+          if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => cycleIndex(h, 1, filtered.length)) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => cycleIndex(h, -1, filtered.length)) }
           else if (e.key === 'Enter') {
             e.preventDefault()
             const idx = highlight >= 0 ? highlight : 0

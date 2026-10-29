@@ -26,6 +26,7 @@ const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   posted: '已确认',
   paid: '已付款',
   cancelled: '已取消',
+  superseded: '已换开新票',
 }
 
 const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
@@ -33,6 +34,7 @@ const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
   posted: 'Posted',
   paid: 'Paid',
   cancelled: 'Cancelled',
+  superseded: 'Superseded',
 }
 
 const STATUS_COLOR: Record<Invoice['status'], string> = {
@@ -40,6 +42,7 @@ const STATUS_COLOR: Record<Invoice['status'], string> = {
   posted: 'bg-blue-100 text-blue-700',
   paid: 'bg-green-100 text-green-700',
   cancelled: 'bg-red-100 text-red-600',
+  superseded: 'bg-amber-100 text-amber-700',
 }
 
 const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
@@ -374,6 +377,7 @@ export default function ClassicInvoicesPage() {
           { label: isEn ? 'Posted' : '已确认', value: 'posted' },
           { label: isEn ? 'Paid' : '已付款', value: 'paid' },
           { label: isEn ? 'Cancelled' : '已取消', value: 'cancelled' },
+          { label: isEn ? 'Superseded' : '已换开新票', value: 'superseded' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as Invoice['status']); setPage(1) }}
         groupByOptions={[

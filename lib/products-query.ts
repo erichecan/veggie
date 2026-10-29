@@ -262,3 +262,30 @@ export async function sortProductIdsByPackSequence(
   }).map(p => p.id)
 }
 
+/** Product Spec 列展示默认可售单位的规格；空规格固定排最后，且名称作为稳定兜底。 */
+export async function sortProductIdsBySpec(
+  products: readonly { id: string; name: string }[],
+  dir: SortDir,
+): Promise<string[]> {
+  if (products.length === 0) return []
+  const ids = products.map(p => p.id)
+  const rows = await prisma.$queryRaw<{ productId: string; spec: string | null }[]>`
+    SELECT "productId", spec
+    FROM "ProductSaleUom"
+    WHERE "productId" = ANY(${ids}) AND "isDefault" = true AND active = true
+  `
+  const specById = new Map(rows.map(r => [r.productId, r.spec?.trim() || null]))
+  const nameById = new Map(products.map(p => [p.id, p.name]))
+  return [...ids].sort((a, b) => {
+    const specA = specById.get(a) ?? null
+    const specB = specById.get(b) ?? null
+    if (specA === null && specB !== null) return 1
+    if (specA !== null && specB === null) return -1
+    if (specA !== null && specB !== null) {
+      const compared = specA.localeCompare(specB, 'en', { numeric: true, sensitivity: 'base' })
+      if (compared !== 0) return dir === 'asc' ? compared : -compared
+    }
+    return nameById.get(a)!.localeCompare(nameById.get(b)!, 'en', { numeric: true, sensitivity: 'base' }) || a.localeCompare(b)
+  })
+}
+

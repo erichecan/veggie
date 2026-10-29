@@ -614,6 +614,9 @@ export interface ReturnItem {
   driverSignedAt?: string
   /// 换货场景关联的新开订单 id（20260922 拍板：换货一律新开单，不在本记录里维护第二套商品明细）
   exchangeOrderId?: string
+  /// 补报场景专用备注（20261028，退换货补全 M3）：司机补报几天前发生的退换货时，
+  /// 说明"为什么现在才报"，跟 reason（退换货本身的原因）彻底分开，不混在一起
+  lateReportNote?: string
 }
 
 /**
@@ -638,6 +641,7 @@ export interface OrderReturn {
   warehouseVerifiedByName?: string
   warehouseVerifiedAt?: string
   warehouseNote?: string
+  salesNote?: string
   approvedById?: string
   approvedByName?: string
   approvedAt?: string
@@ -830,7 +834,7 @@ export interface OdooPricelist {
 }
 
 // ─── 发票 ─────────────────────────────────────────────────────────────────────
-export type InvoiceStatus = 'draft' | 'posted' | 'paid' | 'cancelled'
+export type InvoiceStatus = 'draft' | 'posted' | 'paid' | 'cancelled' | 'superseded'
 
 export interface InvoiceLine {
   productId: string

@@ -4,12 +4,12 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import { applyFacets, groupFacets, localizeFacetFields, CUSTOMER_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
-import type { Customer, OdooPricelist } from '@/lib/types'
+import type { Customer, CustomerPriceType, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
@@ -23,6 +23,8 @@ import { hasPermission, useAbility } from '@/lib/permissions'
 import { deleteCustomersFlow, DELETE_PERMISSION_HINT } from '@/components/customers/delete-customers'
 import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 const PAGE_SIZE = 20
 
@@ -70,6 +72,7 @@ const PAYMENT_LABELS_ZH: Record<string, string> = Object.fromEntries(PAYMENT_TER
 const PAYMENT_LABELS_EN: Record<string, string> = Object.fromEntries(PAYMENT_TERM_OPTIONS.map(o => [o.value, o.labelEn]))
 // Price Type 沿用下单页(place-order)的说法，中英文界面下都不翻译——与那边保持一致
 const PRICE_TYPE_LABELS: Record<string, string> = { multi: 'Multi Price', default: 'Default Price', last: 'Last Purchase Price' }
+const PRICE_TYPE_OPTIONS: CustomerPriceType[] = ['default', 'multi', 'last']
 
 export default function ClassicCustomersPage() {
   const router = useRouter()
@@ -99,7 +102,12 @@ export default function ClassicCustomersPage() {
   /** Edit 模式下正在编辑哪个客户的价格表（同一时间只开一个编辑面板） */
   const [pricelistEditId, setPricelistEditId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const canDelete = hasPermission(useAbility(), 'master.customer.delete')
+  const [priceTypeDialogOpen, setPriceTypeDialogOpen] = useState(false)
+  const [bulkPriceType, setBulkPriceType] = useState<CustomerPriceType>('multi')
+  const [savingPriceType, setSavingPriceType] = useState(false)
+  const ability = useAbility()
+  const canDelete = hasPermission(ability, 'master.customer.delete')
+  const canUpdate = hasPermission(ability, 'master.customer.update')
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
   const [facets, setFacets] = useState<Facet[]>(saved?.facets ?? [])
   // 列头排序：Customer Name / Salesperson / Pricelist / Price Type 均可点表头排序，
@@ -303,6 +311,33 @@ export default function ClassicCustomersPage() {
       if (changed) { setSelected(new Set()); loadPage(page, searchInput) }
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleBulkPriceTypeSave() {
+    if (selected.size === 0 || savingPriceType) return
+    setSavingPriceType(true)
+    try {
+      const result = await apiPost<{ updated: number; unchanged: number; notFound: number }>('/api/customers/bulk-price-type', {
+        ids: [...selected],
+        priceType: bulkPriceType,
+      })
+      setPriceTypeDialogOpen(false)
+      setSelected(new Set())
+      if (result.notFound > 0) {
+        toast.warning(isEn
+          ? `Updated ${result.updated}; ${result.unchanged} already had this type; ${result.notFound} unavailable`
+          : `已更新 ${result.updated} 个；${result.unchanged} 个原本相同；${result.notFound} 个不可用`)
+      } else {
+        toast.success(isEn
+          ? `Updated ${result.updated}; ${result.unchanged} already had this type`
+          : `已更新 ${result.updated} 个客户；${result.unchanged} 个客户原本已是该类型`)
+      }
+      await loadPage(page, searchInput)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update Price Type' : '批量更新 Price Type 失败'))
+    } finally {
+      setSavingPriceType(false)
     }
   }
 
@@ -549,6 +584,7 @@ export default function ClassicCustomersPage() {
           // 导出吃的是当前筛选参数（跟 selected 无关），所以常驻显示，不依赖勾选行
           exportAction,
           ...(selected.size > 0 ? [
+            ...(canUpdate ? [{ label: isEn ? `Set Price Type (${selected.size})` : `设置 Price Type (${selected.size})`, onClick: () => { setBulkPriceType('multi'); setPriceTypeDialogOpen(true) }, disabled: deleting || savingPriceType }] : []),
             { label: isEn ? `Archive (${selected.size})` : `归档 (${selected.size})`, onClick: handleDeleteSelected, disabled: deleting },
             { label: deleting ? (isEn ? 'Working...' : '处理中...') : (isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`), onClick: handleHardDeleteSelected, style: 'red' as const, disabled: deleting },
           ] : []),
@@ -613,6 +649,47 @@ export default function ClassicCustomersPage() {
         onPageChange={p => loadPage(p, searchInput)}
         onPageSizeChange={ps => loadPage(1, searchInput, paymentFilter, includeArchived, ps)}
       />
+      <Dialog open={priceTypeDialogOpen} onOpenChange={open => { if (!savingPriceType) setPriceTypeDialogOpen(open) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isEn ? 'Set Price Type' : '批量设置 Price Type'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              {isEn
+                ? `This will change the pricing mode for ${selected.size} selected customer(s). Their assigned pricelists will stay unchanged.`
+                : `将修改 ${selected.size} 个已选客户的定价方式；客户当前关联的价格表保持不变。`}
+            </p>
+            <label className="block text-sm font-medium text-gray-700" htmlFor="bulk-customer-price-type">
+              {isEn ? 'New Price Type' : '目标 Price Type'}
+            </label>
+            <select
+              id="bulk-customer-price-type"
+              value={bulkPriceType}
+              onChange={e => setBulkPriceType(e.target.value as CustomerPriceType)}
+              className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:border-[#875A7B]"
+              disabled={savingPriceType}
+            >
+              {PRICE_TYPE_OPTIONS.map(value => (
+                <option key={value} value={value}>{PRICE_TYPE_LABELS[value]}</option>
+              ))}
+            </select>
+            <p className="text-xs text-amber-700">
+              {isEn
+                ? 'This changes how future orders calculate prices for these customers.'
+                : '此操作会改变这些客户后续订单的价格计算方式。'}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPriceTypeDialogOpen(false)} disabled={savingPriceType}>
+              {isEn ? 'Cancel' : '取消'}
+            </Button>
+            <Button type="button" onClick={handleBulkPriceTypeSave} disabled={savingPriceType || selected.size === 0}>
+              {savingPriceType ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Confirm' : '确认修改')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="p-4">
         <OdooTable

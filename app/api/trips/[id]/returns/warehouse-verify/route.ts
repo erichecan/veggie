@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import type { TripRestaurant } from '@/lib/types'
+import { createAutoGoodsReturnPost } from '@/lib/bulletin'
 
 /**
  * 仓库核实（20260922）：司机上报的退换货先落 WAREHOUSE_PENDING，次日仓库工作人员
@@ -77,9 +78,19 @@ export async function PUT(
       }
       restaurants[rIdx] = { ...restaurant, returns }
 
-      await prisma.trip.update({
-        where: { id },
-        data: { restaurants: restaurants as never },
+      await prisma.$transaction(async (tx) => {
+        await tx.trip.update({
+          where: { id },
+          data: { restaurants: restaurants as never },
+        })
+        if (action === 'verify') {
+          await createAutoGoodsReturnPost(tx, {
+            restaurantName: restaurant.restaurantName,
+            productName: ret.productName,
+            quantity: ret.quantity,
+            linkUrl: `/classic/operator/inventory?tab=returns&highlight=${ret.id ?? ret.productId}&source=trip`,
+          })
+        }
       })
 
       await writeLog({

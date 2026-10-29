@@ -15,8 +15,8 @@ import { formatPrintTimestamp } from '@/lib/print/trip-common'
 
 const PURPLE = '#875A7B'
 const STATUS_LABELS = {
-  en: { draft: 'Draft', posted: 'Posted', paid: 'Paid', cancelled: 'Cancelled' },
-  zh: { draft: '草稿', posted: '已确认', paid: '已付款', cancelled: '已取消' },
+  en: { draft: 'Draft', posted: 'Posted', paid: 'Paid', cancelled: 'Cancelled', superseded: 'Superseded' },
+  zh: { draft: '草稿', posted: '已确认', paid: '已付款', cancelled: '已取消', superseded: '已换开新票' },
 }
 
 export default function InvoicePrintPage() {

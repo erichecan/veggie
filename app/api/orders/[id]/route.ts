@@ -17,6 +17,16 @@ import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
 import { checkCustomerCredit } from '@/lib/credit-check'
 
+const orderInvoiceSummarySelect = {
+  id: true,
+  name: true,
+  customerId: true,
+  saleOrderIds: true,
+  totalIncTax: true,
+  status: true,
+  createdAt: true,
+} as const
+
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
@@ -44,7 +54,7 @@ const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
   CANCELLED: new Set(['PENDING']),
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const order = await prisma.order.findUnique({
@@ -71,7 +81,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // 行级隔离：外部销售只看自己名下的订单，但本人创建、挂在别人名下的单也放行
     // （与 lib/orders-query.ts 的 extraOwnFields=['createdById'] 同一条口径）。
     // 回 404 而不是 403 —— 403 等于告诉对方"这单存在，只是不给你看"。
-    const caller = await tryAuth(_req)
+    const caller = await tryAuth(req)
     if (!isRowVisible(order, salesRowScope(caller), r => (r as { createdById?: string | null }).createdById === caller?.userId)) {
       return NextResponse.json({ error: '订单不存在' }, { status: 404 })
     }
@@ -85,8 +95,28 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       ...orderWithoutCommission } = order
     // 打印排序主键：装货顺序（客户要求 2026-09-14），见 lib/print/line-sort.ts
     const uomSeqMap = await fetchUomSequences(order.lines.map(l => ({ productId: l.productId, uomId: l.uomId })))
+    const includeInvoices = new URL(req.url).searchParams.get('includeInvoices') === '1'
+    const invoiceData = includeInvoices ? await Promise.all([
+      prisma.invoice.findMany({
+        where: { saleOrderIds: { has: order.id } },
+        select: orderInvoiceSummarySelect,
+        orderBy: { createdAt: 'desc' },
+      }),
+      order.restaurantId
+        ? prisma.invoice.findMany({
+            where: { customerId: order.restaurantId },
+            select: orderInvoiceSummarySelect,
+            orderBy: { createdAt: 'desc' },
+            take: 100,
+          })
+        : Promise.resolve([]),
+    ]).then(([linked, recent]) => ({
+      linked,
+      candidates: recent.filter(invoice => !invoice.saleOrderIds.includes(order.id)),
+    })) : undefined
     const enrichedOrder = {
       ...orderWithoutCommission,
+      ...(invoiceData ? { invoiceData } : {}),
       // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
       salesman: order.salesUser?.name ?? null,
       // SSOT(P0-1): 调度归属显示由所属 wave 派生

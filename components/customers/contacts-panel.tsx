@@ -165,12 +165,17 @@ export default function CustomerContactsPanel({
           <tbody>
             {contacts.map((c) => (
               <tr key={c.id} className="border-b border-gray-100">
-                <td className="py-2 text-gray-900">{c.name}</td>
-                <td className="py-2 text-gray-700">{c.email}</td>
+                <td className="py-2 text-gray-900">
+                  <label htmlFor={`primary-contact-${c.id}`} className="cursor-pointer">{c.name}</label>
+                </td>
+                <td className="py-2 text-gray-700">
+                  <label htmlFor={`primary-contact-${c.id}`} className="cursor-pointer">{c.email}</label>
+                </td>
                 <td className="py-2 text-gray-500">{c.role || '—'}</td>
                 <td className="py-2 text-gray-500">{c.phone || '—'}</td>
                 <td className="py-2 text-center">
                   <input
+                    id={`primary-contact-${c.id}`}
                     type="radio"
                     name="primary-contact"
                     checked={c.isPrimary}

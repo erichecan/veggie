@@ -182,8 +182,15 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
             {isEn ? 'Disposition: ' : '货物去向：'}{item.disposition === 'SELLABLE' ? (isEn ? 'Sellable (restocked)' : '可再售（已回补库存）') : (isEn ? 'Scrap (recorded as loss)' : '报废（已计入损耗）')}
           </p>
         )}
-        {status === 'REJECTED' && item.warehouseNote && (
-          <p className="text-xs text-red-500">{isEn ? 'Reject reason: ' : '拒绝原因：'}{item.warehouseNote}</p>
+        {/* 仓库备注/销售备注彼此独立展示，不互相覆盖——仓库核实不通过写 warehouseNote，
+            销售审核（批准/拒绝）写 salesNote，一条记录最多命中其中一个阶段的拒绝备注 */}
+        {item.warehouseNote && (
+          <p className="text-xs text-gray-500">{isEn ? 'Warehouse note: ' : '仓库备注：'}{item.warehouseNote}</p>
+        )}
+        {item.salesNote && (
+          <p className={`text-xs ${status === 'REJECTED' ? 'text-red-500' : 'text-gray-500'}`}>
+            {isEn ? 'Sales note: ' : '销售备注：'}{item.salesNote}
+          </p>
         )}
 
         <DialogFooter className="gap-2 flex-wrap">

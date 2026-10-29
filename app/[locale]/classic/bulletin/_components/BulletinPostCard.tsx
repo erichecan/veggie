@@ -11,6 +11,7 @@ const CATEGORY_BADGE_VARIANT: Record<BulletinPost['category'], string> = {
   SHORTAGE: 'bg-red-100 text-red-700 border-red-200',
   ARRIVAL: 'bg-green-100 text-green-700 border-green-200',
   PRICE_CHANGE: 'bg-amber-100 text-amber-700 border-amber-200',
+  GOODS_RETURN: 'bg-purple-100 text-purple-700 border-purple-200',
   OTHER: 'bg-gray-100 text-gray-600 border-gray-200',
 }
 
@@ -100,7 +101,13 @@ export default function BulletinPostCard({
         )}
       </div>
 
-      <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap break-words">{post.content}</p>
+      {post.linkUrl ? (
+        <a href={post.linkUrl} className="mt-2 block text-sm text-gray-700 whitespace-pre-wrap break-words hover:underline">
+          {post.content}
+        </a>
+      ) : (
+        <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap break-words">{post.content}</p>
+      )}
 
       {post.imageUrl && (
         <img src={post.imageUrl} alt="" className="mt-2 max-h-64 rounded border border-gray-200 object-cover" />
