@@ -28,6 +28,10 @@ const KNOWN_STRICTER: Record<string, { roles: string[]; why: string }> = {
       + 'stock.pick.read），但 SORTER 的页面范围只有 /classic/sorter，够不到报价单/'
       + '销售单列表页，界面上不存在导出按钮。导出保持只要 sales.order.read。',
   },
+  'order-lines': {
+    roles: ['SORTER'],
+    why: '分拣台内部读取 /api/orders，但销售单列表页及全字段导出不属于分拣页面范围；界面上没有导出入口。',
+  },
 }
 
 test('旧 token：能读列表的角色都够得着对应的导出入口', () => {

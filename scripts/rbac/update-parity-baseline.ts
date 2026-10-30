@@ -20,6 +20,7 @@ import { scanApiHandlers } from '../../lib/route-gate-scan'
 import { isPublicApiRoute } from '../../lib/public-routes'
 import { PROBE_ROLES, type Reach } from '../../lib/role-reachability'
 import { API_ROUTE_RULES, requiredPermissionsFor } from '../../lib/rbac/route-map'
+import { EXPORT_ENTITY_META } from '../../lib/export/entities'
 
 const PATH = 'lib/rbac/parity-baseline.json'
 const fillParams = (route: string) => route.replace(/\[\.\.\.[^\]]+\]|\[[^\]]+\]/g, 'x')
@@ -31,13 +32,18 @@ const seed = JSON.parse(readFileSync('prisma/seed-rbac.json', 'utf-8')) as {
 const permsByRole = new Map(seed.roles.map((r) => [r.legacyRole, new Set(r.permissions)]))
 
 const added: Array<{ key: string; reachable: string[] }> = []
+const handlers = scanApiHandlers().flatMap((h) => h.route === '/api/export/[entity]'
+  ? Object.entries(EXPORT_ENTITY_META).map(([entity, meta]) => ({
+      ...h, route: `/api/export/${entity}`, permission: meta.permission,
+    }))
+  : [{ ...h, permission: null as string | null }])
 
-for (const h of scanApiHandlers()) {
+for (const h of handlers) {
   const key = `${h.verb} ${h.route}`
   if (baseline[key]) continue // ⛔ 已有的一个格都不动
 
   const path = fillParams(h.route)
-  const required = requiredPermissionsFor(API_ROUTE_RULES, path, h.verb)
+  const required = h.permission ? [h.permission] : requiredPermissionsFor(API_ROUTE_RULES, path, h.verb)
   const row: Record<string, Reach> = {}
   for (const role of PROBE_ROLES) {
     if (isPublicApiRoute(path)) { row[role] = 'anon'; continue }
@@ -50,7 +56,7 @@ for (const h of scanApiHandlers()) {
 }
 
 const removed = Object.keys(baseline).filter(
-  (k) => !scanApiHandlers().some((h) => `${h.verb} ${h.route}` === k),
+  (k) => !handlers.some((h) => `${h.verb} ${h.route}` === k),
 )
 
 if (added.length === 0 && removed.length === 0) {

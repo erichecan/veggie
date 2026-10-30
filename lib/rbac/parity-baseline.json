@@ -4772,5 +4772,19 @@
     "DRIVER": "anon",
     "RESTAURANT": "anon",
     "OTHER": "anon"
+  },
+  "GET /api/export/order-lines": {
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "y",
+    "WAREHOUSE": "y",
+    "DISPATCH": "y",
+    "SALES": "y",
+    "EXTERNAL_SALES": "y",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

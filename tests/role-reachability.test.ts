@@ -51,7 +51,7 @@ test('可达性矩阵与快照一致', () => {
   )
 })
 
-test('⛔ 匿名可达的必须只有这 11 条 —— 泄露客户名册那次就是这里破的', () => {
+test('⛔ 匿名可达的必须只有这 12 条 —— 泄露客户名册那次就是这里破的', () => {
   const now = buildReachabilityMatrix()
   const anon = Object.entries(now)
     .filter(([, row]) => row.BOSS === 'anon')
@@ -63,7 +63,7 @@ test('⛔ 匿名可达的必须只有这 11 条 —— 泄露客户名册那次�
   // 后三条 20261023 经用户确认是有意公开。
   assert.deepEqual([...new Set(anon)].sort(), [
     '/api/auth/login', '/api/auth/logout', '/api/auth/register',
-    '/api/cron/auto-confirm-departure', '/api/cron/backup-database', '/api/cron/generate-statements', '/api/cron/ledger-check',
+    '/api/cron/auto-complete-delivery', '/api/cron/auto-confirm-departure', '/api/cron/backup-database', '/api/cron/generate-statements', '/api/cron/ledger-check',
     '/api/health', '/api/public/categories', '/api/public/products', '/api/tile',
   ])
 })

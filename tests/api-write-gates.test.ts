@@ -33,6 +33,7 @@ const EXEMPT: Record<string, string> = {
   'POST /api/auth/change-password': '改自己的密码，用 requireAuth 取本人身份，无角色概念',
   'POST /api/cron/backup-database': '定时任务，走 CRON_SECRET 共享密钥（迁服务器后由 systemd timer 触发）',
   'POST /api/cron/auto-complete-delivery': '22 点自动完成配送，走 CRON_SECRET 共享密钥',
+  'POST /api/cron/auto-confirm-departure': '旧 cron 地址兼容别名，转发到新入口并继续校验 CRON_SECRET',
   'POST /api/cron/generate-statements': '定时任务，走 CRON_SECRET 共享密钥，同上',
   'POST /api/action-logs/cleanup': '同上，走 CRON_SECRET',
   'POST /api/mfa/enroll': '给自己开二次验证',
