@@ -39,6 +39,7 @@ interface SavedCustomersListState {
   paymentFilter: string
   includeArchived: boolean
   archivedOnly?: boolean
+  onArchivedPricelist?: boolean
   isVendorOnly: boolean
   facets: Facet[]
   sortKey: string
@@ -96,6 +97,8 @@ export default function ClassicCustomersPage() {
   const [includeArchived, setIncludeArchived] = useState(saved?.includeArchived ?? false)
   // 只看已归档(20261008 客户要求，与商品列表同款)；与「包含已归档」互斥
   const [archivedOnly, setArchivedOnly] = useState(saved?.archivedOnly ?? false)
+  // 还挂着已归档价格表的客户(20261030)：归档前没处理客户留下的存量，筛出来清理
+  const [onArchivedPricelist, setOnArchivedPricelist] = useState(saved?.onArchivedPricelist ?? false)
   const [isVendorOnly, setIsVendorOnly] = useState(saved?.isVendorOnly ?? false)
   const [isReadMode, setIsReadMode] = useState(true)
   const editMode = !isReadMode
@@ -156,6 +159,7 @@ export default function ClassicCustomersPage() {
       if (paymentFilter) params.set('paymentTerm', paymentFilter)
       if (includeArchived) params.set('includeArchived', '1')
       if (archivedOnly) params.set('archivedOnly', '1')
+      if (onArchivedPricelist) params.set('onArchivedPricelist', '1')
       if (isVendorOnly) params.set('isVendor', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
@@ -174,6 +178,7 @@ export default function ClassicCustomersPage() {
       if (payTerm) params.set('paymentTerm', payTerm)
       if (archived) params.set('includeArchived', '1')
       if (archivedOnly) params.set('archivedOnly', '1')
+      if (onArchivedPricelist) params.set('onArchivedPricelist', '1')
       if (vendorOnly) params.set('isVendor', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
@@ -205,7 +210,7 @@ export default function ClassicCustomersPage() {
   function fetchReferenceData() {
     // 20261008 修复：这里不能只存 active 的——客户挂靠的价格表一旦被归档，
     // 名字映射(pricelistMap)就会查不到，列表里显示成 pl_35 这种内部 id(Odoo 迁移遗留格式)
-    // 而不是真实名字。筛选器下拉(filterOptions)另外单独过滤出 active 的，归档的不需要出现在那
+    // 而不是真实名字。20261030 起筛选器下拉也列出归档的（排在后面、带「已归档」），用来找还有谁在用它
     apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
     apiGet<PickerUser[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
@@ -228,7 +233,7 @@ export default function ClassicCustomersPage() {
     if (!filtersMountedRef.current) { filtersMountedRef.current = true; return }
     loadPage(1, searchInput, paymentFilter, includeArchived)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir, includeArchived, archivedOnly])
+  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir, includeArchived, archivedOnly, onArchivedPricelist])
 
   // debounced search
   const searchMountedRef = useRef(false)
@@ -241,10 +246,10 @@ export default function ClassicCustomersPage() {
 
   useEffect(() => {
     writeSavedCustomersListState({
-      searchInput, paymentFilter, includeArchived, archivedOnly, isVendorOnly, facets, sortKey, sortDir,
+      searchInput, paymentFilter, includeArchived, archivedOnly, onArchivedPricelist, isVendorOnly, facets, sortKey, sortDir,
       columnMultiFilters, columnFilters, groupBy, page, pageSize,
     })
-  }, [searchInput, paymentFilter, includeArchived, archivedOnly, isVendorOnly, facets, sortKey, sortDir,
+  }, [searchInput, paymentFilter, includeArchived, archivedOnly, onArchivedPricelist, isVendorOnly, facets, sortKey, sortDir,
       columnMultiFilters, columnFilters, groupBy, page, pageSize])
 
   function openAdd() {
@@ -390,8 +395,15 @@ export default function ClassicCustomersPage() {
     }
   }
 
-  const pricelistMap = new Map(pricelists.map(p => [p.id, p.name]))
-  const activePricelists = pricelists.filter(p => p.active)
+  // 归档的价格表名字后面统一带「(已归档)」：列表单元格、筛选 chip、分组标题都走这个映射，
+  // 一眼就能看出哪些客户还挂着归档表(20261030)
+  const archivedSuffix = isEn ? ' (archived)' : '（已归档）'
+  const pricelistMap = new Map(pricelists.map(p => [p.id, p.active === false ? `${p.name}${archivedSuffix}` : p.name]))
+  // 筛选下拉：启用的在前，归档的排在后面——归档的也要能筛，否则找不到还有谁在用它
+  const pricelistFilterOptions = [
+    ...pricelists.filter(p => p.active !== false),
+    ...pricelists.filter(p => p.active === false),
+  ].map(p => ({ value: p.id, label: pricelistMap.get(p.id) ?? p.name }))
 
   const columns: OdooColumn[] = [
     { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号', sortable: true },
@@ -444,7 +456,7 @@ export default function ClassicCustomersPage() {
       // 不走 OdooTable 的单值行内编辑：客户可以挂多个价格表，Edit 模式下由 render 里的
       // PricelistLinksEditor 浮层负责增加/减少/替换/调顺序（20261023）
       filterType: 'multi-select',
-      filterOptions: activePricelists.map(p => ({ value: p.id, label: p.name })),
+      filterOptions: pricelistFilterOptions,
       filterLabelGetter: (v) => pricelistMap.get(v) ?? v,
       render: (_v, row) => {
         const links = ((row.pricelists as { pricelistId: string; sequence: number }[] | undefined) ?? [])
@@ -561,6 +573,7 @@ export default function ClassicCustomersPage() {
     ...(paymentFilter ? [{ label: isEn ? `Payment Term: ${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}` : `结算方式：${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}`, onRemove: removePaymentFilter }] : []),
     ...(includeArchived ? [{ label: isEn ? 'Include Archived' : '包含已归档', onRemove: () => setIncludeArchived(false) }] : []),
     ...(archivedOnly ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnly(false) }] : []),
+    ...(onArchivedPricelist ? [{ label: isEn ? 'On Archived Pricelist' : '挂着已归档价格表', onRemove: () => setOnArchivedPricelist(false) }] : []),
     ...(isVendorOnly ? [{ label: isEn ? 'Vendors' : '供货商', onRemove: toggleVendorOnly }] : []),
   ]
 
@@ -599,6 +612,7 @@ export default function ClassicCustomersPage() {
           ...PAYMENT_TERM_OPTIONS.map(o => ({ label: isEn ? `${o.labelEn} Customers` : `${o.labelZh}客户`, value: o.value })),
           { label: isEn ? 'Include Archived' : '包含已归档', value: '__archived__' },
           { label: isEn ? 'Archived Only' : '仅已归档', value: '__archived_only__' },
+          { label: isEn ? 'On Archived Pricelist' : '挂着已归档价格表', value: '__on_archived_pricelist__' },
         ]}
         groupByOptions={[
           { label: isEn ? 'Payment Term' : '结算方式', value: 'paymentTerm' },
@@ -608,10 +622,13 @@ export default function ClassicCustomersPage() {
           ...(paymentFilter ? [paymentFilter] : []),
           ...(includeArchived ? ['__archived__'] : []),
           ...(archivedOnly ? ['__archived_only__'] : []),
+          ...(onArchivedPricelist ? ['__on_archived_pricelist__'] : []),
         ]}
         onFilterSelect={v => {
           if (v === '__archived__') {
             setIncludeArchived(prev => { const next = !prev; if (next) setArchivedOnly(false); return next })
+          } else if (v === '__on_archived_pricelist__') {
+            setOnArchivedPricelist(prev => !prev)
           } else if (v === '__archived_only__') {
             setArchivedOnly(prev => { const next = !prev; if (next) setIncludeArchived(false); return next })
           } else {
@@ -623,13 +640,14 @@ export default function ClassicCustomersPage() {
         }}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, paymentFilter, includeArchived, archivedOnly, isVendorOnly, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
+        favouriteState={{ searchInput, paymentFilter, includeArchived, archivedOnly, onArchivedPricelist, isVendorOnly, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           const pf = String(s.paymentFilter ?? '')
           setPaymentFilter(pf)
           setIncludeArchived(Boolean(s.includeArchived))
           setArchivedOnly(Boolean(s.archivedOnly))
+          setOnArchivedPricelist(Boolean(s.onArchivedPricelist))
           const vendorOnly = Boolean(s.isVendorOnly)
           setIsVendorOnly(vendorOnly)
           setGroupBy(String(s.groupBy ?? ''))

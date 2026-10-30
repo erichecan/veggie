@@ -26,6 +26,7 @@ import { getSession, type UserSession } from '@/lib/session'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
+import PricelistCustomersDialog from './PricelistCustomersDialog'
 
 const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
@@ -273,6 +274,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   // 详情页的导出/导入(20261007)：导出只导这一个价格表；导入跟列表页同一个接口，关掉弹窗后重新加载
   const [importOpen, setImportOpen] = useState(false)
   const importedRef = useRef(false)
+  // 归档 / 批量替换客户弹窗(20261030)：归档必须先处理挂着这张表的客户，见 PricelistCustomersDialog
+  const [customersDialog, setCustomersDialog] = useState<'archive' | 'replace' | null>(null)
   const exportAction = useCsvExport({
     entity: 'pricelists',
     params: () => new URLSearchParams({ pricelistId: id }),
@@ -426,6 +429,12 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     } catch (err) {
       toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
     }
+  }
+
+  async function handleRestore() {
+    if (!pl) return
+    if (!confirm(isEn ? `Restore pricelist "${pl.name}" to active?` : `确认恢复价格表「${pl.name}」为启用状态？`)) return
+    await handleSave({ active: true })
   }
 
   async function handleDiscard() {
@@ -586,6 +595,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     return <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
   }
 
+  // 归档的价格表只读(20261030)：不能进编辑态、不能改规则/导入，只能「恢复」。
+  // 以落库状态(originalPl)为准，服务端 PUT 同样拦着(app/api/pricelists/[id]/route.ts)
+  const readOnly = id !== 'new' && originalPl?.active === false
+
   const sortedLists = allLists
   const currentIdx = sortedLists.findIndex(l => l.id === id)
   const totalLists = sortedLists.length
@@ -681,13 +694,23 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           </>
         ) : (
           <>
-            <button
-              onClick={() => setEditMode(true)}
-              className="h-8 px-4 text-sm font-medium text-white rounded"
-              style={{ background: PURPLE }}
-            >
-              Edit
-            </button>
+            {readOnly ? (
+              <button
+                onClick={handleRestore}
+                className="h-8 px-4 text-sm font-medium text-white rounded"
+                style={{ background: PURPLE }}
+              >
+                {isEn ? 'Restore' : '恢复'}
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditMode(true)}
+                className="h-8 px-4 text-sm font-medium text-white rounded"
+                style={{ background: PURPLE }}
+              >
+                Edit
+              </button>
+            )}
             <button
               onClick={() => router.push(`${prefix}/classic/operator/pricelists/new`)}
               className="h-8 px-4 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
@@ -723,15 +746,26 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   <button onClick={() => { setActionOpen(false); exportAction.onClick() }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     {isEn ? 'Export' : '导出'}
                   </button>
-                  <button onClick={() => { setActionOpen(false); importedRef.current = false; setImportOpen(true) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
-                    {isEn ? 'Import' : '导入'}
-                  </button>
+                  {!readOnly && (
+                    <button onClick={() => { setActionOpen(false); importedRef.current = false; setImportOpen(true) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                      {isEn ? 'Import' : '导入'}
+                    </button>
+                  )}
                   <button onClick={() => { setActionOpen(false); handleDuplicate() }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     {isEn ? 'Duplicate' : '复制'}
                   </button>
-                  <button onClick={() => { if (confirm(isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)) { handleSave({ active: false }) } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
-                    Archive
+                  <button onClick={() => { setActionOpen(false); setCustomersDialog('replace') }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                    {isEn ? 'Replace on customers' : '批量替换客户'}
                   </button>
+                  {readOnly ? (
+                    <button onClick={() => { setActionOpen(false); handleRestore() }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                      {isEn ? 'Restore' : '恢复'}
+                    </button>
+                  ) : (
+                    <button onClick={() => { setActionOpen(false); setCustomersDialog('archive') }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                      Archive
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -776,6 +810,18 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         {editMode && draft.pendingDraft && (
           <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
         )}
+        {readOnly && (
+          <div className="mb-3 px-4 py-2 rounded border text-sm flex items-center gap-3" style={{ borderColor: '#adb5bd', background: '#f8f9fa', color: '#495057' }}>
+            <span className="flex-1">
+              {isEn
+                ? 'This pricelist is archived and read-only. Restore it to make changes.'
+                : '此价格表已归档，只读不可修改。如需修改请先恢复。'}
+            </span>
+            <button onClick={handleRestore} className="text-sm font-medium hover:underline" style={{ color: PURPLE }}>
+              {isEn ? 'Restore' : '恢复'}
+            </button>
+          </div>
+        )}
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm">
 
           {/* Name + Active toggle */}
@@ -795,9 +841,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 <h2 className="text-lg font-semibold text-gray-800">{pl.name || <span className="text-gray-400 italic">{isEn ? '(Unnamed)' : '（未命名）'}</span>}</h2>
               )}
             </div>
+            {/* 编辑态不再能直接切归档：归档要先处理挂着的客户，只能在查看态走弹窗 */}
             {editMode ? (
-              <button
-                onClick={() => update('active', !pl.active)}
+              <span
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium"
                 style={pl.active
                   ? { borderColor: '#00a09d', color: '#00a09d', background: '#f0fafa' }
@@ -808,15 +854,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   <path d="M8 21h8M12 17v4" strokeWidth={1.5} strokeLinecap="round" />
                 </svg>
                 {pl.active ? 'Active' : 'Archived'}
-              </button>
+              </span>
             ) : (
               <button
-                onClick={() => {
-                  const confirmMsg = pl.active
-                    ? (isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)
-                    : (isEn ? `Restore pricelist "${pl.name}" to active?` : `确认恢复价格表「${pl.name}」为启用状态？`)
-                  if (confirm(confirmMsg)) handleSave({ active: !pl.active })
-                }}
+                onClick={() => { if (pl.active) setCustomersDialog('archive'); else handleRestore() }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium"
                 style={pl.active
                   ? { borderColor: '#00a09d', color: '#00a09d', background: '#f0fafa' }
@@ -946,7 +987,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         estimatedPrice={row.estimatedPrice}
                         productCategoryLabel={row.categoryLabel}
                         showDelete={editMode}
-                        onEdit={() => openEditItem(item)}
+                        onEdit={readOnly ? undefined : () => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
                         onEditTiers={
                           item.computeType === 'fixed' && (item.applyOn === 'variant' || item.applyOn === 'product')
@@ -1008,6 +1049,24 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       </div>
 
       {exportAction.dialog}
+      {customersDialog && (
+        <PricelistCustomersDialog
+          mode={customersDialog}
+          pricelist={pl}
+          allLists={allLists}
+          onClose={() => setCustomersDialog(null)}
+          onDone={archived => {
+            setCustomersDialog(null)
+            if (archived) {
+              setPl(p => p ? { ...p, active: false } : p)
+              setOriginalPl(p => p ? { ...p, active: false } : p)
+              setEditMode(false)
+            }
+            fetchReferenceData()
+          }}
+          isEn={isEn}
+        />
+      )}
       <BulkImportDialog
         open={importOpen}
         onClose={() => { setImportOpen(false); if (importedRef.current) window.location.reload() }}
@@ -1170,7 +1229,7 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
   estimatedPrice: number | undefined
   productCategoryLabel: string
   showDelete: boolean
-  onEdit: () => void
+  onEdit?: () => void
   onDelete: () => void
   /** 只对"单商品+固定价"的规则有意义——点开阶梯价格弹窗编辑这一整组 minQty 档位 */
   onEditTiers?: () => void
@@ -1223,7 +1282,7 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
       onDragEnd={onDragEndRow}
       style={{
         background: isDragging ? '#f3f4f6' : (hover ? PURPLE_LIGHT : undefined),
-        cursor: 'pointer',
+        cursor: onEdit ? 'pointer' : 'default',
         borderBottom: '1px solid #f0f0f0',
         borderTop: isOver ? '2px solid #875A7B' : undefined,
         opacity: isDragging ? 0.4 : 1,

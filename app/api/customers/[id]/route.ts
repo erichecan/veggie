@@ -5,6 +5,7 @@ import { withAuth, tryAuth, isSalesOnly } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
+import { newlyAttachedArchivedPricelists } from '@/lib/pricelist-archive'
 
 const TRACKED_FIELDS = [
   'individualOrCompany', 'mobile',
@@ -80,6 +81,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // deleteMany 专属价，先删后判的话即使最终 404，别人的数据已经被删了。
       if (!isRowVisible(before, salesRowScope(user))) {
         return NextResponse.json({ error: '客户不存在' }, { status: 404 })
+      }
+
+      // 20261030：已归档的价格表不能新挂给客户（原本就挂着的可以保留，见 lib/pricelist-archive.ts）
+      if (Array.isArray(pricelistIds)) {
+        const archived = await newlyAttachedArchivedPricelists(
+          prisma, pricelistIds.map(String), before.pricelists.map(p => p.pricelistId),
+        )
+        if (archived.length > 0) {
+          return NextResponse.json({ error: `价格表已归档，不能挂给客户：${archived.join('、')}` }, { status: 400 })
+        }
       }
 
       // ⛔ 只有请求里真带了 specialPrices 才整组替换。以前这里无条件先删——客户列表的

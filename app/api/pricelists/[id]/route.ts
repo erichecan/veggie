@@ -6,6 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { normalizeItems } from '@/lib/pricelist-item'
 import { diffPricelistItems } from '@/lib/pricelist-diff'
 import { pricelistRuleLogChanges, writeProductRuleLogs } from '@/lib/pricelist-rule-log'
+import { archiveBlockReason } from '@/lib/pricelist-archive'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -66,6 +67,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // 取旧数据做 diff（审计）
       const before = await prisma.odooPricelist.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '价格表不存在' }, { status: 404 })
+
+      // 20261030：不允许出现「客户挂着已归档价格表」——还有客户/被引用时，
+      // 归档必须走 POST /api/pricelists/:id/customers（先替换/移除客户，再在同一事务里归档）
+      // 归档的价格表只读：只接受带 active:true 的「恢复」请求（可同时带回原字段）
+      if (!before.active && cleaned.active !== true) {
+        return NextResponse.json({ error: '价格表已归档，不能修改。如需修改请先恢复。' }, { status: 409 })
+      }
+      if (cleaned.active === false && before.active) {
+        const reason = await archiveBlockReason(prisma, id)
+        if (reason) return NextResponse.json({ error: reason }, { status: 409 })
+      }
 
       const pricelist = await prisma.odooPricelist.update({
         where: { id },

@@ -251,16 +251,19 @@ export default function ClassicPricelistsPage() {
     if (targets.length === 0 || batchBusy) return
     const msg = active
       ? (isEn ? `Unarchive ${targets.length} pricelist(s)?` : `确认恢复 ${targets.length} 个价格表？`)
-      : (isEn ? `Archive ${targets.length} pricelist(s)? Customers keep their links; archived pricelists can be restored from the Archived tab.` : `确认归档 ${targets.length} 个价格表？客户上的挂靠不变，可在「已停用」里恢复。`)
+      // 20261030：还有客户挂着/被别的表引用的价格表服务端会拒绝归档，要进价格表页面点 Archive 先处理客户
+      : (isEn ? `Archive ${targets.length} pricelist(s)? Pricelists still used by customers will be skipped — open them and use Archive to reassign their customers first.` : `确认归档 ${targets.length} 个价格表？还有客户在用的价格表会被跳过，需进入该价格表点「归档」先处理客户。`)
     if (!confirm(msg)) return
     setBatchBusy(true)
     const failed: string[] = []
     for (const pl of targets) {
-      try { await apiPut(`/api/pricelists/${pl.id}`, { active }) } catch { failed.push(pl.name) }
+      try { await apiPut(`/api/pricelists/${pl.id}`, { active }) } catch (e) {
+        failed.push(e instanceof Error ? `${pl.name}（${e.message}）` : pl.name)
+      }
     }
     setBatchBusy(false)
     setSelected(new Set())
-    if (failed.length) toast.error(isEn ? `Failed: ${failed.join(', ')}` : `失败：${failed.join('、')}`)
+    if (failed.length) toast.error(isEn ? `Failed: ${failed.join(', ')}` : `失败：${failed.join('、')}`, { duration: 10000 })
     else toast.success(active ? (isEn ? `Unarchived ${targets.length}` : `已恢复 ${targets.length} 个`) : (isEn ? `Archived ${targets.length}` : `已归档 ${targets.length} 个`))
     load()
   }

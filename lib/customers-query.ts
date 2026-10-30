@@ -59,6 +59,13 @@ export async function buildCustomersWhere(
   // 分面搜索：同维度 OR、跨维度 AND（搜索框的「全部」维度也在其中，参数名 search）
   andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
 
+  // onArchivedPricelist=1：还挂着已归档价格表的客户(20261030)——归档前没处理客户留下的存量，
+  // 用这个筛出来逐个/批量换掉。放进 andConditions，跟下面 where.pricelists 的列头筛选互不覆盖
+  if (searchParams.get('onArchivedPricelist') === '1') {
+    const archivedIds = (await prisma.odooPricelist.findMany({ where: { active: false }, select: { id: true } })).map(p => p.id)
+    andConditions.push({ pricelists: { some: { pricelistId: { in: archivedIds } } } })
+  }
+
   // 行级隔离：销售只看自己名下的客户。规则在 lib/row-scope.ts（唯一真相）。
   // ⚠️ 必须在构造 where 之前 push —— 见文件头说明。
   const rowScope = salesRowScope(caller)

@@ -5,6 +5,7 @@ import { withAuth, tryAuth, isSalesOnly } from '@/lib/auth'
 import { buildCustomersWhere } from '@/lib/customers-query'
 import { serializeApi } from '@/lib/api-serializer'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
+import { newlyAttachedArchivedPricelists } from '@/lib/pricelist-archive'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
 function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: string } | null }>(customers: T[]): (T & { salesman: string | null })[] {
@@ -162,6 +163,12 @@ export async function POST(req: Request) {
       if ('defaultDriverSlotId' in data) {
         data.defaultDriverSlot = data.defaultDriverSlotId ? { connect: { id: data.defaultDriverSlotId } } : undefined
         delete data.defaultDriverSlotId
+      }
+      if (Array.isArray(pricelistIds)) {
+        const archived = await newlyAttachedArchivedPricelists(prisma, pricelistIds.map(String))
+        if (archived.length > 0) {
+          return NextResponse.json({ error: `价格表已归档，不能挂给客户：${archived.join('、')}` }, { status: 400 })
+        }
       }
       const customer = await prisma.customer.create({
         data: {

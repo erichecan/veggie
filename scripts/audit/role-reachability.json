@@ -2519,6 +2519,34 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/pricelists/[id]/customers": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
+ "POST /api/pricelists/[id]/customers": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/pricelists/[id]/reference": {
   "BOSS": "y",
   "OPERATOR": "y",

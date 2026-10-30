@@ -282,8 +282,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   // 既供初始加载复用，也供下面 useRefetchOnFocus 在回到这个 tab 时单独刷新——
   // 不碰 form/specialPrices/original，不会在用户编辑中途把表单内容冲掉。
   function fetchReferenceData() {
+    // 全量（含归档）：客户挂着的归档表要能显示名字，之前只存启用的，归档表显示成内部 id。
+    // 可选范围在下面 PricelistSearchInput 处另外过滤 active/selectable（20261030）
     apiGet<OdooPricelist[]>('/api/pricelists')
-      .then(d => setPricelists(d.filter(p => p.active)))
+      .then(d => setPricelists(d))
       .catch(() => {})
 
     apiGet<(PickerUser & { roles: string[] })[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
@@ -975,7 +977,17 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                       return (
                         <div key={plId} className="flex items-center gap-2 border border-gray-200 rounded px-2 py-1">
                           <span className="text-xs text-gray-400 w-4 text-right">{idx + 1}</span>
-                          <span className="flex-1 text-sm text-gray-800 truncate">{pl?.name ?? plId}</span>
+                          <span className="flex-1 text-sm text-gray-800 truncate">
+                            {pl?.name ?? plId}
+                            {pl?.active === false && (
+                              <span
+                                className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700"
+                                title={isEn ? 'This pricelist is archived. Replace or remove it.' : '这张价格表已归档，请替换或移除'}
+                              >
+                                {isEn ? 'Archived' : '已归档'}
+                              </span>
+                            )}
+                          </span>
                           <button
                             type="button"
                             disabled={idx === 0}

@@ -10,6 +10,7 @@ import { validateAndNormalizeItem, type PricelistItemInput } from '@/lib/priceli
 import { diffPricelistItems, type RuleChange } from '@/lib/pricelist-diff'
 import { buildCategoryResolver } from '@/lib/category-path'
 import { pricelistRuleLogChanges, writeProductRuleLogs } from '@/lib/pricelist-rule-log'
+import { archiveBlockReason } from '@/lib/pricelist-archive'
 
 /**
  * POST /api/pricelists/bulk — 价格表批量导入(CSV，20261003 补齐，此前"导入"是假按钮)
@@ -238,7 +239,7 @@ export async function POST(req: Request) {
 
       for (const row of resolvedRows) {
         try {
-          type RowOutcome = { id: string; isNewPricelist: boolean; itemWarning?: string; ruleChanges?: RuleChange[] }
+          type RowOutcome = { id: string; isNewPricelist: boolean; itemWarning?: string; ruleChanges?: RuleChange[]; failReason?: string }
           const runRow = async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]): Promise<RowOutcome> => {
             let pricelistId = row.externalId
               ? (await tx.odooPricelist.findUnique({ where: { externalId: row.externalId }, select: { id: true } }))?.id
@@ -250,10 +251,22 @@ export async function POST(req: Request) {
 
             let isNewPricelist = false
             if (pricelistId) {
+              // 20261030：归档的价格表只读（同 PUT /api/pricelists/:id），只有 Active 列填了
+              // 启用的行（=恢复）才放行；还有客户挂着/被别的表引用的不能经导入归档——
+              // 必须走价格表页面的「归档」，先处理掉这些客户（lib/pricelist-archive.ts）
+              const existing = await tx.odooPricelist.findUnique({ where: { id: pricelistId }, select: { active: true } })
+              if (existing && !existing.active && row.active !== true) {
+                return { id: pricelistId, isNewPricelist: false, failReason: `pricelist '${row.pricelistName}' is archived (read-only); set Active to restore it first, row not imported` }
+              }
+              let nextActive = row.active
+              if (row.active === false && existing?.active && await archiveBlockReason(tx, pricelistId)) {
+                warnings.push(`${row.rowLabel}: pricelist '${row.pricelistName}' is still used by customers or referenced by other pricelists, not archived — use Archive on the pricelist page`)
+                nextActive = undefined
+              }
               const settingsUpdate: Record<string, unknown> = { name: row.pricelistName, updatedBy }
               if (row.externalId !== undefined) settingsUpdate.externalId = row.externalId
               if (row.currency !== undefined) settingsUpdate.currency = row.currency
-              if (row.active !== undefined) settingsUpdate.active = row.active
+              if (nextActive !== undefined) settingsUpdate.active = nextActive
               if (row.selectable !== undefined) settingsUpdate.selectable = row.selectable
               if (row.pricelistSequence !== undefined) settingsUpdate.sequence = row.pricelistSequence
               await tx.odooPricelist.update({ where: { id: pricelistId }, data: settingsUpdate })
@@ -341,6 +354,10 @@ export async function POST(req: Request) {
             outcome = e.result as RowOutcome
           }
 
+          if (outcome.failReason) {
+            failed.push(`${row.rowLabel}: ${outcome.failReason}`)
+            continue
+          }
           if (outcome.itemWarning) warnings.push(outcome.itemWarning)
           if (!dryRun && outcome.ruleChanges?.length) {
             const acc = ruleChangesByPricelist.get(outcome.id) ?? { name: row.pricelistName, changes: [] }

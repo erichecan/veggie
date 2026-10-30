@@ -349,6 +349,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // (覆盖更强的那个动作，与 products/bulk、product-categories/bulk 同一个道理)
   { pattern: '/api/pricelists/bulk', methods: ['POST'], permission: 'master.pricelist.update' },
   { pattern: '/api/pricelists/*/reference', methods: R, permission: 'master.pricelist.read' },
+  // 归档/批量替换客户弹窗(20261030)：查谁在用这张表是读；把客户挪走(可顺带归档)是改价格表
+  { pattern: '/api/pricelists/*/customers', methods: R, permission: 'master.pricelist.read' },
+  { pattern: '/api/pricelists/*/customers', methods: ['POST'], permission: 'master.pricelist.update' },
   { pattern: '/api/pricelists/*', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists/*', methods: ['PUT'], permission: 'master.pricelist.update' },
   { pattern: '/api/pricelists/*', methods: ['DELETE'], permission: 'master.pricelist.delete' },
