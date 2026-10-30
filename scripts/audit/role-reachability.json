@@ -867,6 +867,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "POST /api/cron/auto-complete-delivery": {
+  "BOSS": "anon",
+  "OPERATOR": "anon",
+  "FINANCE": "anon",
+  "WAREHOUSE": "anon",
+  "DISPATCH": "anon",
+  "SALES": "anon",
+  "EXTERNAL_SALES": "anon",
+  "SORTER": "anon",
+  "PICKER": "anon",
+  "DRIVER": "anon",
+  "RESTAURANT": "anon",
+  "OTHER": "anon"
+ },
  "POST /api/cron/auto-confirm-departure": {
   "BOSS": "anon",
   "OPERATOR": "anon",
@@ -1456,6 +1470,20 @@
   "OTHER": "n"
  },
  "GET /api/export/orders": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "y",
+  "DISPATCH": "y",
+  "SALES": "y",
+  "EXTERNAL_SALES": "y",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
+ "GET /api/export/order-lines": {
   "BOSS": "y",
   "OPERATOR": "y",
   "FINANCE": "y",

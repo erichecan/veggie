@@ -107,6 +107,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/waves/*', methods: ['PUT'] },
     { pattern: '/api/orders', methods: READ },
     exportOf('orders'),
+    exportOf('order-lines'),
     { pattern: '/api/bulletin-posts/**' },
   ],
 
@@ -130,6 +131,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/uom-categories/**', methods: READ },
     { pattern: '/api/orders', methods: READ },
     exportOf('orders'),
+    exportOf('order-lines'),
     { pattern: '/api/orders/*', methods: READ },
     { pattern: '/api/purchases', methods: ['GET', 'POST'] },
     { pattern: '/api/purchases/*', methods: READ },
@@ -170,6 +172,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/customers/*/term-extension', methods: ['POST'] },
     { pattern: '/api/orders/**', methods: READ },
     exportOf('orders'),
+    exportOf('order-lines'),
     // 把单据邮件发给客户。财务对订单其余部分仍是只读 —— 这条精确到 send-email，
     // 不是给 /api/orders/** 放开 POST。新体系里 finance 本来就有 sales.order.print，
     // 这里补齐旧 token 路径，免得没重新登录的人点发送就 403。
@@ -205,6 +208,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/trips/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     { pattern: '/api/orders', methods: READ },
     exportOf('orders'),
+    exportOf('order-lines'),
     { pattern: '/api/orders/*', methods: READ },
     { pattern: '/api/orders/*/batch', methods: ['PUT'] },
     { pattern: '/api/orders/*/mark-printed', methods: ['POST'] },
@@ -236,6 +240,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     exportOf('orders'),
+    exportOf('order-lines'),
     { pattern: '/api/customers/**', methods: ['GET', 'POST', 'PUT'] },
     exportOf('customers'),
     exportOf('suppliers'),
@@ -284,6 +289,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     exportOf('orders'),
+    exportOf('order-lines'),
     { pattern: '/api/customers/**', methods: ['GET', 'POST'] },
     exportOf('customers'),
     exportOf('suppliers'),
