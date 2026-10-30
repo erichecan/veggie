@@ -449,10 +449,18 @@ export default function QuotationDetailPage() {
 
   // 下拉候选：当前客户可能不在候选列表里（归档客户、或被标成纯供应商的历史单据），
   // 漏了它下拉框就显示成"未选客户"。把它并进去，既能正常显示，也能选回来。
+  // ⛔ 20261029 修复：原先只在 customer（按 id 单查的完整对象）取到时才兜底，
+  // 一旦那次请求失败或还没返回（行级隔离 404、网络抖动、还在加载中），customer
+  // 为 null，customerOptions 直接退化成 customers——如果当前客户又不在这份 slim
+  // 列表里（归档/inactive），下拉框里连 id 都对不上，显示就整个空掉。
+  // 改成优先用完整对象，没有就用 order 自带的 id+name 拼一个纯展示用的壳对象，
+  // 这两个字段是订单详情接口本身返回的，不依赖那次单独的客户查询是否成功。
   const customerOptions = useMemo(() => {
-    if (!customer) return customers
-    return customers.some(c => c.id === customer.id) ? customers : [customer, ...customers]
-  }, [customers, customer])
+    const current: Customer | null = customer
+      ?? (order?.restaurantId ? ({ id: order.restaurantId, name: order.restaurantName ?? '' } as Customer) : null)
+    if (!current) return customers
+    return customers.some(c => c.id === current.id) ? customers : [current, ...customers]
+  }, [customers, customer, order?.restaurantId, order?.restaurantName])
 
   /**
    * 换客户(20260918)：客户换了，整单的价格体系就换了 —— 价格表链/账期/业务员跟着客户带出来，

@@ -519,10 +519,16 @@ export default function SalesOrderDetailPage() {
 
   // 下拉候选：当前客户可能不在候选列表里（归档客户、或被标成纯供应商的历史单据），
   // 漏了它下拉框就显示成"未选客户"。把它并进去，既能正常显示，也能选回来。
+  // ⛔ 20261029 修复：原先只在 customer（按 id 单查的完整对象）取到时才兜底，
+  // 一旦那次请求失败或还没返回（行级隔离 404、网络抖动、还在加载中），customer
+  // 为 null，customerOptions 退化成 customers——当前客户若又不在这份 slim 列表里
+  // （归档/inactive），下拉框显示就整个空掉，见 quotations/[id]/page.tsx 同款修复。
   const customerOptions = useMemo(() => {
-    if (!customer) return customers
-    return customers.some(c => c.id === customer.id) ? customers : [customer, ...customers]
-  }, [customers, customer])
+    const current: Customer | null = customer
+      ?? (order?.restaurantId ? ({ id: order.restaurantId, name: order.restaurantName ?? '' } as Customer) : null)
+    if (!current) return customers
+    return customers.some(c => c.id === current.id) ? customers : [current, ...customers]
+  }, [customers, customer, order?.restaurantId, order?.restaurantName])
 
   /**
    * 换客户(20260918)：客户换了，整单的价格体系就换了 —— 价格表链/账期/业务员跟着客户带出来，
