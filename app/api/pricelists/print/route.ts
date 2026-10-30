@@ -73,9 +73,19 @@ export async function GET(req: NextRequest) {
     const saleUoms = productIds.size > 0
       ? await prisma.productSaleUom.findMany({
           where: { productId: { in: [...productIds] } },
-          select: { productId: true, uomId: true, spec: true, isDefault: true },
+          select: { productId: true, uomId: true, spec: true, isDefault: true, factor: true },
         })
       : []
+    // computeItemPrice 对 uomId 限定规则要按 ProductSaleUom.factor 把基准单位价换算到该单位
+    // （lib/pricing-engine.ts getSaleUomFactor）。之前传给引擎的 product 没带 saleUoms，
+    // factor 一律落回 1，按包/瓶限定的规则打印出整箱价（CHINA CHEF 3kg 打成 30.50，
+    // 编辑页显示 9.50；20261030 客户反馈）。
+    const saleUomsByProduct = new Map<string, { uomId: string; factor: number }[]>()
+    for (const su of saleUoms) {
+      const list = saleUomsByProduct.get(su.productId) ?? []
+      list.push({ uomId: su.uomId, factor: toNum(su.factor) })
+      saleUomsByProduct.set(su.productId, list)
+    }
     const saleUomByExact = new Map(saleUoms.map(su => [`${su.productId}:${su.uomId}`, su.spec]))
     const saleUomByDefault = new Map(saleUoms.filter(su => su.isDefault).map(su => [su.productId, su.spec]))
 
@@ -100,6 +110,7 @@ export async function GET(req: NextRequest) {
             standardPrice: toNumOpt(product.standardPrice),
             commissionPrice: toNumOpt(product.commissionPrice),
             categoryId: product.categoryId ?? undefined,
+            saleUoms: saleUomsByProduct.get(product.id) ?? [],
           } as unknown as ProductType
           computedPrice = computeItemPrice(item, productForEngine, basePrice, allPricelistsForEngine, item.minQty || 1, today, 0, item.uomId)
         }
