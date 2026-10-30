@@ -4,8 +4,8 @@ import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { normalizeItems } from '@/lib/pricelist-item'
-import { diffPricelistItems } from '@/lib/pricelist-diff'
-import { pricelistRuleLogChanges, writeProductRuleLogs } from '@/lib/pricelist-rule-log'
+import { diffPricelistItems, diffItemDisplayFields } from '@/lib/pricelist-diff'
+import { pricelistUpdateLog, writeProductRuleLogs } from '@/lib/pricelist-rule-log'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -76,24 +76,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const changed = diffChanges(
         before as unknown as Record<string, unknown>,
         pricelist as unknown as Record<string, unknown>,
-        ['name', 'sequence', 'selectable', 'active', 'notes', 'currency'],
+        ['name', 'sequence', 'selectable', 'active', 'notes', 'currency', 'promotionalCode', 'website', 'countryGroups'],
       )
       const beforeItems = (before.items as unknown[]) ?? []
       const afterItems = (pricelist.items as unknown[]) ?? []
-      if (beforeItems.length !== afterItems.length) {
-        changed.itemCount = { before: beforeItems.length, after: afterItems.length }
-      }
       // 逐条规则的改价留痕(20261008)：价格表 chatter 记「商品 · 字段 before → after」，
       // 商品页按商品 id 另查(resource='pricelist-rule')
       const ruleChanges = cleaned.items !== undefined ? diffPricelistItems(beforeItems, afterItems) : []
-      Object.assign(changed, await pricelistRuleLogChanges(ruleChanges))
-
-      await writeLog({
-        userId: user.userId, userEmail: user.email, userName: user.name,
-        action: 'UPDATE', resource: 'pricelist', resourceId: id,
-        detail: `更新价格表: ${pricelist.name || id} (items ${beforeItems.length} → ${afterItems.length})`,
-        changes: Object.keys(changed).length > 0 ? changed : undefined,
-      })
+      const display = cleaned.items !== undefined ? diffItemDisplayFields(beforeItems, afterItems) : { reordered: false, badgeChanges: [] }
+      const { summary, changes: ruleLogChanges } = await pricelistUpdateLog(ruleChanges, display, Object.keys(changed).length)
+      Object.assign(changed, ruleLogChanges)
+      // 什么都没变的保存(打开规则不改直接点保存)不记，免得操作记录被空条目刷屏
+      if (summary) {
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'pricelist', resourceId: id,
+          detail: `更新价格表: ${pricelist.name || id} — ${summary}`,
+          changes: Object.keys(changed).length > 0 ? changed : undefined,
+        })
+      }
       await writeProductRuleLogs({ userId: user.userId, email: user.email, name: user.name }, pricelist.name || id, ruleChanges)
       return NextResponse.json(serializeApi(pricelist))
     } catch (error: unknown) {

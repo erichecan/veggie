@@ -5,7 +5,7 @@
 import { prisma } from './db'
 import { categoryPathMap } from './category-path'
 import {
-  diffPricelistItems, ruleChangesToLogChanges, ruleLogsByProduct, productRuleLogDetail,
+  diffPricelistItems, ruleChangesToLogChanges, ruleLogsByProduct, productRuleLogDetail, summarizePricelistUpdate,
   type RuleChange, type RuleTargetLabeler, type UomLabeler,
 } from './pricelist-diff'
 
@@ -39,11 +39,24 @@ export async function ruleTargetLabeler(changes: RuleChange[]): Promise<RuleTarg
   }
 }
 
-/** 价格表 chatter 用的 changes(没有规则变化时返回空对象) */
-export async function pricelistRuleLogChanges(changes: RuleChange[]): Promise<Record<string, { before: unknown; after: unknown }>> {
-  if (changes.length === 0) return {}
-  const [label, uomLabel] = await Promise.all([ruleTargetLabeler(changes), uomLabelMap(changes)])
-  return ruleChangesToLogChanges(changes, label, uomLabel)
+/** 价格表 chatter 用的 changes(没有规则变化时返回空对象)；displayChanges 是只进 chatter、不进商品页的徽标等变化 */
+export async function pricelistRuleLogChanges(changes: RuleChange[], displayChanges: RuleChange[] = []): Promise<Record<string, { before: unknown; after: unknown }>> {
+  const all = [...changes, ...displayChanges]
+  if (all.length === 0) return {}
+  const [label, uomLabel] = await Promise.all([ruleTargetLabeler(all), uomLabelMap(all)])
+  return ruleChangesToLogChanges(all, label, uomLabel)
+}
+
+/** PUT 价格表的一条操作记录：标题点名改了哪几条规则 + 展开的逐字段 changes；什么都没变时 summary 为空 */
+export async function pricelistUpdateLog(
+  ruleChanges: RuleChange[], display: { reordered: boolean; badgeChanges: RuleChange[] }, settingsChanged: number,
+): Promise<{ summary: string; changes: Record<string, { before: unknown; after: unknown }> }> {
+  const all = [...ruleChanges, ...display.badgeChanges]
+  const [label, uomLabel] = await Promise.all([ruleTargetLabeler(all), uomLabelMap(all)])
+  return {
+    summary: summarizePricelistUpdate(ruleChanges, display.reordered, display.badgeChanges, settingsChanged, label),
+    changes: all.length > 0 ? ruleChangesToLogChanges(all, label, uomLabel) : {},
+  }
 }
 
 /**

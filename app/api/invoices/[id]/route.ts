@@ -91,7 +91,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       )
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'invoice', resourceId: id,
-        detail: `更新发票: ${id}`,
+        detail: `更新发票: ${invoice.name || id}`,
         changes: Object.keys(changes).length > 0 ? changes : undefined })
       return NextResponse.json(serializeApi(invoice))
     } catch (error) {
@@ -107,7 +107,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     try {
       // SSOT: 已过账/已收款的发票有总账凭证且影响 AR,删除会留下悬挂凭证。
       // 只允许删 DRAFT/CANCELLED;已过账的请走取消(Cancelled)(P1-6)。
-      const existing = await prisma.invoice.findUnique({ where: { id }, select: { status: true } })
+      const existing = await prisma.invoice.findUnique({ where: { id }, select: { status: true, name: true } })
       if (!existing) return NextResponse.json({ error: '发票不存在' }, { status: 404 })
       if (!['DRAFT', 'CANCELLED'].includes(String(existing.status))) {
         return NextResponse.json({ error: `${existing.status} 状态的发票不可删除,请改用取消(Cancelled)` }, { status: 400 })
@@ -115,7 +115,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       await prisma.invoice.delete({ where: { id } })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'DELETE', resource: 'invoice', resourceId: id,
-        detail: `删除发票: ${id}` })
+        detail: `删除发票: ${existing.name || id}` })
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/invoices/[id]]', error)

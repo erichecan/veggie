@@ -223,6 +223,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const isEn = locale !== routing.defaultLocale
 
   const [pl, setPl] = useState<OdooPricelist | null>(null)
+  const [logKey, setLogKey] = useState(0)
   const [originalPl, setOriginalPl] = useState<OdooPricelist | null>(null)
   const [allLists, setAllLists] = useState<OdooPricelist[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -420,6 +421,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       const updated = saved ?? pl
       setPl({ ...updated })
       setOriginalPl({ ...updated })
+      setLogKey(k => k + 1)
       setEditMode(false)
       draft.clearDraft()
       toast.success(isEn ? 'Saved' : '已保存')
@@ -507,6 +509,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       await apiPut(`/api/pricelists/${pl.id}`, updated)
       setPl(updated)
       setOriginalPl(updated)
+      setLogKey(k => k + 1)
       return true
     } catch (err) {
       toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
@@ -1002,7 +1005,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
         {id !== 'new' && (
           <div className="mt-4">
-            <ActionLogPanel resource="pricelist" resourceId={id} />
+            <ActionLogPanel key={logKey} resource="pricelist" resourceId={id} />
           </div>
         )}
       </div>

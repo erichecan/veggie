@@ -121,6 +121,60 @@ export function diffPricelistItems(beforeRaw: unknown, afterRaw: unknown): RuleC
   return out
 }
 
+/**
+ * 不影响成交价、但操作记录里要看得见的规则变化：拖拽排序(sequence)、徽标(badgeLabel)。
+ * 不进 RULE_PRICE_FIELDS——那份还驱动商品页改价历史，排序/徽标不算改价。
+ */
+export function diffItemDisplayFields(beforeRaw: unknown, afterRaw: unknown): { reordered: boolean; badgeChanges: RuleChange[] } {
+  const before = asItems(beforeRaw)
+  const after = asItems(afterRaw)
+  const beforeById = new Map(before.filter(it => it.id).map(it => [it.id as string, it]))
+  const common = after.filter(it => it.id && beforeById.has(it.id))
+  const order = (items: PricelistItemInput[]) => [...items].sort((a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0)).map(it => it.id).join('|')
+  const reordered = order(common) !== order(common.map(it => beforeById.get(it.id as string)!))
+
+  const badgeChanges: RuleChange[] = []
+  for (const it of common) {
+    const prev = beforeById.get(it.id as string)!
+    const bv = norm(prev.badgeLabel)
+    const av = norm(it.badgeLabel)
+    if (bv === av) continue
+    badgeChanges.push({
+      itemId: it.id as string, kind: 'changed', applyOn: it.applyOn, productId: ruleProductId(it),
+      categoryId: it.applyOn === 'category' ? it.categoryId ?? null : null,
+      fields: { badgeLabel: { before: bv, after: av } }, before: prev, after: it,
+    })
+  }
+  return { reordered, badgeChanges }
+}
+
+const SUMMARY_NAME_LIMIT = 3
+
+/**
+ * 操作记录标题里的一句话，点名是哪几条规则：
+ * 「新增规则：Apple [#12]；修改规则：Corn Flour [#67]、Category Fruit 等 5 条；调整了规则排序」。
+ * 每类最多点 3 个名字，具体改了哪个字段、从多少到多少在展开的 changes 里。什么都没变返回空串。
+ */
+export function summarizePricelistUpdate(
+  ruleChanges: RuleChange[], reordered: boolean, badgeChanges: RuleChange[], settingsChanged: number, label: RuleTargetLabeler,
+): string {
+  const names = (list: RuleChange[]) => {
+    const unique = [...new Map(list.map(c => [c.itemId, label(c)])).values()]
+    const shown = [...new Set(unique)].slice(0, SUMMARY_NAME_LIMIT).join('、')
+    return unique.length > SUMMARY_NAME_LIMIT ? `${shown} 等 ${unique.length} 条` : shown
+  }
+  const added = ruleChanges.filter(c => c.kind === 'added')
+  const changed = [...ruleChanges.filter(c => c.kind === 'changed'), ...badgeChanges]
+  const removed = ruleChanges.filter(c => c.kind === 'removed')
+  const parts: string[] = []
+  if (added.length) parts.push(`新增规则：${names(added)}`)
+  if (changed.length) parts.push(`修改规则：${names(changed)}`)
+  if (removed.length) parts.push(`删除规则：${names(removed)}`)
+  if (reordered) parts.push('调整了规则排序')
+  if (settingsChanged > 0) parts.push('修改了价格表设置')
+  return parts.join('；')
+}
+
 /** 规则的对象名，用作 chatter 里的字段前缀：「Apple [#12]」「Category Fruit」「All Products」 */
 export type RuleTargetLabeler = (c: Pick<RuleChange, 'applyOn' | 'productId' | 'categoryId'>) => string
 

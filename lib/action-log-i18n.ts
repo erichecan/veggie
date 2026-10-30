@@ -47,6 +47,8 @@ const PHRASES: Array<[string, string]> = ([
   ['价格规则删除', 'Pricelist rule removed'],
   ['删除商品时移除', 'Removed on product deletion'],
   ['条规则', 'rules'],
+  ['调整了规则排序', 'Reordered rules'],
+  ['修改了价格表设置', 'Changed pricelist settings'],
   ['条价格规则', 'pricelist rules'],
   ['同时移除', 'also removed'],
   ['批量导入创建用户', 'Created by bulk import: user'],
@@ -96,6 +98,10 @@ export function translateLogDetail(detail: string, isEn: boolean): string {
   // 「批量导入客户：…」里的对象
   s = s.replace(/^批量导入(\S+?)[：:]/, (m, ent: string) => (ENTITY[ent] ? `Bulk import ${ENTITY[ent]}s: ` : m))
 
+  // 价格表保存摘要(lib/pricelist-diff.ts summarizePricelistUpdate)：「新增规则：A、B 等 5 条」
+  const RULE_VERB: Record<string, string> = { 新增: 'Added', 修改: 'Changed', 删除: 'Removed' }
+  s = s.replace(/(新增|修改|删除)规则：/g, (_m, v: string) => `${RULE_VERB[v]} rules: `)
+  s = s.replace(/ 等 (\d+) 条(?=；|$)/g, (_m, n: string) => ` (${n} in total)`)
   for (const [zh, en] of PHRASES) s = s.split(zh).join(en)
   // 对象名只在第一个冒号之前替换——冒号后面通常是客户/商品名本身，不能把名字里的「客户」等字翻掉
   const colon = s.search(/[：:]/)
@@ -183,7 +189,32 @@ export const FIELD_LABELS: Record<string, { zh: string; en: string }> = {
   dateStart: { zh: '开始日期', en: 'Start Date' },
   dateEnd: { zh: '结束日期', en: 'End Date' },
   uomId: { zh: '单位', en: 'Unit' },
+  selectable: { zh: '可选', en: 'Selectable' },
+  badgeLabel: { zh: '徽标', en: 'Badge' },
+  active: { zh: '启用', en: 'Active' },
+  currency: { zh: '币种', en: 'Currency' },
+  promotionalCode: { zh: '促销码', en: 'Promotional Code' },
+  website: { zh: '网站', en: 'Website' },
+  countryGroups: { zh: '国家组', en: 'Country Groups' },
   moreRuleChanges: { zh: '其余规则变更(条)', en: 'More rule changes' },
+}
+
+const HEADLINE_FIELD_LIMIT = 3
+
+/**
+ * 操作记录标题：detail 只写了「更新客户: Foo」、没说改了什么时，按 changes 补一句
+ * 「— 修改了：电话、地址 等 5 项」(20261029 客户反馈：看不出更新了什么)。显示时生成，历史记录同样生效；
+ * detail 里已经自带说明(含「—」，如价格表保存摘要)的不再重复。
+ */
+export function logHeadline(detail: string | undefined, changes: Record<string, unknown> | null | undefined, isEn: boolean): string {
+  const text = translateLogDetail(detail ?? '', isEn)
+  const keys = Object.keys(changes ?? {}).filter(k => k !== 'moreRuleChanges')
+  if (keys.length === 0 || /—/.test(detail ?? '')) return text
+  const names = [...new Set(keys.map(k => fieldLabel(k, isEn)))]
+  const shown = names.slice(0, HEADLINE_FIELD_LIMIT).join(isEn ? ', ' : '、')
+  const more = names.length > HEADLINE_FIELD_LIMIT ? (isEn ? ` and ${names.length - HEADLINE_FIELD_LIMIT} more` : ` 等 ${names.length} 项`) : ''
+  const what = isEn ? `changed ${shown}${more}` : `修改了：${shown}${more}`
+  return text ? `${text} — ${what}` : what
 }
 
 export function fieldLabel(key: string, isEn: boolean): string {

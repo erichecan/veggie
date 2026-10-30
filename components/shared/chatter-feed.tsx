@@ -4,7 +4,7 @@ import { apiGet } from '@/lib/api'
 import { formatDateTime } from '@/lib/format-date'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { translateLogDetail, fieldLabel as fieldLabelI18n } from '@/lib/action-log-i18n'
+import { logHeadline, fieldLabel as fieldLabelI18n } from '@/lib/action-log-i18n'
 
 /**
  * Odoo Chatter 风格的活动日志：
@@ -224,8 +224,8 @@ export default function ChatterFeed({
                       <span className="text-sm" style={{ color: verbColor, fontWeight: 500 }}>
                         {verb}
                       </span>
-                      {log.detail && (
-                        <span className="text-sm text-gray-500">— {translateLogDetail(log.detail, isEn)}</span>
+                      {(log.detail || changeEntries.length > 0) && (
+                        <span className="text-sm text-gray-500">— {logHeadline(log.detail, log.changes, isEn)}</span>
                       )}
                       {changeEntries.map(([field, { before, after }]) => (
                         <span key={field} className="text-xs text-gray-600 whitespace-nowrap">
