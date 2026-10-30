@@ -136,6 +136,8 @@ export interface DispatchSelector extends PrintContentFilter {
   driverSlotId?: string | null
   batchLabel?: string | null
   waveIds?: string[] | null
+  /** Exact order IDs to intersect with the selected date/wave/batch. */
+  orderIds?: string[] | null
   /**
    * 与 waveIds 搭配：只取这些波次里 seq 命中的托盘（批次号）的订单，而不是整个波次。
    * 打印中心勾了「批次 2」时，屏幕上每个波次只剩批次 2 的托盘；不带这个参数的话服务端
@@ -154,6 +156,7 @@ export function parseDispatchSelector(searchParams: URLSearchParams): DispatchSe
     driverSlotId: searchParams.get('driverSlotId'),
     batchLabel: searchParams.get('batchLabel'),
     waveIds: parseIdListParam(searchParams.get('waveIds')),
+    orderIds: parseIdListParam(searchParams.get('orderIds')),
     batchSeqs: parseIdListParam(searchParams.get('batchSeqs'))
       ?.map(Number).filter(n => Number.isInteger(n)),
     customerIds: parseIdListParam(searchParams.get('customerIds')),
@@ -319,6 +322,8 @@ export async function loadDispatchPrintData(
     }
   }
 
+  const orderIds = new Set((selector.orderIds ?? []).filter(Boolean))
+  if (orderIds.size > 0) orders = orders.filter(order => orderIds.has(order.id))
   if (orders.length === 0) return null
 
   // 内容筛选（客户 / 商品）——必须在截断之前做，否则会先截掉 200 张再从中筛，

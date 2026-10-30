@@ -66,6 +66,8 @@ export interface DispatchPrintParams extends PrintContentFilter {
   driverSlotId?: string
   batchLabel?: string
   waveIds?: string[]
+  /** Exact orders to print, for order number search in Print Center. */
+  orderIds?: string[]
   /** 与 waveIds 搭配，只打这些波次里命中的托盘（批次号），见 dispatch-loader DispatchSelector.batchSeqs */
   batchSeqs?: number[]
   variant?: PickingVariant
@@ -85,6 +87,7 @@ function buildDispatchParams(p: Omit<DispatchPrintParams, 'type'>): URLSearchPar
   if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
   if (p.batchLabel) params.set('batchLabel', p.batchLabel)
   if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
+  if (p.orderIds && p.orderIds.length > 0) params.set('orderIds', p.orderIds.join(','))
   if (p.batchSeqs && p.batchSeqs.length > 0) params.set('batchSeqs', p.batchSeqs.join(','))
   if (p.fromDate) params.set('fromDate', p.fromDate)
   if (p.variant) params.set('variant', p.variant)

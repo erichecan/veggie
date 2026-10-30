@@ -147,6 +147,7 @@ function BatchCard({
   canUnlock,
   filter,
   batchSeqs,
+  orderIds,
   isEn,
   onPrint,
   onLockChange,
@@ -165,6 +166,8 @@ function BatchCard({
   filter: PrintContentFilter
   /** 当前批次号筛选（托盘 seq）；整卡打印按钮必须带上，否则会把同波次其它批次一起打出来 */
   batchSeqs: number[] | undefined
+  /** 当前订单号搜索命中的订单，保证卡片打印范围与屏幕结果一致 */
+  orderIds: string[]
   isEn: boolean
   onPrint: () => void
   onLockChange: () => void
@@ -211,9 +214,9 @@ function BatchCard({
       notifyFirstLock()
       if (type === 'summary') {
         // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], batchSeqs, lang, ...filter }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], batchSeqs, orderIds, lang, ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], batchSeqs, lang, ...filter })
+        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], batchSeqs, orderIds, lang, ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -238,7 +241,7 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
       // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], batchSeqs, variant, expand: expandMode, lang, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], batchSeqs, orderIds, variant, expand: expandMode, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -284,12 +287,17 @@ function BatchCard({
     return `${seq} ${timeOfDay} ${driverName}`
   }
 
+  function orderIdsForPallet(seq: number): string[] {
+    const selected = new Set(orderIds)
+    return pallets.find(p => p.seq === seq)?.orders.map(order => order.id).filter(id => selected.has(id)) ?? []
+  }
+
   async function printPalletPicking(seq: number, variant: 'storable' | 'consumable') {
     setPalletBusy(prev => ({ ...prev, [seq]: true }))
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant, expand: expandMode, lang, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), orderIds: orderIdsForPallet(seq), variant, expand: expandMode, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -304,10 +312,11 @@ function BatchCard({
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
       notifyFirstLock()
+      const orderIds = orderIdsForPallet(seq)
       if (type === 'summary') {
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq), lang, ...filter }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq), orderIds, lang, ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq), lang, ...filter })
+        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq), orderIds, lang, ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -590,6 +599,7 @@ function BatchSections({
         canUnlock={canUnlock}
         filter={filter}
         batchSeqs={batchSeqs}
+        orderIds={g.orders.map(order => order.id)}
         isEn={isEn}
         onPrint={() => onPrint(g.waveId)}
         onLockChange={onLockChange}
@@ -691,6 +701,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   // 台账 D3：客户 / 商品两维内容筛选。线路维度由上面的司机 + 批次承担。
   const [customerFilter, setCustomerFilter] = useState<string[]>([])
   const [productFilter, setProductFilter] = useState<string[]>([])
+  const [orderSearch, setOrderSearch] = useState('')
   const [printStatus, setPrintStatus] = useState<PrintStatus>(EMPTY_STATUS)
   const [logs, setLogs] = useState<ActionLogRow[]>([])
   // 打印队列：每次打印挂一个隐藏 iframe(见 PrintQueue)，不主动卸载——iframe 是 0 尺寸挪到
@@ -832,6 +843,12 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     ]))
   }, [orders, ordersById, contentFilter, productFilter])
 
+  const orderSearchFilteredById = useMemo(() => {
+    const query = orderSearch.trim().toLocaleLowerCase()
+    if (!query) return filteredOrdersById
+    return new Map([...filteredOrdersById].filter(([, order]) => (order.code ?? '').toLocaleLowerCase().includes(query)))
+  }, [filteredOrdersById, orderSearch])
+
   // 每张卡片 = 一个 wave，与调度台一一对应；分组直接读 wave 自身字段
   // (driverName/timeOfDay/pallets)，不再反查过期的 driverSlotId 快照。
   const buildWaveGroups = useCallback((lookup: Map<string, Order>) => {
@@ -866,7 +883,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
       .filter(g => g.orders.length > 0)
   }, [waves])
 
-  const waveGroups = useMemo(() => buildWaveGroups(filteredOrdersById), [buildWaveGroups, filteredOrdersById])
+  const waveGroups = useMemo(() => buildWaveGroups(orderSearchFilteredById), [buildWaveGroups, orderSearchFilteredById])
 
   /**
    * 选项列表一律从**未经内容筛选**的数据算出来。
@@ -942,8 +959,9 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   // 客户/商品筛选同样要落进 waveIds —— 不带的话服务端走「整日全部批次」分支，
   // 会把屏幕上根本没显示的波次（未分配完成/已完成）也算进去，条数就与预览对不上了。
   const isFiltered = driverFilter.length > 0 || timeFilter.length > 0 || batchFilter.length > 0
-    || hasContentFilter(contentFilter)
+    || hasContentFilter(contentFilter) || orderSearch.trim().length > 0
   const filteredWaveIds = isFiltered ? batchGroups.map(g => g.waveId) : undefined
+  const filteredOrderIds = orderSearch.trim() ? [...orderSearchFilteredById.keys()] : undefined
   // 批次号筛选是「波次内」的（裁到托盘），光传 waveIds 服务端会打整个波次——
   // 勾「批次 2」却连批次 1 一起打出来（20261028 客户反馈）。所有打印入口都要带上它
   const filteredBatchSeqs = batchFilter.length > 0 ? batchFilter.map(Number) : undefined
@@ -975,7 +993,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, batchSeqs: filteredBatchSeqs, lang, ...contentFilter })
+      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, batchSeqs: filteredBatchSeqs, orderIds: filteredOrderIds, lang, ...contentFilter })
       queuePrint(html)
     } catch {
       toast.error(isEn ? 'Print failed' : '打印失败')
@@ -997,7 +1015,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, batchSeqs: filteredBatchSeqs, variant, expand: bulkExpandMode, lang, ...contentFilter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, batchSeqs: filteredBatchSeqs, orderIds: filteredOrderIds, variant, expand: bulkExpandMode, lang, ...contentFilter }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }
@@ -1152,6 +1170,16 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
               </button>
             ))}
           </div>
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            <span>{isEn ? 'Order No.' : '订单号'}</span>
+            <input
+              type="search"
+              value={orderSearch}
+              onChange={e => setOrderSearch(e.target.value)}
+              placeholder={isEn ? 'Search order number…' : '按订单号搜索…'}
+              className="w-56 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800 outline-none focus:border-[#875A7B] focus:ring-1 focus:ring-[#875A7B]"
+            />
+          </label>
           <ChipMultiSelect
             label={isEn ? 'Driver' : '司机'}
             options={filterOptions.drivers}
