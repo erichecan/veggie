@@ -17,6 +17,7 @@
 
 import type { Product, OdooPricelist, OdooPricelistItem, Customer, CustomerPriceType } from './types'
 import { fmtMoney } from './format-money'
+import { priceOf } from './sale-uom'
 
 // ─── 公共接口 ─────────────────────────────────────────────────────────────────
 
@@ -265,7 +266,10 @@ export function computeItemPrice(
 
     case 'percentage': {
       const discount = item.percentDiscount ?? 0
-      return basePrice * uomFactor * (1 - discount / 100)
+      const unitBasePrice = item.uomId
+        ? priceOf(product.saleUoms ?? [], item.uomId, basePrice)
+        : basePrice
+      return unitBasePrice * (1 - discount / 100)
     }
 
     case 'formula': {
@@ -275,7 +279,12 @@ export function computeItemPrice(
       let alreadyScaled = false
       switch (item.formulaBase) {
         case 'list_price':
-          formulaBase = basePrice
+          // PACK 等可售单位可能配置了独立售价或自己的售价公式；公式基准应与
+          // 商品/订单页面显示的该单位 Public Price 一致，不能只做 factor 换算。
+          formulaBase = item.uomId
+            ? priceOf(product.saleUoms ?? [], item.uomId, basePrice)
+            : basePrice
+          alreadyScaled = !!item.uomId
           break
         case 'standard_price':
           formulaBase = product.standardPrice ?? product.commissionPrice ?? basePrice
