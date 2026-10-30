@@ -1,10 +1,10 @@
 'use client'
-import { useState, useEffect, useMemo, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPut, apiPost } from '@/lib/api'
 import type { Order, OrderStatus, Invoice } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import OrderMobileList from '@/components/classic/OrderMobileList'
@@ -21,6 +21,9 @@ import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_
 import { downloadAuthedFile } from '@/lib/print/open-pdf'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { parseCsv, downloadCsv } from '@/lib/csv-export'
+import { orderLineExportColumns } from '@/lib/export/columns/order-lines'
 
 const PAGE_SIZE = 50
 
@@ -81,6 +84,25 @@ function normalizeStatus(s: string | null | undefined): OrderStatus {
   return s.toLowerCase() as OrderStatus
 }
 
+function norm(s: string | null | undefined): string {
+  return s ? s.toLowerCase().trim() : ''
+}
+
+// CSV 导入列定义(销售单)，与采购单导入同一模式(lib/export/columns/purchase-orders.ts 对应页)：
+// 中文表头为主约定，英文表头作为别名同样可被识别(匹配大小写不敏感)。单价/税率留空时
+// 由服务端权威定价(lib/server-pricing.ts resolveOrderLines)按价格表算，不像采购单那样必填。
+const SO_IMPORT_COLUMNS: { key: string; zh: string; en: string; required?: boolean }[] = [
+  { key: 'customer',     zh: '客户名称', en: 'Customer Name', required: true },
+  { key: 'product',      zh: '商品名称', en: 'Product Name',  required: true },
+  { key: 'productRef',   zh: '商品编号', en: 'Product Ref' },
+  { key: 'quantity',     zh: '数量',     en: 'Quantity',      required: true },
+  { key: 'unitPrice',    zh: '单价',     en: 'Unit Price' },
+  { key: 'taxRate',      zh: '税率',     en: 'Tax Rate' },
+  { key: 'isGift',       zh: '赠品',     en: 'Gift' },
+  { key: 'deliveryDate', zh: '交货日期', en: 'Delivery Date' },
+  { key: 'notes',        zh: '备注',     en: 'Notes' },
+]
+
 function DateCell({ iso }: { iso: string | null | undefined }) {
   return (
     <span title={formatDateTimeShort(iso)}>
@@ -133,6 +155,13 @@ export default function ClassicOrdersPage() {
   const [pendingBatch, setPendingBatch] = useState<Record<string, string>>({})
   const [savingBatch, setSavingBatch] = useState(false)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
+
+  // ── Import modal(CSV 导入，镜像采购单页 purchases/page.tsx）─────────────────
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importParsed, setImportParsed] = useState<Array<Record<string, string>>>([])
+  const [importLoading, setImportLoading] = useState(false)
+  const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   function fetchDriverSlots() {
     return apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
@@ -202,6 +231,192 @@ export default function ClassicOrdersPage() {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Export failed' : '导出失败'))
     } finally {
       setExporting(null)
+    }
+  }
+
+  // 全字段导出(可勾选字段) + CSV 导入 —— 与采购单列表页(purchases/page.tsx)同一模式，
+  // 走独立的 order-lines 导出实体(lib/export/columns/order-lines.ts)，不动上面
+  // 既有的 exportCsv('summary'|'detail')，那两个是报价单页共用的旧实体不能改。
+  const exportAction = useCsvExport({
+    entity: 'order-lines',
+    params: () => baseUrl.split('?')[1] ?? '',
+    fallbackFilename: isEn ? 'orders.csv' : '销售单.csv',
+    columns: (en: boolean) => orderLineExportColumns(en),
+  })
+  // 多选后只导出选中的销售单，同样先弹字段勾选框
+  const exportSelectedAction = useCsvExport({
+    entity: 'order-lines',
+    params: () => {
+      const p = new URLSearchParams()
+      p.set('ids', sorted.filter(o => selected.has(o.id)).map(o => o.id).join(','))
+      p.set('sortField', sortField)
+      p.set('sortDir', sortDir)
+      return p
+    },
+    fallbackFilename: isEn ? 'orders-selected.csv' : '销售单-选中.csv',
+    columns: (en: boolean) => orderLineExportColumns(en),
+  })
+
+  // ── CSV import helpers ────────────────────────────────────────────────────
+
+  function downloadImportTemplate() {
+    const headers = SO_IMPORT_COLUMNS.map(c => isEn ? c.en : c.zh)
+    const today = new Date().toISOString().slice(0, 10)
+    const sample = isEn
+      ? ['Restaurant A', 'Cabbage', '', '10', '2.50', '23', '', today, '']
+      : ['餐馆 A', '白菜', '', '10', '2.50', '23', '', today, '']
+    downloadCsv(isEn ? 'sales_order_import_template' : '销售单导入模板', headers, [sample])
+  }
+
+  // 共享的健壮 CSV 解析器(引号包裹字段/内嵌逗号换行/BOM/CRLF)；表头按中/英文列名匹配
+  // (大小写不敏感)后统一映射到固定 key 上，与采购单导入同一份解析规则。
+  function parseImportCSV(text: string): Array<Record<string, string>> {
+    const rows = parseCsv(text)
+    if (rows.length < 2) return []
+    const header = rows[0].map(h => h.trim().toLowerCase())
+    const colIdx = new Map<string, number>()
+    for (const c of SO_IMPORT_COLUMNS) {
+      const idx = header.findIndex(h => h === c.zh.toLowerCase() || h === c.en.toLowerCase())
+      if (idx >= 0) colIdx.set(c.key, idx)
+    }
+    return rows.slice(1).map(r => {
+      const row: Record<string, string> = {}
+      for (const [key, idx] of colIdx) row[key] = (r[idx] ?? '').trim()
+      return row
+    })
+  }
+
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text = e.target?.result as string
+      setImportParsed(parseImportCSV(text))
+      setImportResult(null)
+    }
+    reader.readAsText(file, 'utf-8')
+  }
+
+  async function handleImportSubmit() {
+    if (!importParsed.length) return
+    setImportLoading(true)
+    setImportResult(null)
+
+    // 客户 = /api/customers 默认视图(isCustomer=true && isActive=true)；不传 pageSize
+    // 走 legacy 扁平数组分支，一次拿到全部匹配行。商品匹配与采购单导入同一套口径：
+    // 优先按商品编号(internalRef)，其次按名称精确匹配。
+    let customers: Array<{ id: string; name: string }> = []
+    let products: Array<{ id: string; name: string; internalRef?: string | null }> = []
+    try {
+      [customers, products] = await Promise.all([
+        apiGet<typeof customers>('/api/customers?slim=1'),
+        apiGet<typeof products>('/api/products?slim=1'),
+      ])
+    } catch { /* ignore — 会在下方按"未找到"逐组报错 */ }
+
+    function findProduct(productRef: string, productName: string) {
+      if (productRef) {
+        const byRef = products.find(p => p.internalRef && norm(p.internalRef) === norm(productRef))
+        if (byRef) return byRef
+      }
+      return products.find(p => norm(p.name) === norm(productName)) ?? null
+    }
+
+    // 按客户名分组，构建销售单(报价单)
+    const groups = new Map<string, typeof importParsed>()
+    for (const row of importParsed) {
+      const key = row.customer?.trim()
+      if (!key) continue
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(row)
+    }
+
+    let success = 0
+    const errors: string[] = []
+    // ⛔ 20261029 修复：之前不管成功/失败都不清 importParsed，disabled 只看 length===0——
+    // 部分失败后用户改完重新点「导入」，会把已经成功创建的客户分组再提交一遍，
+    // 销售单被重复创建。这里记下本次成功的客户分组，提交完从 importParsed 里摘掉，
+    // 重试只会再提交真正失败的那些行。
+    const succeededCustomers = new Set<string>()
+
+    for (const [customerName, rows] of groups) {
+      const customer = customers.find(c => norm(c.name) === norm(customerName))
+      if (!customer) { errors.push(isEn ? `Customer not found: ${customerName}` : `找不到客户: ${customerName}`); continue }
+
+      const items: Array<{ productId: string; productName: string; quantity: number; price?: number; taxRate?: number; isGift?: boolean }> = []
+      const missingProducts: string[] = []
+      const invalidRows: string[] = []
+
+      for (const row of rows) {
+        const productName = row.product?.trim() || ''
+        if (!productName) continue
+        const productRef = row.productRef?.trim() || ''
+        const quantity = parseFloat(row.quantity)
+        if (!row.quantity?.trim() || !Number.isFinite(quantity) || quantity <= 0) {
+          invalidRows.push(isEn ? `${productName}: quantity is required` : `${productName}: 数量为必填项`)
+          continue
+        }
+        // 单价留空 = 不传，由服务端权威定价(resolveOrderLines)按价格表/客户档案算，
+        // 不像采购单那样必填——这里只是参考价，除非操作员有改价权限才会被采纳。
+        const unitPriceRaw = row.unitPrice?.trim()
+        const price = unitPriceRaw ? parseFloat(unitPriceRaw) : undefined
+        const taxRateRaw = row.taxRate?.trim()
+        const taxRate = taxRateRaw ? parseFloat(taxRateRaw) : undefined
+        const isGift = ['是', 'yes', '1', 'true'].includes(norm(row.isGift))
+        const matched = findProduct(productRef, productName)
+        if (!matched) { missingProducts.push(productName); continue }
+        items.push({ productId: matched.id, productName, quantity, price, taxRate, isGift })
+      }
+
+      if (missingProducts.length || invalidRows.length) {
+        const parts: string[] = []
+        if (missingProducts.length) {
+          parts.push(isEn ? `product not found — ${missingProducts.join(', ')}` : `商品未找到 — ${missingProducts.join('、')}`)
+        }
+        if (invalidRows.length) parts.push(invalidRows.join('; '))
+        errors.push(`${customerName}: ${parts.join('; ')}`)
+        continue
+      }
+      if (!items.length) {
+        errors.push(isEn ? `${customerName}: no valid item rows` : `${customerName}: 无有效商品行`)
+        continue
+      }
+
+      const deliveryDateRaw = rows[0].deliveryDate?.trim() || ''
+      // 后端 normalizeDateOnly 对不是 YYYY-MM-DD 的值直接返回 undefined（不报错）——
+      // Excel 打开 CSV 再保存常把日期列重渲染成本地化格式(如 29/10/2026)，不在这里
+      // 挡住的话，订单会"创建成功"但静默丢了交货日期，脱出波次/配送排程却没有任何提示。
+      if (deliveryDateRaw && !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDateRaw)) {
+        errors.push(isEn
+          ? `${customerName}: delivery date must be YYYY-MM-DD (got "${deliveryDateRaw}")`
+          : `${customerName}: 交货日期格式须为 YYYY-MM-DD（实际为 "${deliveryDateRaw}"）`)
+        continue
+      }
+      const deliveryDate = deliveryDateRaw || undefined
+      const internalNote = rows[0].notes?.trim() || undefined
+
+      try {
+        await apiPost('/api/orders', {
+          restaurantId: customer.id,
+          restaurantName: customer.name,
+          items,
+          deliveryDate,
+          internalNote,
+        })
+        success++
+        succeededCustomers.add(customerName)
+      } catch (e) {
+        errors.push(`${customerName}: ${e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败')}`)
+      }
+    }
+
+    setImportResult({ success, failed: errors.length, errors })
+    setImportLoading(false)
+    if (success > 0) {
+      toast.success(isEn ? `Successfully imported ${success} sales orders` : `成功导入 ${success} 个销售单`)
+      refresh()
+      if (succeededCustomers.size > 0) {
+        setImportParsed(prev => prev.filter(row => !succeededCustomers.has(row.customer?.trim())))
+      }
     }
   }
 
@@ -379,6 +594,8 @@ export default function ClassicOrdersPage() {
   // 只数当前看得见的勾选（20261021）：切换筛选后被筛掉的行仍留在 selected 里，原来按钮照样把它们算进去，
   // 屏幕上一张都看不到却显示 (1)
   const selectedConfirmedCount = sorted.filter(o => selected.has(o.id) && o.status === 'confirmed').length
+  // 导出选中用——不限状态，同样只数当前看得见的勾选（同 20261021 的理由）
+  const selectedVisibleCount = sorted.filter(o => selected.has(o.id)).length
 
   const inputCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
   const selectCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
@@ -562,7 +779,12 @@ export default function ClassicOrdersPage() {
           }] : []),
           { label: exporting === 'summary' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Export Summary' : '导出汇总'), onClick: () => exportCsv('summary') },
           { label: exporting === 'detail' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Export Detail' : '导出明细'), onClick: () => exportCsv('detail') },
+          { label: exportAction.label, onClick: exportAction.onClick, disabled: exportAction.disabled },
+          { label: isEn ? 'Import' : '导入', onClick: () => { setImportParsed([]); setImportResult(null); setShowImportModal(true) } },
         ]}
+        actions={selectedVisibleCount > 0 ? [
+          { label: isEn ? `Export Selected (${selectedVisibleCount})` : `导出选中 (${selectedVisibleCount})`, onClick: exportSelectedAction.onClick, disabled: exportSelectedAction.disabled },
+        ] : []}
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}
         onSearchSubmit={() => {}}
@@ -620,6 +842,86 @@ export default function ClassicOrdersPage() {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
       />
+      {exportAction.dialog}
+      {exportSelectedAction.dialog}
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowImportModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b flex items-center justify-between">
+              <h3 className="text-base font-semibold">{isEn ? 'Import Sales Orders (CSV)' : '导入销售单 (CSV)'}</h3>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <div className="p-5 space-y-4 text-sm">
+              <div className="flex items-center gap-3">
+                <button onClick={downloadImportTemplate} className="px-3 py-1.5 border rounded text-[#875A7B] border-[#875A7B] hover:bg-purple-50">
+                  {isEn ? 'Download Template' : '下载导入模板'}
+                </button>
+                <span className="text-gray-500 text-xs">
+                  {isEn ? 'Required columns: Customer Name / Product Name / Quantity' : '必填列：客户名称 / 商品名称 / 数量'}
+                </span>
+              </div>
+              <div>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = '' }}
+                  className="block w-full text-xs border rounded px-2 py-1.5"
+                />
+              </div>
+              {importParsed.length > 0 && (
+                <div className="border rounded overflow-x-auto max-h-56">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {SO_IMPORT_COLUMNS.map(c => (
+                          <th key={c.key} className="px-2 py-1 text-left whitespace-nowrap">{isEn ? c.en : c.zh}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importParsed.slice(0, 5).map((row, i) => (
+                        <tr key={i} className="border-t">
+                          {SO_IMPORT_COLUMNS.map(c => (
+                            <td key={c.key} className="px-2 py-1 whitespace-nowrap">{row[c.key] ?? ''}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="px-2 py-1 text-[11px] text-gray-500 bg-gray-50 border-t">
+                    {isEn ? `${importParsed.length} rows total, showing first 5` : `共 ${importParsed.length} 行，预览前 5 行`}
+                  </div>
+                </div>
+              )}
+              {importResult && (
+                <div className={`rounded px-3 py-2 text-xs ${importResult.failed > 0 ? 'bg-yellow-50 text-yellow-800' : 'bg-green-50 text-green-800'}`}>
+                  <div>{isEn ? `Success: ${importResult.success}, Failed: ${importResult.failed}` : `成功 ${importResult.success} 个，失败 ${importResult.failed} 个`}</div>
+                  {importResult.errors.length > 0 && (
+                    <ul className="mt-1 list-disc list-inside space-y-0.5">
+                      {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t flex items-center justify-end gap-2">
+              <button onClick={() => setShowImportModal(false)} className="px-3 py-1.5 border rounded text-gray-600 hover:bg-gray-50">
+                {isEn ? 'Close' : '关闭'}
+              </button>
+              <button
+                onClick={handleImportSubmit}
+                disabled={importParsed.length === 0 || importLoading}
+                className="px-3 py-1.5 rounded text-white disabled:opacity-50"
+                style={{ background: '#875A7B' }}
+              >
+                {importLoading ? (isEn ? 'Importing…' : '导入中…') : (isEn ? 'Import' : '导入')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <OrderMobileList orders={sorted} selected={selected} loading={loading} isEn={isEn} statusLabels={STATUS_LABEL} statusColors={STATUS_COLOR}
         onSelect={(id, checked) => setSelected(previous => { const next = new Set(previous); if (checked) next.add(id); else next.delete(id); return next })}

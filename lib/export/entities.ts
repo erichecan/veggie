@@ -76,6 +76,13 @@ export const EXPORT_ENTITY_META = {
     labelEn: 'Orders',
     listApi: '/api/orders',
   },
+  // 销售单列表页「导出（全字段）」：权限沿用同一份 sales.order.read（决策 D-3）。
+  'order-lines': {
+    permission: 'sales.order.read',
+    labelZh: '订单明细',
+    labelEn: 'Order Lines',
+    listApi: '/api/orders',
+  },
   uoms: {
     permission: 'master.uom.read',
     labelZh: '计量单位',

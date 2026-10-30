@@ -23,6 +23,8 @@ import { statementExportColumns } from './columns/statements'
 import { loadStatementsForExport } from './loaders/statements'
 import { orderExportColumns } from './columns/orders'
 import { loadOrdersForExport } from './loaders/orders'
+import { orderLineExportColumns } from './columns/order-lines'
+import { loadOrderLinesForExport } from './loaders/order-lines'
 import { UOM_EXPORT_COLUMNS } from './columns/uoms'
 import { loadUomsForExport } from './loaders/uoms'
 import { PRODUCT_CATEGORY_EXPORT_COLUMNS } from './columns/product-categories'
@@ -113,6 +115,13 @@ export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
   orders: defineExport({
     columns: (isEn) => orderExportColumns(isEn),
     load: loadOrdersForExport,
+  }),
+  // 销售单列表页「导出（全字段）」专用：一行一个商品行，字段比上面的 orders 多
+  // （含商品/数量/单价/税率/赠品等明细），不能让 quotations 页共用的 orders 实体
+  // 也变成行级，否则那边导出行数会跟着订单行数膨胀。
+  'order-lines': defineExport({
+    columns: (isEn) => orderLineExportColumns(isEn),
+    load: loadOrderLinesForExport,
   }),
   uoms: defineExport({
     columns: UOM_EXPORT_COLUMNS,
