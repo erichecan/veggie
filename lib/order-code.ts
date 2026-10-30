@@ -5,8 +5,7 @@
  *   - YYMMDD：订单创建当日（本地时区），例：260424
  *   - NNN：当天的递增序号，从 001 开始，三位补零；超过 999 时位数自然变多
  *
- * 历史订单的 code 字段保持原有的 <INITIALS>-YYMMDD-NNN 格式不回填，不影响既往单据。
- * 历史订单的 code 字段也可能保持 NULL；显示时由 displayOrderCode() 兜底为 id 前 8 位。
+ * 历史订单由迁移统一回填 D 编号；迁移前的编号存入 legacyCode 供检索。
  */
 import type { PrismaClient } from '@/lib/generated/prisma/client'
 import type * as Prisma from '@/lib/generated/prisma/internal/prismaNamespace'
@@ -47,8 +46,8 @@ export async function nextOrderCode(
 }
 
 /** 用于 UI 兜底显示，历史订单仍可读 */
-export function displayOrderCode(o: { code?: string | null; id: string }): string {
-  return o.code ?? `${o.id.slice(0, 8)}…`
+export function displayOrderCode(o: { code?: string | null; id: string; legacyCode?: string | null }): string {
+  return o.code ?? '—'
 }
 
 /**

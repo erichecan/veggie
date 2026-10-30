@@ -22,6 +22,7 @@ interface Statement {
   openingBalance: number
   totalSales: number
   totalPayments: number
+  totalCredits: number
   closingBalance: number
   status: string
   createdAt: string
@@ -35,6 +36,7 @@ interface StatementOrderLine {
   confirmationDate: string | null
   deliveryDate: string | null
   incTaxTotal: number
+  invoices: Array<{ name: string; issueDate: string }>
 }
 
 interface StatementPaymentLine {
@@ -53,6 +55,7 @@ interface StatementPaymentLine {
 interface StatementDetail extends Statement {
   orders: StatementOrderLine[]
   payments: StatementPaymentLine[]
+  credits: Array<{ id: string; name: string; creditDate: string; amount: number; subtotalExTax: number; tax: number; notes: string | null; sourceOrderIds: string[] }>
   missingOrderIds: string[]
   reconciliation: {
     ok: boolean
@@ -280,6 +283,10 @@ export default function StatementsPage() {
             <InfoCard label={isEn ? 'Created' : '创建时间'} value={fmtDateTime(detail.createdAt)} />
             {detail.sentAt && <InfoCard label={isEn ? 'Sent' : '发送时间'} value={fmtDateTime(detail.sentAt)} />}
           </div>
+          {detailData && <div className="flex flex-wrap gap-2">
+            <button onClick={() => downloadStatementCsv(detail, detailData, isEn)} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{isEn ? 'Download customer statement CSV' : '下载客户交易流水 CSV'}</button>
+            <button onClick={() => printStatementPdf(detail, detailData, isEn)} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{isEn ? 'Print / Save PDF' : '打印 / 保存为 PDF'}</button>
+          </div>}
 
           {/* Financial summary */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -288,6 +295,7 @@ export default function StatementsPage() {
               <FinanceRow label={isEn ? 'Opening Balance' : '期初余额'} amount={detail.openingBalance} />
               <FinanceRow label={isEn ? '+ Sales This Period' : '+ 本期销售额'} amount={detail.totalSales} positive />
               <FinanceRow label={isEn ? '- Payments This Period' : '- 本期付款额'} amount={detail.totalPayments} negative />
+              <FinanceRow label={isEn ? '- Credit Notes This Period' : '- 本期贷记单'} amount={detail.totalCredits} negative />
               <FinanceRow label={isEn ? 'Closing Balance' : '期末余额'} amount={detail.closingBalance} bold />
             </div>
           </div>
@@ -327,7 +335,7 @@ export default function StatementsPage() {
 
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">
-                  {isEn ? 'Orders This Period' : '本期订单明细'} <span className="text-xs font-normal text-gray-400">{isEn ? 'by confirmation date' : '按销售确认日'}</span>
+                  {isEn ? 'Orders This Period' : '本期订单明细'} <span className="text-xs font-normal text-gray-400">{isEn ? 'by delivery date' : '按配送日期'} · {isEn ? 'Invoice number/date shown when issued' : '同时显示发票号和开票日期'}</span>
                 </div>
                 {detailData.orders.length === 0 ? (
                   <div className="px-5 py-6 text-sm text-gray-400">{isEn ? 'No confirmed orders this period' : '本期没有已确认的订单'}</div>
@@ -338,6 +346,8 @@ export default function StatementsPage() {
                         <th className="text-left px-5 py-2">{isEn ? 'Order #' : '订单号'}</th>
                         <th className="text-left px-3 py-2">{isEn ? 'Confirmed' : '确认日期'}</th>
                         <th className="text-left px-3 py-2">{isEn ? 'Delivery Date' : '配送日期'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Invoice #' : '发票号'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Invoice Date' : '开票日期'}</th>
                         <th className="text-left px-3 py-2">{isEn ? 'Status' : '状态'}</th>
                         <th className="text-right px-5 py-2">{isEn ? 'Amount (Inc. Tax)' : '含税金额'}</th>
                       </tr>
@@ -345,9 +355,11 @@ export default function StatementsPage() {
                     <tbody>
                       {detailData.orders.map(o => (
                         <tr key={o.id} className="border-b border-gray-50">
-                          <td className="px-5 py-2 text-gray-800">{o.code ?? o.id.slice(0, 8)}</td>
+                          <td className="px-5 py-2 text-gray-800">{o.code ?? '—'}</td>
                           <td className="px-3 py-2 text-gray-600">{fmtDate(o.confirmationDate)}</td>
                           <td className="px-3 py-2 text-gray-600">{fmtDate(o.deliveryDate)}</td>
+                          <td className="px-3 py-2 text-gray-600">{o.invoices.length ? o.invoices.map(i => i.name).join(', ') : (isEn ? 'Pending' : '待开票')}</td>
+                          <td className="px-3 py-2 text-gray-600">{o.invoices.length ? o.invoices.map(i => fmtDate(i.issueDate)).join(', ') : '—'}</td>
                           <td className="px-3 py-2 text-gray-500">{o.status}</td>
                           <td className="px-5 py-2 text-right text-gray-800">€{Number(o.incTaxTotal).toFixed(2)}</td>
                         </tr>
@@ -355,11 +367,20 @@ export default function StatementsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-200 font-medium">
-                        <td className="px-5 py-2 text-gray-600" colSpan={4}>{isEn ? 'Total' : '合计'}</td>
+                        <td className="px-5 py-2 text-gray-600" colSpan={6}>{isEn ? 'Total' : '合计'}</td>
                         <td className="px-5 py-2 text-right text-gray-800">€{detailData.reconciliation.salesFromOrders.toFixed(2)}</td>
                       </tr>
                     </tfoot>
                   </table>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">{isEn ? 'Credit Notes This Period' : '本期贷记单'}</div>
+                {detailData.credits.length === 0 ? <div className="px-5 py-5 text-sm text-gray-400">{isEn ? 'No credit notes this period' : '本期没有已确认的贷记单'}</div> : (
+                  <table className="w-full text-sm"><thead><tr className="bg-gray-50 text-xs text-gray-500"><th className="text-left px-5 py-2">{isEn ? 'Credit Note #' : '贷记单号'}</th><th className="text-left px-3 py-2">{isEn ? 'Date' : '生效日期'}</th><th className="text-left px-3 py-2">{isEn ? 'Related Orders' : '关联订单'}</th><th className="text-left px-3 py-2">{isEn ? 'Reason' : '原因'}</th><th className="text-right px-3 py-2">{isEn ? 'Ex. tax' : '未税金额'}</th><th className="text-right px-3 py-2">{isEn ? 'Tax' : '税额'}</th><th className="text-right px-5 py-2">{isEn ? 'Inc. tax' : '含税贷项'}</th></tr></thead>
+                    <tbody>{detailData.credits.map(c => <tr key={c.id} className="border-t border-gray-100"><td className="px-5 py-2">{c.name}</td><td className="px-3 py-2">{fmtDate(c.creditDate)}</td><td className="px-3 py-2">{c.sourceOrderIds.map(id => detailData.orders.find(o => o.id === id)?.code ?? id.slice(0, 8)).join(', ') || '—'}</td><td className="px-3 py-2">{c.notes ?? '—'}</td><td className="px-3 py-2 text-right">€{c.subtotalExTax.toFixed(2)}</td><td className="px-3 py-2 text-right">€{c.tax.toFixed(2)}</td><td className="px-5 py-2 text-right text-red-700">−€{c.amount.toFixed(2)}</td></tr>)}</tbody>
+                    <tfoot><tr className="border-t font-medium"><td colSpan={6} className="px-5 py-2">{isEn ? 'Total credits' : '贷项合计'}</td><td className="px-5 py-2 text-right">−€{detail.totalCredits.toFixed(2)}</td></tr></tfoot></table>
                 )}
               </div>
 
@@ -570,6 +591,42 @@ function fmtDate(iso: string | null | undefined) {
 function fmtDateTime(iso: string) {
   if (!iso) return '-'
   return formatDateTime(iso)
+}
+
+function downloadStatementCsv(statement: Statement, detail: StatementDetail, isEn: boolean) {
+  const rows: Array<Array<string | number>> = [
+    [isEn ? 'Customer' : '客户', statement.customerName],
+    [isEn ? 'Period' : '账期', `${fmtDate(statement.periodStart)} - ${fmtDate(statement.periodEnd)}`],
+    [],
+    [isEn ? 'Type' : '类型', isEn ? 'Transaction date' : '交易日期', isEn ? 'Order #' : '订单号', isEn ? 'Invoice #' : '发票号', isEn ? 'Invoice date' : '开票日期', isEn ? 'Credit note #' : '贷记单号', isEn ? 'Description' : '说明', isEn ? 'Tax base' : '未税金额', isEn ? 'Tax' : '税额', isEn ? 'Debit' : '借方', isEn ? 'Credit' : '贷方'],
+    [isEn ? 'Opening balance' : '期初余额', '', '', '', '', '', '', '', '', statement.openingBalance.toFixed(2), ''],
+    ...detail.orders.map(o => [isEn ? 'Sale' : '销售', fmtDate(o.deliveryDate), o.code ?? '—', o.invoices.map(i => i.name).join(' / ') || (isEn ? 'Pending invoice' : '待开票'), o.invoices.map(i => fmtDate(i.issueDate)).join(' / '), '', '', '', '', Number(o.incTaxTotal).toFixed(2), '']),
+    ...detail.payments.map(p => [isEn ? 'Payment' : '收款', fmtDate(p.paidAt), '', p.invoiceName ?? '', '', '', p.note ?? p.method ?? '', '', '', '', Number(p.amount).toFixed(2)]),
+    ...detail.credits.map(c => [isEn ? 'Credit note' : '贷记单', fmtDate(c.creditDate), c.sourceOrderIds.map(id => detail.orders.find(o => o.id === id)?.code ?? id.slice(0, 8)).join(' / '), '', '', c.name, c.notes ?? '', c.subtotalExTax.toFixed(2), c.tax.toFixed(2), '', Number(c.amount).toFixed(2)]),
+    [],
+    [isEn ? 'Closing balance' : '期末余额', '', '', '', '', '', '', '', '', statement.closingBalance.toFixed(2), ''],
+  ]
+  const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `statement-${statement.customerName}-${statement.periodStart.slice(0, 10)}-${statement.periodEnd.slice(0, 10)}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function printStatementPdf(statement: Statement, detail: StatementDetail, isEn: boolean) {
+  const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
+  const transactions = [
+    ...detail.orders.map(o => `<tr><td>${escape(fmtDate(o.deliveryDate))}</td><td>${escape(o.code ?? '—')}</td><td>${escape(o.invoices.map(i => i.name).join(', ') || (isEn ? 'Pending invoice' : '待开票'))}</td><td>${escape(o.invoices.map(i => fmtDate(i.issueDate)).join(', ') || '—')}</td><td>${isEn ? 'Sale' : '销售'}</td><td class="num">€${Number(o.incTaxTotal).toFixed(2)}</td><td></td></tr>`),
+    ...detail.payments.map(p => `<tr><td>${escape(fmtDate(p.paidAt))}</td><td></td><td>${escape(p.invoiceName ?? '—')}</td><td></td><td>${isEn ? 'Payment' : '收款'}</td><td></td><td class="num">€${Number(p.amount).toFixed(2)}</td></tr>`),
+    ...detail.credits.map(c => `<tr><td>${escape(fmtDate(c.creditDate))}</td><td>${escape(c.sourceOrderIds.map(id => detail.orders.find(o => o.id === id)?.code ?? id.slice(0, 8)).join(', '))}</td><td>${escape(c.name)}</td><td>—</td><td>${escape(c.notes ?? (isEn ? 'Credit note' : '贷记单'))} · ${isEn ? 'ex. tax' : '未税'} €${c.subtotalExTax.toFixed(2)} · ${isEn ? 'tax' : '税额'} €${c.tax.toFixed(2)}</td><td></td><td class="num">−€${c.amount.toFixed(2)}</td></tr>`),
+  ].join('')
+  const popup = window.open('', '_blank', 'width=1000,height=800')
+  if (!popup) { toast.error(isEn ? 'Allow pop-ups to print this statement' : '请允许弹出窗口以打印对账单'); return }
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escape(statement.customerName)} ${escape(statement.periodStart.slice(0, 10))}</title><style>body{font:14px Arial,sans-serif;color:#172033;padding:32px}h1{font-size:22px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border-bottom:1px solid #ddd;padding:9px 7px;text-align:left}th{background:#f4f1f5}.num{text-align:right}.summary{margin-top:24px;width:380px;margin-left:auto}.summary div{display:flex;justify-content:space-between;padding:7px;border-bottom:1px solid #eee}@media print{body{padding:0}}</style></head><body><h1>${isEn ? 'Customer Statement' : '客户交易对账单'}</h1><div>${isEn ? 'Customer' : '客户'}: ${escape(statement.customerName)}</div><div>${isEn ? 'Period' : '账期'}: ${escape(fmtDate(statement.periodStart))} - ${escape(fmtDate(statement.periodEnd))}</div><table><thead><tr><th>${isEn ? 'Date' : '日期'}</th><th>${isEn ? 'Order #' : '订单号'}</th><th>${isEn ? 'Invoice / credit note' : '发票号 / 贷记单号'}</th><th>${isEn ? 'Invoice date' : '开票日期'}</th><th>${isEn ? 'Description' : '类型 / 说明'}</th><th class="num">${isEn ? 'Debit' : '借方'}</th><th class="num">${isEn ? 'Credit' : '贷方'}</th></tr></thead><tbody>${transactions || `<tr><td colspan="7">${isEn ? 'No transactions' : '无交易'}</td></tr>`}</tbody></table><div class="summary"><div><span>${isEn ? 'Opening balance' : '期初余额'}</span><b>€${statement.openingBalance.toFixed(2)}</b></div><div><span>${isEn ? 'Sales' : '销售'}</span><b>€${statement.totalSales.toFixed(2)}</b></div><div><span>${isEn ? 'Payments' : '收款'}</span><b>−€${statement.totalPayments.toFixed(2)}</b></div><div><span>${isEn ? 'Credit notes' : '贷记单'}</span><b>−€${statement.totalCredits.toFixed(2)}</b></div><div><span>${isEn ? 'Closing balance' : '期末余额'}</span><b>€${statement.closingBalance.toFixed(2)}</b></div></div><script>window.onload=()=>window.print()</script></body></html>`)
+  popup.document.close()
 }
 
 function InfoCard({ label, value }: { label: string; value: string }) {

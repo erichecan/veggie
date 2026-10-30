@@ -13,11 +13,11 @@ import type { Order } from '@/lib/types'
 
 const STATUS_LABEL_ZH: Record<string, string> = {
   PENDING: '待处理', CONFIRMED: '已确认', WAVE_ASSIGNED: '司机分配结束',
-  IN_DELIVERY: '配送中', COMPLETED: '已完成', LOCKED: '拣货中', CANCELLED: '已取消',
+  IN_DELIVERY: '配送中', COMPLETED: '完成配送', LOCKED: '拣货中', CANCELLED: '已取消',
 }
 const STATUS_LABEL_EN: Record<string, string> = {
   PENDING: 'Pending', CONFIRMED: 'Confirmed', WAVE_ASSIGNED: 'Driver Assigned',
-  IN_DELIVERY: 'In Delivery', COMPLETED: 'Completed', LOCKED: 'Picking', CANCELLED: 'Cancelled',
+  IN_DELIVERY: 'In Delivery', COMPLETED: 'Delivery Completed', LOCKED: 'Picking', CANCELLED: 'Cancelled',
 }
 
 export type OrderExportRow = Order & { salesUser?: { name: string } | null }

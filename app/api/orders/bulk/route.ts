@@ -296,6 +296,13 @@ export async function POST(req: Request) {
         if (confirmedIds.length === 0) {
           return NextResponse.json({ error: '选中订单中没有已确认状态的订单' }, { status: 400 })
         }
+        const activeWaves = await prisma.pickingWave.findMany({
+          where: { orderIds: { hasSome: confirmedIds }, dispatchedAt: null, completedAt: null },
+          select: { id: true, name: true },
+        })
+        if (activeWaves.length > 0) {
+          return NextResponse.json({ error: `所选订单属于未出发波次（${activeWaves.map(w => w.name ?? w.id).join('、')}），请在日销售中心按批次确认出发` }, { status: 409 })
+        }
         await prisma.order.updateMany({
           where: { id: { in: confirmedIds } },
           data: { status: 'IN_DELIVERY' },

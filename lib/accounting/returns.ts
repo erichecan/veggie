@@ -88,6 +88,7 @@ export async function listReturns(query: ReturnQuery, now = new Date()) {
         tabWhere,
         ...(text ? [{ OR: [
           { code: { contains: text, mode: 'insensitive' as const } },
+          { legacyCode: { contains: text, mode: 'insensitive' as const } },
           { restaurantName: { contains: text, mode: 'insensitive' as const } },
         ] }] : []),
       ],

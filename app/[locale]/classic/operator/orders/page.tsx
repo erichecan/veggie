@@ -32,7 +32,7 @@ const STATUS_LABEL_ZH: Record<OrderStatus, string> = {
   confirmed:     '已确认',
   wave_assigned: '司机分配结束',
   in_delivery:   '配送中',
-  completed:     '已完成',
+  completed:     '完成配送',
   locked:        '拣货中',
   cancelled:     '已取消',
 }
@@ -42,7 +42,7 @@ const STATUS_LABEL_EN: Record<OrderStatus, string> = {
   confirmed:     'Confirmed',
   wave_assigned: 'Driver Assigned',
   in_delivery:   'In Delivery',
-  completed:     'Completed',
+  completed:     'Delivery Completed',
   locked:        'Picking',
   cancelled:     'Cancelled',
 }

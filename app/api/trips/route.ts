@@ -123,6 +123,14 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: '所选订单不存在' }, { status: 400 })
         }
 
+        const activeWaves = await prisma.pickingWave.findMany({
+          where: { orderIds: { hasSome: orders.map(o => o.id) }, dispatchedAt: null, completedAt: null },
+          select: { id: true, name: true },
+        })
+        if (activeWaves.length > 0) {
+          return NextResponse.json({ error: `所选订单已属于派车波次（${activeWaves.map(w => w.name ?? w.id).join('、')}），请在日销售中心按批次确认出发` }, { status: 409 })
+        }
+
         // 按餐馆分组，构建 TripRestaurant[]
         const grouped = new Map<string, { restaurantId: string; restaurantName: string; orderIds: string[]; orderCodes: string[]; items: OrderItem[] }>()
         for (const order of orders) {

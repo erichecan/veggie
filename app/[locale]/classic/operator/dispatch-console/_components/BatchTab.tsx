@@ -333,18 +333,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to confirm departure' : '确认出发失败')) }
   }
 
-  async function completeWave(waveId: string) {
-    const wave = waves.find(w => w.id === waveId)
-    if (!confirm(isEn
-      ? `Confirm that "${wave?.driverName ?? ''}" has completed delivery? The card will be removed from the dispatch console.`
-      : `确认「${wave?.driverName ?? ''}」已完成配送？卡片将从调度台移除。`)) return
-    try {
-      await apiPut(`/api/waves/${waveId}/complete`, {})
-      toast.success(isEn ? 'Marked as completed' : '已标记完成')
-      load({ silent: true })
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to mark as completed' : '标记完成失败')) }
-  }
-
   // 分配完成：纯进度标记，可反悔。不改订单状态/交货日期，不触发下游
   async function markAssignmentDone(waveId: string, done: boolean) {
     setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, assignmentDoneAt: done ? new Date().toISOString() : null } : w)))
@@ -710,10 +698,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           )}
 
           {dispatched ? (
-            <button
-              onClick={() => completeWave(wave.id)}
-              className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-100 w-full"
-            >{isEn ? '✓ Mark completed' : '✓ 标记完成'}</button>
+            <div className="mt-1 rounded-lg py-1.5 text-center text-xs text-gray-500 bg-gray-50 border border-gray-200 w-full">
+              {isEn ? 'Delivery is completed automatically at 22:00' : '系统将在 22:00 自动完成配送'}
+            </div>
           ) : assignmentDone ? (
             <div className="mt-1 flex flex-col gap-1.5">
               {DRIVER_APP_ENABLED && (

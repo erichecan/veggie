@@ -1,8 +1,7 @@
 /**
  * 客户对账单口径（台账 G1）
  * ============================================================================
- * 需求要的是「按周期自动生成客户对账单，并把司机带回的现金或客户汇款核销上去」，
- * 验收落在两句话：**期初/本期发生/收款/期末四段齐全**，以及**金额与订单明细可逐笔对上**。
+ * 按配送日期分期，列示发票、收款和已确认贷记单；期末 = 期初 + 销售 − 收款 − 贷项。
  *
  * 这一层是纯函数：算术、期间边界、核对结果全在这里，接口与页面共用同一份。
  * 「逐笔对上」不靠人肉比对，而是 `reconcileStatement()` 当场给出差额 —— 对账单
@@ -99,36 +98,42 @@ export interface StatementSummary {
   openingBalance: number
   totalSales: number
   totalPayments: number
+  totalCredits: number
   closingBalance: number
   orderIds: string[]
   invoiceIds: string[]
+  creditNoteIds: string[]
 }
 
 /**
- * 四段汇总。period 内的口径由调用方查出来，这里只负责算 ——
- * 于是「期末 = 期初 + 销售 − 收款」这条恒等式有且只有一处实现。
+ * 汇总算法集中在一处，期内明细由调用方按配送/付款/贷记单生效日期查询。
  */
 export function summarizeStatement(
   openingBalance: number,
   orders: StatementOrderRow[],
   payments: StatementPaymentRow[],
+  credits: Array<{ id: string; amount: number }> = [],
 ): StatementSummary {
   const totalSales = round2(orders.reduce((s, o) => s + Number(o.incTaxTotal || 0), 0))
   const totalPayments = round2(payments.reduce((s, p) => s + Number(p.amount || 0), 0))
+  const totalCredits = round2(credits.reduce((s, c) => s + Number(c.amount || 0), 0))
   return {
     openingBalance: round2(openingBalance),
     totalSales,
     totalPayments,
-    closingBalance: round2(round2(openingBalance) + totalSales - totalPayments),
+    totalCredits,
+    closingBalance: round2(round2(openingBalance) + totalSales - totalPayments - totalCredits),
     orderIds: orders.map(o => o.id),
     invoiceIds: [...new Set(payments.map(p => p.invoiceId).filter((id): id is string => id != null))],
+    creditNoteIds: credits.map(c => c.id),
   }
 }
 
 export interface ReconcileInput {
-  stored: { openingBalance: number; totalSales: number; totalPayments: number; closingBalance: number }
+  stored: { openingBalance: number; totalSales: number; totalPayments: number; totalCredits?: number; closingBalance: number }
   orders: StatementOrderRow[]
   payments: StatementPaymentRow[]
+  credits?: Array<{ id: string; amount: number }>
 }
 
 export interface ReconcileResult {
@@ -137,6 +142,8 @@ export interface ReconcileResult {
   salesDiff: number
   paymentsFromRecords: number
   paymentsDiff: number
+  creditsFromRecords: number
+  creditsDiff: number
   /** 期初 + 销售 − 收款，用**存下来的**三个数验恒等式 */
   closingExpected: number
   closingDiff: number
@@ -150,13 +157,15 @@ const EPS = 0.005
  * 逐笔核对。三件事分开算，不合并成一个 boolean ——
  * 「销售对不上」和「恒等式不成立」是两种完全不同的故障，混成一个 ✗ 就没法排查。
  */
-export function reconcileStatement({ stored, orders, payments }: ReconcileInput): ReconcileResult {
+export function reconcileStatement({ stored, orders, payments, credits = [] }: ReconcileInput): ReconcileResult {
   const salesFromOrders = round2(orders.reduce((s, o) => s + Number(o.incTaxTotal || 0), 0))
   const paymentsFromRecords = round2(payments.reduce((s, p) => s + Number(p.amount || 0), 0))
   const salesDiff = round2(salesFromOrders - Number(stored.totalSales || 0))
   const paymentsDiff = round2(paymentsFromRecords - Number(stored.totalPayments || 0))
+  const creditsFromRecords = round2(credits.reduce((s, c) => s + Number(c.amount || 0), 0))
+  const creditsDiff = round2(creditsFromRecords - Number(stored.totalCredits || 0))
   const closingExpected = round2(
-    Number(stored.openingBalance || 0) + Number(stored.totalSales || 0) - Number(stored.totalPayments || 0),
+    Number(stored.openingBalance || 0) + Number(stored.totalSales || 0) - Number(stored.totalPayments || 0) - Number(stored.totalCredits || 0),
   )
   const closingDiff = round2(closingExpected - Number(stored.closingBalance || 0))
 
@@ -167,8 +176,11 @@ export function reconcileStatement({ stored, orders, payments }: ReconcileInput)
   if (Math.abs(paymentsDiff) > EPS) {
     problems.push(`本期收款与收款流水差 €${paymentsDiff.toFixed(2)}（流水 €${paymentsFromRecords.toFixed(2)} vs 单据 €${Number(stored.totalPayments).toFixed(2)}）`)
   }
-  if (Math.abs(closingDiff) > EPS) {
-    problems.push(`期末余额不满足「期初 + 销售 − 收款」，差 €${closingDiff.toFixed(2)}`)
+  if (Math.abs(creditsDiff) > EPS) {
+    problems.push(`本期贷项与贷记单明细差 €${creditsDiff.toFixed(2)}（明细 €${creditsFromRecords.toFixed(2)} vs 单据 €${Number(stored.totalCredits || 0).toFixed(2)}）`)
   }
-  return { ok: problems.length === 0, salesFromOrders, salesDiff, paymentsFromRecords, paymentsDiff, closingExpected, closingDiff, problems }
+  if (Math.abs(closingDiff) > EPS) {
+    problems.push(`期末余额不满足「期初 + 销售 − 收款 − 贷项」，差 €${closingDiff.toFixed(2)}`)
+  }
+  return { ok: problems.length === 0, salesFromOrders, salesDiff, paymentsFromRecords, paymentsDiff, creditsFromRecords, creditsDiff, closingExpected, closingDiff, problems }
 }

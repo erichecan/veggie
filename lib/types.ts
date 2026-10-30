@@ -567,6 +567,8 @@ export interface PickingWave {
   waveType?: string
   driverSlotId?: string
   driverName?: string
+  dispatchedAt?: string | null
+  completedAt?: string | null
 }
 
 // ─── 配送行程 ────────────────────────────────────────────────────────────────

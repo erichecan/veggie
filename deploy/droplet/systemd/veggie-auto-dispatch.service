@@ -1,5 +1,5 @@
 [Unit]
-Description=veggie 每日 22 点自动兜底确认出发（触发应用的 cron 路由）
+Description=veggie 每日 22 点自动完成配送（触发应用的 cron 路由）
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -14,4 +14,4 @@ EnvironmentFile=/etc/veggie/backup.env
 ExecStart=/usr/bin/curl --fail-with-body -sS -X POST \
           -H "x-cron-secret: ${CRON_SECRET}" \
           --max-time 600 \
-          http://127.0.0.1:3000/api/cron/auto-confirm-departure
+          http://127.0.0.1:3000/api/cron/auto-complete-delivery

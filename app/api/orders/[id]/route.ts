@@ -173,6 +173,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
+      if (newStatus === 'IN_DELIVERY' && String(orderBefore.status).toUpperCase() !== 'IN_DELIVERY') {
+        const activeWave = await prisma.pickingWave.findFirst({
+          where: { orderIds: { has: id }, dispatchedAt: null, completedAt: null },
+          select: { id: true, name: true },
+        })
+        if (activeWave) {
+          return NextResponse.json({ error: `该订单属于未出发波次「${activeWave.name ?? activeWave.id}」，请在日销售中心确认批次出发` }, { status: 409 })
+        }
+      }
+
       // ── LOCKED / CANCELLED 订单禁止任何修改 ────────────────────────────────
       const immutableStatuses = new Set(['LOCKED', 'CANCELLED'])
       if (immutableStatuses.has(String(orderBefore.status).toUpperCase()) && !newStatus) {

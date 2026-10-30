@@ -41,7 +41,7 @@ export async function GET(
       }
 
       const period = { start: item.periodStart, endExclusive: addBusinessDays(item.periodEnd, 1) }
-      const [orderRows, paymentRows] = await Promise.all([
+      const [orderRows, paymentRows, creditRows] = await Promise.all([
         prisma.order.findMany({
           where: { id: { in: item.orderIds } },
           orderBy: { deliveryDate: 'asc' },
@@ -55,6 +55,11 @@ export async function GET(
           orderBy: { paidAt: 'asc' },
           select: { id: true, invoiceId: true, amount: true, method: true, paidAt: true, note: true, createdBy: true },
         }),
+        prisma.creditNote.findMany({
+          where: { id: { in: item.creditNoteIds ?? [] } },
+          orderBy: { creditDate: 'asc' },
+          select: { id: true, name: true, creditDate: true, subtotalExTax: true, totalTax: true, totalIncTax: true, notes: true, lines: { select: { sourceOrderId: true } } },
+        }),
       ])
 
       const paymentInvoiceIds = [...new Set(paymentRows.map(p => p.invoiceId).filter((id): id is string => id != null))]
@@ -66,10 +71,33 @@ export async function GET(
         : []
       const invoiceById = new Map(invoiceNames.map(i => [i.id, i]))
 
+      const orderIds = orderRows.map(o => o.id)
+      const invoiceSnapshot = Array.isArray(item.invoiceSnapshot)
+        ? item.invoiceSnapshot as Array<{ orderId: string; name: string; issueDate: string }>
+        : []
+      const linkedInvoices = invoiceSnapshot.length || orderIds.length === 0 ? [] : await prisma.invoice.findMany({
+        where: { saleOrderIds: { hasSome: orderIds } },
+        select: { id: true, name: true, createdAt: true, postedAt: true, saleOrderIds: true },
+      })
+      const invoicesByOrder = new Map<string, Array<{ name: string; issueDate: Date }>>()
+      for (const invoice of invoiceSnapshot) {
+        const orderId = invoice.orderId
+        const rows = invoicesByOrder.get(orderId) ?? []
+        rows.push({ name: invoice.name, issueDate: new Date(invoice.issueDate) })
+        invoicesByOrder.set(orderId, rows)
+      }
+      if (!invoiceSnapshot.length) for (const invoice of linkedInvoices) for (const orderId of invoice.saleOrderIds) {
+        if (!orderIds.includes(orderId)) continue
+        const rows = invoicesByOrder.get(orderId) ?? []
+        rows.push({ name: invoice.name, issueDate: invoice.postedAt ? new Date(invoice.postedAt) : invoice.createdAt })
+        invoicesByOrder.set(orderId, rows)
+      }
+
       const orders = orderRows.map(o => ({
         id: o.id, code: o.code, status: o.status,
         confirmationDate: o.confirmationDate, deliveryDate: o.deliveryDate,
         incTaxTotal: orderIncTaxTotal(o.lines),
+        invoices: invoicesByOrder.get(o.id) ?? [],
       }))
       const payments = paymentRows.map(p => {
         const inv = p.invoiceId ? invoiceById.get(p.invoiceId) : undefined
@@ -81,16 +109,23 @@ export async function GET(
           source: paymentSource(p.note), confirmationId: paymentConfirmationId(p.note),
         }
       })
+      const credits = creditRows.map(c => ({
+        id: c.id, name: c.name, creditDate: c.creditDate,
+        amount: toNum(c.totalIncTax), subtotalExTax: toNum(c.subtotalExTax), tax: toNum(c.totalTax), notes: c.notes,
+        sourceOrderIds: [...new Set(c.lines.map(l => l.sourceOrderId).filter((x): x is string => x != null))],
+      }))
 
       const reconciliation = reconcileStatement({
         stored: {
           openingBalance: toNum(item.openingBalance),
           totalSales: toNum(item.totalSales),
           totalPayments: toNum(item.totalPayments),
+          totalCredits: toNum(item.totalCredits),
           closingBalance: toNum(item.closingBalance),
         },
         orders,
         payments,
+        credits,
       })
 
       // 「缺笔」比「差额」更难发现：对账单存了 N 个订单 id，若其中几单被删了，
@@ -98,7 +133,7 @@ export async function GET(
       const missingOrders = item.orderIds.filter(oid => !orderRows.some(o => o.id === oid))
 
       return NextResponse.json(serializeApi({
-        ...item, orders, payments, reconciliation, missingOrderIds: missingOrders,
+        ...item, orders, payments, credits, reconciliation, missingOrderIds: missingOrders,
       }))
     } catch (error) {
       console.error('[GET /api/statements/[id]]', error)

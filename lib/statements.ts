@@ -65,16 +65,18 @@ export async function generateStatement(
     openingBalance = toNum(lastStatement.closingBalance)
     openingSource = 'previous-statement'
   } else {
-    const [priorOrders, priorPayments] = await Promise.all([
+    const [priorOrders, priorPayments, priorCredits] = await Promise.all([
       prisma.order.findMany({
         where: { restaurantId: customerId, status: { in: BILLABLE_STATUSES as never[] }, deliveryDate: { lt: start } },
         select: orderSelect,
       }),
       prisma.payment.findMany({ where: { customerId, paidAt: { lt: start } }, select: { amount: true } }),
+      prisma.creditNote.findMany({ where: { customerId, status: { in: ['CONFIRMED', 'APPLIED'] }, creditDate: { lt: start } }, select: { totalIncTax: true } }),
     ])
     const priorSales = priorOrders.reduce((s, o) => s + orderIncTaxTotal(o.lines), 0)
     const priorPaid = priorPayments.reduce((s, p) => s + toNum(p.amount), 0)
-    openingBalance = Math.round((priorSales - priorPaid) * 100) / 100
+    const priorCreditTotal = priorCredits.reduce((s, c) => s + toNum(c.totalIncTax), 0)
+    openingBalance = Math.round((priorSales - priorPaid - priorCreditTotal) * 100) / 100
     openingSource = 'derived-history'
   }
 
@@ -90,14 +92,28 @@ export async function generateStatement(
     select: { id: true, amount: true, invoiceId: true, method: true, paidAt: true, note: true },
   })
 
+  const periodCredits = await prisma.creditNote.findMany({
+    where: { customerId, status: { in: ['CONFIRMED', 'APPLIED'] }, creditDate: { gte: start, lt: endExclusive } },
+    orderBy: { creditDate: 'asc' },
+    select: { id: true, totalIncTax: true },
+  })
+  const invoiceRows = orders.length ? await prisma.invoice.findMany({
+    where: { saleOrderIds: { hasSome: orders.map(o => o.id) } },
+    select: { name: true, createdAt: true, postedAt: true, saleOrderIds: true },
+  }) : []
+  const invoiceSnapshot = orders.flatMap(order => invoiceRows
+    .filter(invoice => invoice.saleOrderIds.includes(order.id))
+    .map(invoice => ({ orderId: order.id, name: invoice.name, issueDate: invoice.postedAt ? new Date(invoice.postedAt).toISOString() : invoice.createdAt.toISOString() })))
+
   const summary = summarizeStatement(
     openingBalance,
     orders.map(toRow),
     periodPayments.map(p => ({ id: p.id, invoiceId: p.invoiceId, amount: toNum(p.amount), method: p.method, paidAt: p.paidAt, note: p.note })),
+    periodCredits.map(c => ({ id: c.id, amount: toNum(c.totalIncTax) })),
   )
 
   const statement = await prisma.statement.create({
-    data: { customerId: customer.id, customerName: customer.name, periodStart: start, periodEnd: endLabel, ...summary, status: 'draft' },
+    data: { customerId: customer.id, customerName: customer.name, periodStart: start, periodEnd: endLabel, invoiceSnapshot, ...summary, status: 'draft' },
   })
 
   return { ok: true, statement, openingSource }

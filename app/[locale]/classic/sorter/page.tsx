@@ -59,7 +59,7 @@ export default function ClassicSorterPage() {
     setLoading(true)
     try {
       const data = await apiGet<PickingWave[]>('/api/waves')
-      setWaves(data.filter(w => ['picked', 'sorting'].includes(w.status.toLowerCase())))
+      setWaves(data.filter(w => ['picked', 'sorting'].includes(w.status.toLowerCase()) && !w.dispatchedAt && !w.completedAt))
     } catch {
     } finally {
       setLoading(false)

@@ -70,7 +70,7 @@ export default function ClassicSortingPage() {
           zones: (w.zones as PickingWave['zones']) ?? [],
           orderIds: (w.orderIds as string[]) ?? [],
         }))
-        .filter(w => SORTING_STATUSES.includes(w.status))
+        .filter(w => SORTING_STATUSES.includes(w.status) && !w.dispatchedAt && !w.completedAt)
       setWaves(normalized)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))

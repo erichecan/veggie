@@ -147,7 +147,7 @@ export default function ClassicFinancePage() {
       for (const o of g.orders) {
         rows.push([
           g.customer.name, TERM_LABEL[g.customer.paymentTerm] ?? g.customer.paymentTerm,
-          o.code ?? o.id.slice(-8), formatDateTime(o.createdAt),
+          o.code ?? '—', formatDateTime(o.createdAt),
           o.paymentMethod === 'cash' ? (isEn ? 'Cash' : '现收') : (isEn ? 'Transfer' : '转账'),
           STATUS_LABEL[o.status.toLowerCase()] ?? o.status, o.totalAmount.toFixed(2), '',
         ])
@@ -178,7 +178,7 @@ export default function ClassicFinancePage() {
   const orderColumns: DrillColumn<Order>[] = [
     {
       key: 'code', label: isEn ? 'Order #' : '订单号', render: o =>
-        <span className="font-mono text-xs text-gray-700">{o.code ?? o.id.slice(-8)}</span>,
+        <span className="font-mono text-xs text-gray-700">{o.code ?? '—'}</span>,
     },
     { key: 'restaurant', label: isEn ? 'Customer' : '客户', render: o => <span className="text-gray-800">{o.restaurantName}</span> },
     {
@@ -404,7 +404,7 @@ export default function ClassicFinancePage() {
                       <tbody className="divide-y divide-gray-100">
                         {g.orders.map(o => (
                           <tr key={o.id}>
-                            <td className="px-3 py-1.5 font-mono text-gray-400">{o.id.slice(-8)}</td>
+                            <td className="px-3 py-1.5 font-mono text-gray-400">{o.code ?? '—'}</td>
                             <td className="px-3 py-1.5 text-gray-600">{formatDateTime(o.createdAt)}</td>
                             <td className="px-3 py-1.5">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${

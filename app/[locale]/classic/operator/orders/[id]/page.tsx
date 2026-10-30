@@ -80,7 +80,7 @@ const STATUS_LABEL_ZH: Record<string, string> = {
   CONFIRMED: '已确认',
   WAVE_ASSIGNED: '已生成拣货单',
   IN_DELIVERY: '配送中',
-  COMPLETED: '已完成',
+  COMPLETED: '完成配送',
   LOCKED: '已锁定',
   CANCELLED: '已取消',
 }
@@ -90,7 +90,7 @@ const STATUS_LABEL_EN: Record<string, string> = {
   CONFIRMED: 'Confirmed',
   WAVE_ASSIGNED: 'Picking List Generated',
   IN_DELIVERY: 'In Delivery',
-  COMPLETED: 'Completed',
+  COMPLETED: 'Delivery Completed',
   LOCKED: 'Locked',
   CANCELLED: 'Cancelled',
 }

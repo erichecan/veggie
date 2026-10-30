@@ -95,7 +95,7 @@ export default function ClassicSortingDetailPage({
   useRefetchOnFocus([load])
 
   async function advance(targetStatus: 'sorting' | 'sorted') {
-    if (!wave || updating) return
+    if (!wave || updating || wave.dispatchedAt || wave.completedAt) return
     setUpdating(true)
     try {
       await apiPut(`/api/waves/${wave.id}`, { ...wave, status: targetStatus })

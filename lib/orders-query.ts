@@ -171,7 +171,10 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   const colSalesman  = searchParams.get('colSalesman')?.trim()
   const colDriver    = searchParams.get('colDriver')?.trim()
   const colCreatedBy = searchParams.get('colCreatedBy')?.trim()
-  if (colCode)      where.code = { contains: colCode, mode: 'insensitive' }
+  if (colCode)      facetAnd.push({ OR: [
+    { code: { contains: colCode, mode: 'insensitive' } },
+    { legacyCode: { contains: colCode, mode: 'insensitive' } },
+  ] })
   if (colCustomer)  where.restaurantName = { contains: colCustomer, mode: 'insensitive' }
   if (colSalesman)  where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
   if (colDriver)    facetAnd.push(await driverNameClause(colDriver))

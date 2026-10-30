@@ -81,6 +81,8 @@ interface PalletGroup {
 
 interface BatchGroup {
   waveId: string
+  dispatchedAt: string | null
+  completedAt: string | null
   driverName: string
   timeOfDay: string
   pickLockedAt: string | null
@@ -182,7 +184,7 @@ function BatchCard({
   // 每个托盘（子批次）自己的打印按钮各自忙碌，不跟整卡片的 busy 共用一个开关，
   // 否则点一个托盘的按钮会把同卡片其它托盘/整卡按钮也一起 disable。
   const [palletBusy, setPalletBusy] = useState<Record<number, boolean>>({})
-  const { waveId, driverName, timeOfDay, pickLockedAt, pickLockedBy, pallets, unassignedOrders, orders, totalAmount, untaxTotal } = group
+  const { waveId, dispatchedAt, completedAt, driverName, timeOfDay, pickLockedAt, pickLockedBy, pallets, unassignedOrders, orders, totalAmount, untaxTotal } = group
   const label = waveLabel(group, isEn)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
   const lang: PrintLang = isEn ? 'en' : 'zh'
@@ -370,7 +372,15 @@ function BatchCard({
                 {isEn ? '✓ Printed' : '✓ 已打印'}
               </span>
             )}
-            {pickLockedAt && (
+            {completedAt ? (
+              <span className="text-xs text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+                {isEn ? '✅ Delivery completed' : '✅ 完成配送'}
+              </span>
+            ) : dispatchedAt ? (
+              <span className="text-xs text-blue-700 font-medium bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                {isEn ? '🚚 Picking complete · In transit' : '🚚 完成拣货 · 在途'}
+              </span>
+            ) : pickLockedAt && (
               <span className="text-xs text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                 {isEn ? '🔒 Picking' : '🔒 拣货中'}{pickLockedBy ? ` · ${pickLockedBy}` : ''}
               </span>
@@ -381,6 +391,7 @@ function BatchCard({
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-sm font-semibold text-gray-900 mr-2">€{fmtMoney(totalAmount)}</span>
           <span className="text-xs text-gray-400 mr-3">{isEn ? 'Excl. tax' : '未税'} €{fmtMoney(untaxTotal)}</span>
+          {!dispatchedAt && !completedAt && <>
           {!pickLockedAt && (
             <button
               onClick={lock}
@@ -452,6 +463,7 @@ function BatchCard({
           >
             {isEn ? '📋 Summary Sheet' : '📋 汇总单'}
           </button>
+          </>}
         </div>
       </div>
 
@@ -465,7 +477,7 @@ function BatchCard({
                 <span className="text-xs font-semibold text-gray-500">
                   {isEn ? `Batch ${p.seq} · ${p.orders.length} orders` : `批次 ${p.seq} · ${p.orders.length} 单`}
                 </span>
-                <div className="ml-auto flex items-center gap-1.5">
+                {!dispatchedAt && !completedAt && <div className="ml-auto flex items-center gap-1.5">
                   <span className="inline-flex rounded border border-orange-300 overflow-hidden">
                     <button
                       onClick={() => printPalletPicking(p.seq, 'storable')}
@@ -508,12 +520,15 @@ function BatchCard({
                   >
                     {isEn ? '📋 Summary Sheet' : '📋 汇总单'}
                   </button>
-                </div>
+                </div>}
               </div>
               {p.orders.map(o => (
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
                   <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
                   <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${o.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : o.status === 'in_delivery' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {orderDeliveryStatus(o.status, isEn)}
+                  </span>
                   {/* 客退货物处置角标，只读展示（20261027 M5） */}
                   {o.goodsReturnStatus === 'APPROVED' && (
                     <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
@@ -537,6 +552,9 @@ function BatchCard({
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
                   <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
                   <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${o.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : o.status === 'in_delivery' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {orderDeliveryStatus(o.status, isEn)}
+                  </span>
                   {o.goodsReturnStatus === 'APPROVED' && (
                     <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
                   )}
@@ -668,6 +686,16 @@ type PrintStatus = {
 }
 const EMPTY_STATUS: PrintStatus = { waves: {}, legacyCount: 0, printedWaveCount: 0, totalWaveCount: 0 }
 
+function orderDeliveryStatus(status: string, isEn: boolean): string {
+  const normalized = status.toLowerCase()
+  if (normalized === 'in_delivery') return isEn ? 'In transit' : '在途'
+  if (normalized === 'completed') return isEn ? 'Delivery completed' : '完成配送'
+  if (normalized === 'wave_assigned') return isEn ? 'Assigned' : '已分配'
+  if (normalized === 'confirmed') return isEn ? 'Confirmed' : '已确认'
+  if (normalized === 'locked') return isEn ? 'Invoice locked' : '已锁定'
+  return status
+}
+
 /** 该批次的某类单据打过几次；docType 省略则看任意一类 */
 function printedTimes(status: PrintStatus, waveId: string, docType?: string): number {
   const slot = status.waves[waveId]
@@ -756,7 +784,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     setLoading(true)
     try {
       const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
-      const visible = waveData.filter(w => (w.assignmentDoneAt != null || w.pickLockedAt != null) && !w.completedAt)
+      const visible = waveData.filter(w => w.assignmentDoneAt != null || w.pickLockedAt != null || w.dispatchedAt != null || w.completedAt != null)
       const orderIds = Array.from(new Set(visible.flatMap(w => w.orderIds)))
       const ordersData = orderIds.length > 0
         ? await apiGet<Order[]>(`/api/orders?include_lines=true&ids=${orderIds.join(',')}`)
@@ -871,6 +899,8 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
         const unassignedOrders = ords.filter(o => !inPallet.has(o.id))
         return {
           waveId: w.id,
+          dispatchedAt: w.dispatchedAt,
+          completedAt: w.completedAt,
           driverName: w.driverName ?? '',
           timeOfDay: (w.timeOfDay ?? '').toLowerCase(),
           pickLockedAt: w.pickLockedAt,

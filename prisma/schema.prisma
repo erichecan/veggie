@@ -792,6 +792,8 @@ model Order {
   id                    String            @id @default(cuid())
   /// 业务编号：D-YYMMDD-NNN（如 D-260424-001，20261008 起固定 D 前缀），历史订单可能是老的创建者缩写格式或为空
   code                  String?           @unique
+  /// 原始/旧业务编号，统一编号后保留用于历史检索
+  legacyCode            String?
   /// 创建者用户 ID（历史订单可为空）
   createdById           String?
   createdBy             User?             @relation("OrderCreator", fields: [createdById], references: [id])
@@ -1849,9 +1851,13 @@ model Statement {
   openingBalance Decimal   @default(0) @db.Decimal(12, 2)
   totalSales     Decimal   @default(0) @db.Decimal(12, 2)
   totalPayments  Decimal   @default(0) @db.Decimal(12, 2)
+  totalCredits   Decimal   @default(0) @db.Decimal(12, 2)
   closingBalance Decimal   @default(0) @db.Decimal(12, 2)
   orderIds       String[]  @default([])
   invoiceIds     String[]  @default([])
+  creditNoteIds  String[]  @default([])
+  /// 生成时发票号/开票日期快照；草稿重出时刷新，已确认/发送单据保持原样
+  invoiceSnapshot Json     @default("[]")
   /// 状态：draft / confirmed / sent
   status         String    @default("draft")
   createdAt      DateTime  @default(now())

@@ -58,6 +58,13 @@ export async function dispatchWave(
       })
       if (lockUpd.count === 0) throw new DispatchRaceLostError()
 
+      // 出发意味着波次已经离开拣货阶段。若仍在待拣/拣货中，推进到「拣货完成」；
+      // 已进入分货或已分货的更后阶段不回退。
+      await tx.pickingWave.updateMany({
+        where: { id: waveId, status: { in: ['PENDING', 'PICKING'] } },
+        data: { status: 'PICKED' },
+      })
+
       // 这次真正从「待出库」变成「配送中」的单 —— 出发即货离仓，下面按订单行出库
       const shippingIds = (await tx.order.findMany({
         where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },

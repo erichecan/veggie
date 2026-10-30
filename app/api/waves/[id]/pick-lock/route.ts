@@ -25,8 +25,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   return withAuth(req, async (user) => {
     try {
-      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true, waveDate: true } })
+      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true, waveDate: true, dispatchedAt: true, completedAt: true } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
+      if (wave.dispatchedAt || wave.completedAt) return NextResponse.json({ error: '波次已出发，拣货锁不能重新打开' }, { status: 409 })
 
       const updated = await prisma.pickingWave.update({
         where: { id },

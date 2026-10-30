@@ -50,11 +50,11 @@ export async function GET(req: Request) {
  *   { customerId, periodStart (YYYY-MM-DD), periodEnd (YYYY-MM-DD) }
  *
  * 算法：
- *   1. openingBalance —— 优先取上一张对账单的期末（账簿连续性）；
- *      **没有上一张就从历史派生**（期前销售 − 期前收款），不再默认 0
- *   2. 期内已确认订单（按 deliveryDate 分期，20261026 起不再用 confirmationDate）→ totalSales（含税）
- *   3. 期内 Payment 流水（按 paidAt）→ totalPayments，含司机交账核销的现金
- *   4. closingBalance = openingBalance + totalSales − totalPayments
+ *   1. openingBalance —— 优先取上一张对账单的期末；没有上一张就从历史销售、收款和贷项派生
+ *   2. 期内已确认订单（按 deliveryDate）→ totalSales（含税）；发票号/日期按生成时快照
+ *   3. 期内 Payment 流水（按 paidAt）→ totalPayments
+ *   4. 已确认/已应用 Credit Note（按 creditDate）→ totalCredits
+ *   5. closingBalance = openingBalance + totalSales − totalPayments − totalCredits
  *
  * 期间是**左闭右开到末日次日 00:00**，按业务时区切 —— 原实现 `lte: end` 把末日
  * 整天切掉了（end 解析出来是当日 00:00）。
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'statement', resourceId: statement.id,
-        detail: `创建对账单: ${statement.customerName} ${periodStart}~${periodEnd} · 期初 €${Number(statement.openingBalance).toFixed(2)}（${openingSource === 'derived-history' ? '按历史派生' : '承上期期末'}）· 销售 €${Number(statement.totalSales).toFixed(2)} · 收款 €${Number(statement.totalPayments).toFixed(2)} · 期末 €${Number(statement.closingBalance).toFixed(2)}`,
+        detail: `创建对账单: ${statement.customerName} ${periodStart}~${periodEnd} · 期初 €${Number(statement.openingBalance).toFixed(2)}（${openingSource === 'derived-history' ? '按历史派生' : '承上期期末'}）· 销售 €${Number(statement.totalSales).toFixed(2)} · 收款 €${Number(statement.totalPayments).toFixed(2)} · 贷项 €${Number(statement.totalCredits).toFixed(2)} · 期末 €${Number(statement.closingBalance).toFixed(2)}`,
       })
 
       return NextResponse.json(serializeApi({ ...statement, openingSource }), { status: 201 })

@@ -25,6 +25,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const data = await req.json()
       const before = await prisma.pickingWave.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
+      if (data.status !== undefined && (before.dispatchedAt || before.completedAt)) {
+        return NextResponse.json({ error: '波次已出发，不能再修改拣货/分货状态' }, { status: 409 })
+      }
       // SSOT: orderIds 成员变更只能走 assign/unassign（会原子同步 Order.status）。
       // 通用 PUT 剥掉 orderIds，防止绕过状态同步造成两套真相不一致。
       const { orderIds: _ignoredOrderIds, ...safeData } = data
