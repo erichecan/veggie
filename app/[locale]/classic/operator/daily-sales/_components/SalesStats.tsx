@@ -27,7 +27,7 @@ import { sortCustomerLines, type CustomerSortKey } from '@/lib/analytics/sales-s
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
 interface UserRow { id: string; name: string; isActive?: boolean }
-interface CategoryRow { id: string; name: string }
+interface CategoryRow { id: string; name: string; nameZh?: string | null; parentId?: string | null }
 interface OrderLine { id: string; productId?: string | null; productName?: string | null; spec?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
 
 /** 一条摊平的订单行，携带派生的分类/单位/库存/目录顺序号，供四种查看方式共用 */
@@ -200,6 +200,18 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     apiGet<CategoryRow[]>('/api/product-categories').then(d => setAllCategories(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<DriverSlotInfo[]>('/api/driver-slots?includeInactiveUser=true').then(d => setAllDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
+
+  /** 同名子分类（如多个「CN」）容易混淆，下拉里带上父级名区分：「日韩食品 → CN」 */
+  const categoryLabels = useMemo(() => {
+    const byId = new Map(allCategories.map(c => [c.id, c]))
+    const displayName = (c: CategoryRow) => (isEn ? c.name : c.nameZh || c.name)
+    const labels = new Map<string, string>()
+    for (const c of allCategories) {
+      const parent = c.parentId ? byId.get(c.parentId) : null
+      labels.set(c.id, parent ? `${displayName(parent)} → ${displayName(c)}` : displayName(c))
+    }
+    return labels
+  }, [allCategories, isEn])
 
   // 唯一的订单请求：只按日期区间拉，其余筛选全部在前端做 → 四种查看方式共用这一份数据
   const loadOrders = useCallback(() => {
@@ -543,7 +555,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       </div>
     `).join('')
     const catLabel = selectedCategories.length > 0
-      ? selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? id).join('、')
+      ? selectedCategories.map(id => categoryLabels.get(id) ?? id).join('、')
       : '全部分类'
     const titleLabel = '分类总量'
     const dateLabel = '日期'
@@ -597,7 +609,7 @@ ${catsHtml}
             <div className="flex items-center gap-1.5 flex-wrap flex-1">
               <MultiSelectPopover
                 label={isEn ? 'Category' : '分类'}
-                options={allCategories.map(c => ({ value: c.id, label: c.name }))}
+                options={allCategories.map(c => ({ value: c.id, label: categoryLabels.get(c.id) ?? c.name }))}
                 selected={selectedCategories}
                 onChange={setSelectedCategories}
                 searchable
@@ -605,7 +617,7 @@ ${catsHtml}
               />
               {selectedCategories.map(id => (
                 <span key={id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
-                  {allCategories.find(c => c.id === id)?.name ?? id}
+                  {categoryLabels.get(id) ?? id}
                   <button onClick={() => setSelectedCategories(prev => prev.filter(x => x !== id))} className="hover:text-red-500 leading-none">×</button>
                 </span>
               ))}
