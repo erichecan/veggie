@@ -1201,7 +1201,7 @@ export default function ClassicPlaceOrderPage() {
   }
 
   return (
-    <div className="bg-[#f9f9f9] -mx-4 -my-6 min-h-screen">
+    <div className="bg-[#f9f9f9] -my-6 min-h-screen overflow-x-hidden">
 
       {/* ══ Top action bar ════════════════════════════════════════════════════ */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
@@ -1730,27 +1730,28 @@ export default function ClassicPlaceOrderPage() {
               <OrderLineEditor
                 lines={lines}
                 editing={true}
-                tableClassName="text-xs border-collapse"
-                tableStyle={{ minWidth: '1190px', width: '100%' }}
+                wrapperClassName="overflow-x-hidden"
+                tableClassName="w-full table-fixed border-collapse"
+                tableStyle={{ width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
                 emptyColSpan={14}
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
-                    <th className="px-2 py-2 text-left"  style={{ width: 62  }}>NO</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
-                    <th className="px-2 py-2 text-center" style={{ width: 50 }} title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 80  }}>Price</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 70  }}>Taxes</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Total</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title={isEn ? 'ATP (Available To Promise) = On Hand − Pending Demand' : 'ATP 可承诺量 = 在手量 - 待履行量'}>ATP</th>
+                    <th className="px-1.5 py-2 text-left">NO</th>
+                    <th className="px-1.5 py-2 text-left">Product</th>
+                    <th className="px-1.5 py-2 text-left">Description</th>
+                    <th className="px-1.5 py-2 text-right">Ordered Qty</th>
+                    <th className="px-1.5 py-2 text-left">Note</th>
+                    <th className="px-1.5 py-2 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
+                    <th className="px-1.5 py-2 text-left">UoM</th>
+                    <th className="px-1.5 py-2 text-right">Unit Price</th>
+                    <th className="hidden xl:table-cell px-1.5 py-2 text-right">Cost</th>
+                    <th className="hidden xl:table-cell px-1.5 py-2 text-left">Price</th>
+                    <th className="px-1.5 py-2 text-left">Taxes</th>
+                    <th className="px-1.5 py-2 text-right">Total</th>
+                    <th className="hidden 2xl:table-cell px-1.5 py-2 text-right">Forecast Qty</th>
+                    <th className="hidden 2xl:table-cell px-1.5 py-2 text-right" title={isEn ? 'ATP (Available To Promise) = On Hand − Pending Demand' : 'ATP 可承诺量 = 在手量 - 待履行量'}>ATP</th>
                   </tr>
                 )}
                 renderRow={(line, idx, opts) => {
@@ -1766,7 +1767,7 @@ export default function ClassicPlaceOrderPage() {
                           客户 20260918 反馈「创建的过程就要允许删除商品」——功能一直在，
                           只是看不见。这里换成两个编辑页用的那个红色垃圾桶（OrderLineEditor
                           的 deleteButton），三个订单页的删除入口至此长一个样。 */}
-                      <td className="px-2 py-1 text-gray-400 select-none">
+                      <td className="px-1.5 py-1 text-gray-400 select-none">
                         <span className="inline-flex items-center gap-1.5">
                           {opts.deleteButton}
                           <span>{idx + 1}</span>
@@ -1775,12 +1776,12 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Product — 就地搜索，与编辑页共用同一份实现 */}
-                      <td className="px-2 py-1 relative">
+                      <td className="px-1.5 py-1 relative">
                         {opts.productCell({ lineId: line.id, productName: line.productName })}
                       </td>
 
                       {/* Description */}
-                      <td className="px-2 py-1">
+                      <td className="px-1.5 py-1">
                         <input
                           type="text"
                           data-desc-line={line.id}
@@ -1792,7 +1793,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Ordered Qty */}
-                      <td className="px-2 py-1">
+                      <td className="px-1.5 py-1">
                         <input
                           data-qty-line={line.id}
                           type="text"
@@ -1822,7 +1823,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
-                      <td className="px-2 py-1">
+                      <td className="px-1.5 py-1">
                         <input
                           type="text"
                           data-note-line={line.id}
@@ -1835,7 +1836,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
-                      <td className="px-2 py-1 text-center">
+                      <td className="px-1.5 py-1 text-center">
                         <input
                           type="checkbox"
                           checked={!!line.isGift}
@@ -1845,7 +1846,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* UoM — 有额外可售单位(20260714 试点)时显示切换下拉，否则只读文本 */}
-                      <td className="px-2 py-1 text-gray-500 truncate">
+                      <td className="px-1.5 py-1 text-gray-500 truncate">
                         {line.productId && (saleUomOptions[line.productId] ?? []).some(o => o.active) ? (
                           (() => {
                             const p = products.find(pp => pp.id === line.productId)
@@ -1876,7 +1877,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Unit Price */}
-                      <td className="px-2 py-1">
+                      <td className="px-1.5 py-1">
                         <input
                           type="number"
                           min="0"
@@ -1892,12 +1893,12 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Cost */}
-                      <td className="px-2 py-1 text-right text-gray-500">
+                      <td className="hidden xl:table-cell px-1.5 py-1 text-right text-gray-500">
                         {line.cost > 0 ? eur(line.cost) : '—'}
                       </td>
 
                       {/* Price label */}
-                      <td className="px-2 py-1">
+                      <td className="hidden xl:table-cell px-1.5 py-1">
                         {line.productId ? (
                           <span
                             title={
@@ -1930,7 +1931,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Taxes */}
-                      <td className="px-2 py-1">
+                      <td className="px-1.5 py-1">
                         <select
                           value={line.taxRate}
                           onChange={e => patchLine(line.id, { taxRate: Number(e.target.value) })}
@@ -1944,19 +1945,19 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Total（删除按钮已移到 NO 列常显，见该处注释） */}
-                      <td className="px-2 py-1 text-right">
+                      <td className="px-1.5 py-1 text-right">
                         <span className="font-medium text-gray-700">
                           {lineTotal > 0 ? eur(lineTotal) : '—'}
                         </span>
                       </td>
 
                       {/* Forecast Qty */}
-                      <td className="px-2 py-1 text-right text-gray-400">
+                      <td className="hidden 2xl:table-cell px-1.5 py-1 text-right text-gray-400">
                         {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
                       </td>
 
                       {/* ATP */}
-                      <td className="px-2 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}`) : ''}>
+                      <td className="hidden 2xl:table-cell px-1.5 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}`) : ''}>
                         {isOutOfStock ? (
                           <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
                             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />

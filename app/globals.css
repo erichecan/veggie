@@ -184,11 +184,11 @@
   }
 }
 
-/* 下单页字号（20260919 客户要求）：Order Lines 整块放大到 16px，底部汇总整块缩到 10px。
+/* 下单/报价页字号：Order Lines 与底部汇总统一为 16px。
    区内元素几乎都带 text-xs/text-sm/text-[10px] 这类工具类，优先级高于父级继承，
    所以必须连后代一起用 !important 压住，光给容器设 font-size 不起作用。 */
 .order-lines-zoom, .order-lines-zoom * { font-size: 16px !important; }
-.order-summary-zoom, .order-summary-zoom * { font-size: 10px !important; }
+.order-summary-zoom, .order-summary-zoom * { font-size: 16px !important; }
 
 /* 列表表头全局样式（20261001 客户反馈 #11：字体统一 Arial、加粗、13px，对用户更友好）。
    用 .odoo-shell(operator/boss 两个应用壳的根 div，见各自 layout.tsx) 限定范围——

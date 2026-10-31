@@ -33,6 +33,7 @@ interface Props<
 > {
   lines: L[]
   editing?: boolean
+  wrapperClassName?: string
   tableClassName?: string
   tableStyle?: CSSProperties
   tbodyClassName?: string
@@ -84,6 +85,7 @@ export default function OrderLineEditor<
 >({
   lines,
   editing = false,
+  wrapperClassName = 'overflow-x-auto',
   tableClassName = 'w-full text-sm',
   tableStyle,
   tbodyClassName,
@@ -154,7 +156,7 @@ export default function OrderLineEditor<
 
   return (
     <>
-      <div className="overflow-x-auto">
+      <div className={wrapperClassName}>
         <table className={tableClassName} style={tableStyle}>
           <thead>{renderHeaders()}</thead>
           <tbody className={tbodyClassName}>

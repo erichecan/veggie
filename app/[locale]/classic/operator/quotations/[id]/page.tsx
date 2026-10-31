@@ -633,7 +633,7 @@ export default function QuotationDetailPage() {
       <div className="text-center py-20">
         <p className="text-gray-400 mb-4">Quotation not found</p>
         <button onClick={() => router.push(`${prefix}/classic/operator/quotations`)}
-          className="px-4 py-2 border border-gray-300 rounded text-sm">Back to Quotations</button>
+          className="px-4 py-2 border border-gray-300 rounded text-base">Back to Quotations</button>
       </div>
     )
   }
@@ -779,17 +779,17 @@ export default function QuotationDetailPage() {
   }, 0)
   function StatusPill({ label, active, dim }: { label: string; active?: boolean; dim?: boolean }) {
     return (
-      <span className={`px-3 py-1 text-xs rounded-full ${active ? 'text-white font-medium' : dim ? 'text-gray-400' : 'text-gray-600'}`}
+      <span className={`px-3 py-1 text-base rounded-full ${active ? 'text-white font-medium' : dim ? 'text-gray-400' : 'text-gray-600'}`}
         style={active ? { background: PURPLE } : undefined}>{label}</span>
     )
   }
 
 
   return (
-    <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
+    <div className="min-h-screen overflow-x-hidden" style={{ background: '#f5f5f5' }}>
       {/* Region 1: Breadcrumb + action bar */}
       <div className="bg-white border-b border-gray-200 px-6 pt-3 pb-2">
-        <div className="text-sm">
+        <div className="text-base">
           <button onClick={() => router.push(`${prefix}/classic/operator/quotations`)}
             className="hover:underline" style={{ color: PURPLE }}>Quotations</button>
           <span className="text-gray-400 mx-1">/</span>
@@ -810,39 +810,39 @@ export default function QuotationDetailPage() {
                 Array.from(new Set(lines.map(l => l.productId).filter(Boolean))).forEach(pid => ensureSaleUomOptions(pid))
                 setEditing(true)
               }} disabled={isLocked}
-                className="h-8 px-4 text-sm rounded text-white font-medium disabled:opacity-50"
+                className="h-8 px-4 text-base rounded text-white font-medium disabled:opacity-50"
                 style={{ background: PURPLE }}>Edit</button>
             ) : (
               <>
                 <button onClick={handleSave}
-                  className="h-8 px-4 text-sm rounded text-white font-medium"
+                  className="h-8 px-4 text-base rounded text-white font-medium"
                   style={{ background: PURPLE }}>Save</button>
                 <button onClick={() => { setEditing(false); setEditLines([]); draft.clearDraft(); load() }}
-                  className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Discard</button>
+                  className="h-8 px-3 text-base rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Discard</button>
               </>
             )}
             <button onClick={() => router.push(`${prefix}/classic/operator/place-order`)}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Create</button>
+              className="h-8 px-3 text-base rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Create</button>
             <div className="h-5 w-px bg-gray-200 mx-1" />
             <button
               onClick={() => window.open(`${prefix}/classic/print/${order.id}`, '_blank', 'noopener,noreferrer')}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+              className="h-8 px-3 text-base rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
               Print
             </button>
             <button
               onClick={() => setSendEmailOpen(true)}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+              className="h-8 px-3 text-base rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
               {isEn ? 'Send Email' : '发送邮件'}
             </button>
             {isQuotation && (
               <>
                 <button onClick={handleConfirm} disabled={confirming || creditBlocked}
-                  className="h-8 px-3 text-sm rounded border border-gray-300 bg-white disabled:opacity-50"
+                  className="h-8 px-3 text-base rounded border border-gray-300 bg-white disabled:opacity-50"
                   style={{ color: PURPLE }}>
                   {confirming ? 'Confirming…' : 'Confirm'}
                 </button>
                 {creditBlocked && (
-                  <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 font-medium border border-red-200">{isEn ? 'Credit Blocked' : '信用冻结'}</span>
+                  <span className="px-2 py-1 text-base rounded bg-red-100 text-red-700 font-medium border border-red-200">{isEn ? 'Credit Blocked' : '信用冻结'}</span>
                 )}
               </>
             )}
@@ -855,17 +855,17 @@ export default function QuotationDetailPage() {
         <div className="flex items-center justify-between mt-3">
           <div className="flex items-center gap-2">
             <button onClick={handleCancel} disabled={isLocked}
-              className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
+              className="h-8 px-3 text-base rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
               {isEn ? 'Cancel Quotation' : '取消报价单'}
             </button>
             <div className="w-px h-5 bg-gray-300 mx-1" />
             <button disabled={!isSalesOrder}
               onClick={() => router.push(`${prefix}/operator/orders/${order.id}#invoice`)}
-              className="h-8 px-3 text-sm rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-8 px-3 text-base rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: PURPLE }}>Create Invoice</button>
             <button
               onClick={() => window.open(`${prefix}/classic/print/${order?.id}?preview=1`, '_blank', 'noopener,noreferrer')}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Preview</button>
+              className="h-8 px-3 text-base rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Preview</button>
             <button disabled={!isLocked}
               onClick={async () => {
                 if (!order) return
@@ -873,7 +873,7 @@ export default function QuotationDetailPage() {
                 toast.success('Unlocked')
                 await load()
               }}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Unlock</button>
+              className="h-8 px-3 text-base rounded border border-gray-300 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Unlock</button>
           </div>
           <div className="flex items-center gap-1">
             <StatusPill label="Quotation" active={flowSegment === 'quotation'} dim={flowSegment !== 'quotation'} />
@@ -893,7 +893,7 @@ export default function QuotationDetailPage() {
             <h1 className="text-3xl font-bold text-gray-800">{displayOrderCode(order)}</h1>
             <div className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100">
               <span className="text-xl">🚚</span>
-              <div className="text-xs">
+              <div className="text-base">
                 <div className="font-bold text-gray-800">{deliveryBatch ? 1 : 0}</div>
                 <div className="text-gray-500">Delivery</div>
               </div>
@@ -901,16 +901,16 @@ export default function QuotationDetailPage() {
           </div>
 
           {editing && (
-            <div className="mb-4 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
+            <div className="mb-4 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-base">
               <span>✏️</span>
               <span className="font-medium">Editing</span>
-              <span className="text-amber-500 text-xs">— highlighted fields below are editable</span>
+              <span className="text-amber-500 text-base">— highlighted fields below are editable</span>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-12 mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 xl:gap-12 mt-6">
             {/* Left col */}
-            <div className="space-y-3 text-sm">
+            <div className="space-y-3 text-base">
               <div className={`flex rounded ${editing && !customerLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Customer</div>
                 <div className="flex-1 max-w-xs">
@@ -929,9 +929,9 @@ export default function QuotationDetailPage() {
                     <div style={{ color: PURPLE }} className="font-medium">{order.restaurantName}</div>
                   )}
                   {switchingCustomer && (
-                    <div className="text-xs text-amber-600 mt-1">{isEn ? 'Repricing all lines for the new customer…' : '正在按新客户重新询价…'}</div>
+                    <div className="text-base text-amber-600 mt-1">{isEn ? 'Repricing all lines for the new customer…' : '正在按新客户重新询价…'}</div>
                   )}
-                  {customer?.address && <div className="text-xs text-gray-500 mt-0.5">{customer.address}</div>}
+                  {customer?.address && <div className="text-base text-gray-500 mt-0.5">{customer.address}</div>}
                 </div>
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
@@ -939,7 +939,7 @@ export default function QuotationDetailPage() {
                 {editing ? (
                   <input type="text" value={paymentTerm} onChange={e => setPaymentTerm(e.target.value)}
                     placeholder={customer?.paymentTerm ?? ''}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-base bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
                 ) : <div className="text-gray-800">{(order as unknown as { paymentTerm?: string })?.paymentTerm ?? customer?.paymentTerm ?? '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
@@ -958,7 +958,7 @@ export default function QuotationDetailPage() {
                 <div className={balance < 0 ? 'text-red-600' : 'text-gray-800'}>€ {balance.toFixed(2)}</div>
               </div>
               {creditInfo && (
-                <div className={`flex flex-wrap gap-3 py-2 px-3 rounded-lg text-xs ${creditInfo.canOrder === false ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-200'}`}>
+                <div className={`flex flex-wrap gap-3 py-2 px-3 rounded-lg text-base ${creditInfo.canOrder === false ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-200'}`}>
                   <div>
                     <span className="text-gray-500">{isEn ? 'Outstanding Balance' : '欠款余额'}</span>
                     <span className={`ml-1 font-medium ${creditInfo.outstandingBalance > 0 ? 'text-red-600' : 'text-gray-800'}`}>
@@ -994,7 +994,7 @@ export default function QuotationDetailPage() {
             </div>
 
             {/* Right col */}
-            <div className="space-y-3 text-sm">
+            <div className="space-y-3 text-base">
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Date</div>
                 {editing ? (
@@ -1002,7 +1002,7 @@ export default function QuotationDetailPage() {
                     value={deliveryDate}
                     onChange={setDeliveryDate}
                     wrapperClassName="flex-1"
-                    className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full border border-amber-400 rounded px-2 py-1 text-base bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 ) : <div className="text-gray-800">{deliveryDate || '—'}</div>}
               </div>
@@ -1032,7 +1032,7 @@ export default function QuotationDetailPage() {
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>
                 {editing ? (
                   <select value={priceType} onChange={e => setPriceType(e.target.value)}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300">
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-base bg-white focus:outline-none focus:ring-2 focus:ring-amber-300">
                     <option value="multi">Multi-Pricelist</option>
                     <option value="default">Default Price</option>
                     <option value="last">Last Price</option>
@@ -1050,7 +1050,7 @@ export default function QuotationDetailPage() {
         {/* Region 4: order lines */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
           <div className="border-b border-gray-200 flex">
-            <div className="px-4 py-3 text-sm font-bold text-gray-900 border-b-2" style={{ borderColor: PURPLE }}>
+            <div className="px-4 py-3 text-base font-bold text-gray-900 border-b-2" style={{ borderColor: PURPLE }}>
               Order Lines
             </div>
           </div>
@@ -1071,12 +1071,12 @@ export default function QuotationDetailPage() {
               return (
                 <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
                   <span className="text-lg leading-none mt-0.5">🚨</span>
-                  <div className="text-sm">
+                  <div className="text-base">
                     <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于 ATP）：'}</span>
                     {outOfStockLines.length > 0 && (
                       <span className="text-red-600">
                         {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
-                        <span className="text-xs text-red-500 ml-1">
+                        <span className="text-base text-red-500 ml-1">
                           ({outOfStockLines.map(l => l.productName).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
@@ -1087,7 +1087,7 @@ export default function QuotationDetailPage() {
                     {lowStockLines.length > 0 && (
                       <span className="text-amber-700">
                         {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
-                        <span className="text-xs text-amber-600 ml-1">
+                        <span className="text-base text-amber-600 ml-1">
                           ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp!.toFixed(1)})`).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
@@ -1107,6 +1107,8 @@ export default function QuotationDetailPage() {
             <OrderLineEditor
               lines={displayLines}
               editing={editing}
+              wrapperClassName="overflow-x-hidden"
+              tableClassName="w-full table-fixed border-collapse text-base"
               onReorder={moveLine}
               onDeleteLine={(_lineId, i) => deleteLine(i)}
               products={allProducts}
@@ -1132,25 +1134,25 @@ export default function QuotationDetailPage() {
                 return undefined
               }}
               renderHeaders={() => (
-                <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
+                <tr className="border-b border-gray-200 text-base font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
                   <th className="px-2 py-3 text-left">NO</th>
-                  <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-left">Note</th>
-                  <th className="px-2 py-3 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
-                  <th className="px-2 py-3 text-right">Cost</th>
-                  <th className="px-2 py-3 text-center">Price</th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-right">Cost</th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-center">Price</th>
                   <th className="px-2 py-3 text-center">Taxes</th>
                   <th className="px-2 py-3 text-right">Total</th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
                 </tr>
               )}
               renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
@@ -1179,7 +1181,7 @@ export default function QuotationDetailPage() {
                       {isOutOfStock && <span className="ml-1 text-[10px] text-red-600" title={isEn ? 'Out of stock' : '无可用库存'}>🚨</span>}
                       {!isOutOfStock && isLowStock && <span className="ml-1 text-[10px] text-amber-600" title={isEn ? 'Low stock' : '低库存'}>⚠️</span>}
                     </td>
-                    <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-gray-500 text-base truncate">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>
                       {editing
                         ? productCell({
@@ -1191,13 +1193,13 @@ export default function QuotationDetailPage() {
                           })
                         : l.productName}
                     </td>
-                    <td className="px-2 py-2 text-gray-600 text-xs">
+                    <td className="px-2 py-2 text-gray-600 text-base">
                       {editing ? (
                         <input
                           type="text"
                           /* Tab 选完商品后焦点落到这里 —— useInlineProductPicker 靠 data-desc-line 定位 */
                           data-desc-line={l.id}
-                          className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
+                          className="border border-amber-400 rounded px-1 py-0.5 text-base bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
                           value={l.spec ?? ''}
                           onChange={e => updateLine(i, 'spec', e.target.value)}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
@@ -1215,12 +1217,12 @@ export default function QuotationDetailPage() {
                       ) : Number(l.orderedQty).toFixed(2)}
                     </td>
                     {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
-                    <td className="px-2 py-2 text-gray-600 text-xs">
+                    <td className="px-2 py-2 text-gray-600 text-base">
                       {editing ? (
                         <input
                           type="text"
                           data-note-line={l.id}
-                          className="border border-amber-300 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
+                          className="border border-amber-300 rounded px-1 py-0.5 text-base bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
                           value={l.note ?? ''}
                           onChange={e => updateLine(i, 'note', e.target.value)}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
@@ -1228,7 +1230,7 @@ export default function QuotationDetailPage() {
                       ) : (l.note || '')}
                     </td>
                     {/* 赠品(20260913)：勾选后单价/小计归零，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
-                    <td className="px-2 py-2 text-center">
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-center">
                       {editing ? (
                         <input
                           type="checkbox"
@@ -1250,7 +1252,7 @@ export default function QuotationDetailPage() {
                               value={l.uomId ?? anchorUomId ?? ''}
                               onChange={e => switchLineUnit(i, e.target.value)}
                               onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
-                              className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                              className="w-full text-base border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
                               {anchorUomId && anchorActive && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
                               {/* ⛔ 排除锚点，否则默认单位在下拉里出现两次（见 place-order 同处注释） */}
@@ -1275,15 +1277,15 @@ export default function QuotationDetailPage() {
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.unitPrice).toFixed(2)}
                     </td>
-                    <td className="px-2 py-2 text-right text-gray-400">{costRaw != null ? cost.toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-center">
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-right text-gray-400">{costRaw != null ? cost.toFixed(2) : '—'}</td>
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-center">
                       {(() => {
                         const badge = formatPriceSourceBadge(l as unknown as { priceSourceType?: string | null; priceSourceDetail?: string | null; priceSourceDate?: string | null }, isEn)
                         return (
                           <>
                             <span
                               title={badge.title}
-                              className={`inline-block px-2 py-0.5 border rounded text-xs cursor-help ${badge.className}`}
+                              className={`inline-block px-2 py-0.5 border rounded text-base cursor-help ${badge.className}`}
                             >
                               {badge.label}
                             </span>
@@ -1299,7 +1301,7 @@ export default function QuotationDetailPage() {
                     </td>
                     <td className="px-2 py-2 text-center">
                       {editing ? (
-                        <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                        <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-base bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                           value={Number(l.taxRate ?? 0)}
                           onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
                           onKeyDown={lineFieldKeyHandler({
@@ -1312,13 +1314,13 @@ export default function QuotationDetailPage() {
                           <option value={13.5}>13.5%</option>
                           <option value={23}>23%</option>
                         </select>
-                      ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
+                      ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-base text-gray-600">{taxPct}</span>}
                     </td>
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
                   </>
                 )
               }}
@@ -1331,7 +1333,7 @@ export default function QuotationDetailPage() {
               <div className="flex border-b border-gray-200 mb-1">
                 {(['internal', 'external'] as const).map(tab => (
                   <button key={tab} onClick={() => setNoteTab(tab)}
-                    className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                    className={`px-3 py-1 text-base font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                     {tab === 'internal' ? (isEn ? 'Internal Note' : '内部备注') : (isEn ? 'External Note' : '外部备注')}
                   </button>
                 ))}
@@ -1340,15 +1342,15 @@ export default function QuotationDetailPage() {
                 editing ? (
                   <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
                     rows={3} maxLength={500}
-                    className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
+                    className="w-full border border-amber-400 rounded px-2 py-1 text-base bg-white focus:outline-none resize-none"
                     placeholder={isEn ? 'Internal only, not printed for customer' : '仅内部可见，不会打印给客户'} />
-                ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
+                ) : <div className="text-base text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
               ) : (
                 editing ? (
                   <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
                     rows={3} placeholder={isEn ? 'Printed on quotation and delivery note, visible to customer' : '会打印在报价单和送货单上，客户可见'}
-                    className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none" />
-                ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
+                    className="w-full border border-amber-400 rounded px-2 py-1 text-base bg-white focus:outline-none resize-none" />
+                ) : <div className="text-base text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
               )}
             </div>
           </div>
@@ -1363,14 +1365,14 @@ export default function QuotationDetailPage() {
 
           {/* Region 6: totals */}
           <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">
-            <div className="text-sm text-right space-y-1 min-w-[260px]">
+            <div className="w-full max-w-md min-w-0 text-base text-right space-y-1">
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>
               <div className="border-t border-gray-200 my-1" />
               <div className="flex justify-between text-base"><span className="font-bold text-gray-700">Total:</span><span className="font-bold text-gray-900">€ {(subtotalExTax + totalTax).toFixed(2)}</span></div>
-              <div className="flex justify-between text-xs"><span className="text-gray-500">Margin:</span><span className="text-gray-500">€ {margin.toFixed(2)}</span></div>
+              <div className="flex justify-between text-base"><span className="text-gray-500">Margin:</span><span className="text-gray-500">€ {margin.toFixed(2)}</span></div>
               {adjustmentsTotal !== 0 && (
-                <div className="flex justify-between text-xs"><span className="text-gray-500">{isEn ? 'Adjustments:' : '调整合计:'}</span><span className={adjustmentsTotal < 0 ? 'text-red-600' : 'text-gray-500'}>€ {adjustmentsTotal.toFixed(2)}</span></div>
+                <div className="flex justify-between text-base"><span className="text-gray-500">{isEn ? 'Adjustments:' : '调整合计:'}</span><span className={adjustmentsTotal < 0 ? 'text-red-600' : 'text-gray-500'}>€ {adjustmentsTotal.toFixed(2)}</span></div>
               )}
               <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{(subtotalExTax + totalTax + adjustmentsTotal).toFixed(2)}</span></div>
             </div>
@@ -1385,7 +1387,7 @@ export default function QuotationDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-bold text-gray-900 mb-2">{isEn ? 'Cancel this quotation?' : '确认取消此报价单？'}</h3>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-base text-gray-600 mb-6">
               {isEn
                 ? 'The order status will change to "Cancelled". You can restore it to a quotation or permanently delete it afterward from the quotations list.'
                 : '取消后订单状态将变为「已取消」。之后可在报价单列表里把它恢复为报价单，或彻底删除。'}
@@ -1393,12 +1395,12 @@ export default function QuotationDetailPage() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setCancelModalOpen(false)}
-                className="h-9 px-4 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                className="h-9 px-4 text-base rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
                 {isEn ? 'Dismiss' : '取消操作'}
               </button>
               <button
                 onClick={handleConfirmCancel}
-                className="h-9 px-4 text-sm rounded bg-red-600 text-white hover:bg-red-700 font-medium">
+                className="h-9 px-4 text-base rounded bg-red-600 text-white hover:bg-red-700 font-medium">
                 {isEn ? 'Confirm Cancel' : '确认取消'}
               </button>
             </div>
