@@ -34,7 +34,7 @@ export default function ClassicWaveDetailPage() {
   const router = useRouter()
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
-  const [wave, setWave] = useState<(PickingWave & { pallets?: { seq: number }[] }) | null>(null)
+  const [wave, setWave] = useState<(PickingWave & { timeOfDay?: string | null; pallets?: { seq: number }[] }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [shortages, setShortages] = useState<{ productId: string; productName: string; demandQty: number; stockQty: number; shortageQty: number; shortageRate: number }[]>([])
   const [shortageSummary, setShortageSummary] = useState<{ totalProducts: number; shortageProducts: number; shortageRate: number } | null>(null)
