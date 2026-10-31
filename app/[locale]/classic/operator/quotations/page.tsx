@@ -114,7 +114,7 @@ function isSameDay(dateStr: string, today: string) {
 
 function DateCell({ iso }: { iso: string | null | undefined }) {
   return (
-    <span title={formatDateTimeShort(iso)}>
+    <span className="block min-w-0 truncate" title={formatDateTimeShort(iso)}>
       <DateWithDay date={iso} />
     </span>
   )
@@ -946,21 +946,21 @@ ${orderSections}
           className={`border-b border-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-amber-50' : isEditingItems ? 'bg-[#875A7B]/20' : 'hover:bg-gray-50'}`}
           onClick={() => router.push(`${prefix}/classic/operator/quotations/${o.id}`)}
         >
-          <td className="pl-3 pr-1 py-2" onClick={e => e.stopPropagation()}>
+          <td className="pl-2 pr-1 py-2" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={isSelected}
               onChange={() => setSelected(prev => { const n = new Set(prev); isSelected ? n.delete(o.id) : n.add(o.id); return n })}
               className="w-3.5 h-3.5 accent-purple-600 cursor-pointer" />
           </td>
           {/* Quotation Number */}
-          <td className="px-2 py-2 whitespace-nowrap">
-            <span className="text-sm" style={{ color: '#875A7B' }}>{displayOrderCode(o)}</span>
+          <td className="px-1.5 py-2 whitespace-nowrap text-base">
+            <span className="block truncate" style={{ color: '#875A7B' }} title={displayOrderCode(o)}>{displayOrderCode(o)}</span>
           </td>
           {/* Quotation Date */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={quotationDate} /></td>
+          <td className="px-1.5 py-2 text-base text-gray-700 whitespace-nowrap"><DateCell iso={quotationDate} /></td>
           {/* Customer */}
-          <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
+          <td className="px-1.5 py-2 text-base text-gray-800 truncate" title={o.restaurantName}>{o.restaurantName}</td>
           {/* Delivery Date */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+          <td className="px-1.5 py-2 text-base text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             {!isReadMode && editDateId === o.id ? (
               <DatePicker
                 autoFocus
@@ -979,7 +979,7 @@ ${orderSections}
             )}
           </td>
           {/* Total — clickable for Quotations to open item editor */}
-          <td className="px-2 py-2 text-right text-sm text-gray-800 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+          <td className="px-1.5 py-2 text-right text-base text-gray-800 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             {canEditItems ? (
               <button
                 onClick={() => isEditingItems ? setEditItemsId(null) : startEditItems(o)}
@@ -993,25 +993,25 @@ ${orderSections}
             )}
           </td>
           {/* Status */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{STATUS_LABEL[o.status] ?? o.status}</td>
+          <td className="px-1.5 py-2 text-base text-gray-700 truncate" title={STATUS_LABEL[o.status] ?? o.status}>{STATUS_LABEL[o.status] ?? o.status}</td>
           {/* Source —— 这一列的全部意义就是一眼看出「这单是不是餐厅自己提交的」 */}
-          <td className="px-2 py-2 whitespace-nowrap">
+          <td className="hidden xl:table-cell px-1.5 py-2 text-base truncate" title={o.source === 'PORTAL' ? (isEn ? 'Customer' : '客户自助') : o.source === 'IMPORT' ? (isEn ? 'Imported' : '导入') : (isEn ? 'Internal' : '后台')}>
             {o.source === 'PORTAL' ? (
-              <span className="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="inline-block rounded px-0.5 py-0.5 text-base font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
                 {isEn ? 'Customer' : '客户自助'}
               </span>
             ) : o.source === 'IMPORT' ? (
-              <span className="text-[11px] text-gray-400">{isEn ? 'Imported' : '导入'}</span>
+              <span className="text-base text-gray-500">{isEn ? 'Imported' : '导入'}</span>
             ) : (
-              <span className="text-[11px] text-gray-400">{isEn ? 'Internal' : '后台'}</span>
+              <span className="text-base text-gray-500">{isEn ? 'Internal' : '后台'}</span>
             )}
           </td>
           {/* Internal Notes */}
-          <td className="px-2 py-2 text-sm text-gray-700 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
+          <td className="hidden xl:table-cell px-1.5 py-2 text-base text-gray-700 truncate" title={internalNote}>{internalNote || ''}</td>
           {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-2">
-              <span>{getField(o, 'salesman') || '—'}</span>
+          <td className="px-1.5 py-2 text-base text-gray-700" onClick={e => e.stopPropagation()}>
+            <div className="flex min-w-0 items-center gap-1">
+              <span className="min-w-0 flex-1 truncate" title={getField(o, 'salesman') || '—'}>{getField(o, 'salesman') || '—'}</span>
               {canCancel && (
                 <button
                   onClick={async e => {
@@ -1027,21 +1027,21 @@ ${orderSections}
                       toast.error(err instanceof Error ? err.message : (isEn ? 'Cancel failed' : '取消失败'))
                     }
                   }}
-                  className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
+                  className="shrink-0 px-1 py-0.5 text-[11px] rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
                   {isEn ? 'Cancel' : '取消'}
                 </button>
               )}
               {canRestore && (
                 <button
                   onClick={e => { e.stopPropagation(); restoreOrder() }}
-                  className="px-2 py-0.5 text-xs rounded border border-green-300 text-green-700 bg-white hover:bg-green-50 whitespace-nowrap">
+                  className="shrink-0 px-1 py-0.5 text-[11px] rounded border border-green-300 text-green-700 bg-white hover:bg-green-50 whitespace-nowrap">
                   {isEn ? 'Restore' : '恢复'}
                 </button>
               )}
               {canRemove && (
                 <button
                   onClick={e => { e.stopPropagation(); removeOrder() }}
-                  className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
+                  className="shrink-0 px-1 py-0.5 text-[11px] rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
                   {isEn ? 'Delete' : '删除'}
                 </button>
               )}
@@ -1050,7 +1050,7 @@ ${orderSections}
         </tr>
         {isEditingItems && (
           <tr key={`${o.id}-items`}>
-            <td colSpan={14} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
+            <td colSpan={10} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
               <div className="border border-purple-200 rounded bg-white overflow-hidden shadow-sm">
                 <table className="w-full text-xs">
                   <thead>
@@ -1142,14 +1142,14 @@ ${orderSections}
 
   function filterRow() {
     const dateLabelCell = (fromKey: keyof ColFilters, toKey: keyof ColFilters) => (
-      <td className="px-2 py-1 align-top">
+      <td className="px-1.5 py-1 align-top">
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-gray-400 w-9">From:</span>
-          <DatePicker value={colFilters[fromKey]} onChange={v => setCf(fromKey, v)} className={inputCls} clearable={false} />
+          <DatePicker value={colFilters[fromKey]} onChange={v => setCf(fromKey, v)} className={inputCls} wrapperClassName="min-w-0 flex-1" clearable={false} />
         </div>
         <div className="flex items-center gap-1 mt-0.5">
           <span className="text-[10px] text-gray-400 w-9">To:</span>
-          <DatePicker value={colFilters[toKey]} onChange={v => setCf(toKey, v)} className={inputCls} clearable={false} />
+          <DatePicker value={colFilters[toKey]} onChange={v => setCf(toKey, v)} className={inputCls} wrapperClassName="min-w-0 flex-1" clearable={false} />
         </div>
       </td>
     )
@@ -1278,18 +1278,30 @@ ${orderSections}
         sortKey={sortField ?? 'code'} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
         sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
         groupLabel={groupBy === 'none' ? undefined : order => Array.from(grouped?.entries() ?? []).find(([, groupOrders]) => groupOrders.some(item => item.id === order.id))?.[0] ?? ''}
-        renderExtra={order => <p className="text-xs text-gray-500 break-words">{getField(order, 'salesman')}{order.source === 'PORTAL' ? (isEn ? ' · Customer portal' : ' · 客户自助') : ''}</p>}
+        renderExtra={order => <p className="text-base text-gray-500 break-words">{getField(order, 'salesman')}{order.source === 'PORTAL' ? (isEn ? ' · Customer portal' : ' · 客户自助') : ''}</p>}
       />
-      <div className="hidden md:block overflow-x-auto relative">
+      <div className="hidden md:block overflow-x-hidden relative">
         {loading && filtered.length > 0 && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
             <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
           </div>
         )}
-        <table className="w-full text-sm bg-white">
+        <table className="w-full table-fixed bg-white text-base">
+          <colgroup>
+            <col className="w-[3%]" />
+            <col className="w-[14%] xl:w-[11%]" />
+            <col className="w-[14%] xl:w-[11%]" />
+            <col className="w-[20%] xl:w-[18%]" />
+            <col className="w-[16%] xl:w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[13%] xl:w-[10%]" />
+            <col className="hidden w-0 xl:table-column xl:w-[7%]" />
+            <col className="hidden w-0 xl:table-column xl:w-[10%]" />
+            <col className="w-[10%] xl:w-[9%]" />
+          </colgroup>
           <thead>
-            <tr className="border-b border-gray-200 text-left text-sm font-bold text-gray-700 align-bottom">
-              <th className="pl-3 pr-1 py-3 w-8">
+            <tr className="border-b border-gray-200 text-left text-base font-bold text-gray-700 align-bottom">
+              <th className="pl-2 pr-1 py-2">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-3.5 h-3.5 accent-purple-600 cursor-pointer" />
               </th>
               {(
@@ -1309,7 +1321,7 @@ ${orderSections}
                 return (
                   <th
                     key={i}
-                    className={`px-2 py-3 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
+                    className={`${field === null || field === 'internalNote' ? 'hidden xl:table-cell ' : ''}px-1.5 py-2 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
                     onClick={field ? () => {
                       if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
                       else { setSortField(field); setSortDir('asc') }
@@ -1329,16 +1341,16 @@ ${orderSections}
           </thead>
           <tbody>
             {loading && filtered.length === 0 && (
-              <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-base">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-base">{isEn ? 'No data' : '暂无数据'}</td></tr>
             )}
             {grouped ? (
               Array.from(grouped.entries()).map(([groupName, groupOrders]) => (
                 <Fragment key={groupName}>
                   <tr className="bg-gray-100 border-b border-gray-200">
-                    <td colSpan={14} className="px-4 py-1.5 text-xs font-semibold text-gray-600">
+                    <td colSpan={10} className="px-4 py-1.5 text-base font-semibold text-gray-600">
                       {groupName} <span className="ml-2 text-gray-400">({groupOrders.length})</span>
                     </td>
                   </tr>
@@ -1352,7 +1364,7 @@ ${orderSections}
         </table>
       </div>
       <div className="flex flex-wrap gap-2 items-center justify-between px-2 py-3">
-        <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
+        <span className="text-base text-gray-500">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>
 
