@@ -11,7 +11,7 @@ const BILLABLE_STATUSES = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLET
 const round2 = (amount: number) => Math.round(amount * 100) / 100
 
 /** Live customer ledger preview. This is deliberately read-only; it does not create a Statement row. */
-export async function GET(req: Request) {
+export async function handleStatementPreview(req: Request) {
   return withAuth(req, async () => {
     try {
       const params = new URL(req.url).searchParams

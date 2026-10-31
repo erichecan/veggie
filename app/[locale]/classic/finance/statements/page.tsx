@@ -171,7 +171,8 @@ export default function StatementsPage() {
     setQueryLoading(true)
     try {
       const params = new URLSearchParams({ customerId: queryCustomerId, periodStart: queryStart, periodEnd: queryEnd })
-      const data = await apiGet<StatementDetail>(`/api/statements/preview?${params}`)
+      params.set('mode', 'preview')
+      const data = await apiGet<StatementDetail>(`/api/statements?${params}`)
       setDetail(data)
       setDetailData(data)
       setDetailIsPreview(true)

@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { buildStatementsWhere } from '@/lib/statements-query'
 import { generateStatement, StatementInputError } from '@/lib/statements'
+import { handleStatementPreview } from '@/lib/statements-preview'
 
 /**
  * P1-1: 财务对账单
@@ -16,6 +17,7 @@ import { generateStatement, StatementInputError } from '@/lib/statements'
  */
 
 export async function GET(req: Request) {
+  if (new URL(req.url).searchParams.get('mode') === 'preview') return handleStatementPreview(req)
   return withAuth(req, async () => {
     try {
       const url = new URL(req.url)
