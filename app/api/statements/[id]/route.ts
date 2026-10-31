@@ -5,7 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { orderIncTaxTotal } from '@/lib/order-items'
-import { addBusinessDays } from '@/lib/analytics/metrics'
+import { addBusinessDays, BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 import { reconcileStatement, paymentSource, paymentConfirmationId } from '@/lib/finance/statement'
 
 /**
@@ -41,7 +41,7 @@ export async function GET(
       }
 
       const period = { start: item.periodStart, endExclusive: addBusinessDays(item.periodEnd, 1) }
-      const [orderRows, paymentRows, creditRows] = await Promise.all([
+      const [orderRows, paymentRows, creditRows, openInvoices] = await Promise.all([
         prisma.order.findMany({
           where: { id: { in: item.orderIds } },
           orderBy: { deliveryDate: 'asc' },
@@ -59,6 +59,10 @@ export async function GET(
           where: { id: { in: item.creditNoteIds ?? [] } },
           orderBy: { creditDate: 'asc' },
           select: { id: true, name: true, creditDate: true, subtotalExTax: true, totalTax: true, totalIncTax: true, notes: true, lines: { select: { sourceOrderId: true } } },
+        }),
+        prisma.invoice.findMany({
+          where: { customerId: item.customerId, status: 'POSTED', amountDue: { gt: 0 } },
+          select: { name: true, dueDate: true, amountDue: true },
         }),
       ])
 
@@ -132,8 +136,19 @@ export async function GET(
       // 金额差额可能恰好被别的改动抵消，但明细条数对不上是硬伤
       const missingOrders = item.orderIds.filter(oid => !orderRows.some(o => o.id === oid))
 
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+      const buckets = { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90_plus: 0, unknown: 0 }
+      const agingInvoices = openInvoices.map(invoice => {
+        const dueDate = invoice.dueDate?.slice(0, 10) ?? null
+        const days = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueDate}T00:00:00Z`)) / 86400000) : null
+        const bucket = days === null ? 'unknown' : days <= 0 ? 'current' : days <= 30 ? 'd1_30' : days <= 60 ? 'd31_60' : days <= 90 ? 'd61_90' : 'd90_plus'
+        buckets[bucket] += toNum(invoice.amountDue)
+        return { name: invoice.name, dueDate, amountDue: toNum(invoice.amountDue), overdueDays: days }
+      })
+
       return NextResponse.json(serializeApi({
         ...item, orders, payments, credits, reconciliation, missingOrderIds: missingOrders,
+        aging: { totalOutstanding: openInvoices.reduce((sum, invoice) => sum + toNum(invoice.amountDue), 0), buckets, invoices: agingInvoices },
       }))
     } catch (error) {
       console.error('[GET /api/statements/[id]]', error)
