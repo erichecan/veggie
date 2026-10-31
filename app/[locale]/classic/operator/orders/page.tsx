@@ -105,7 +105,7 @@ const SO_IMPORT_COLUMNS: { key: string; zh: string; en: string; required?: boole
 
 function DateCell({ iso }: { iso: string | null | undefined }) {
   return (
-    <span title={formatDateTimeShort(iso)}>
+    <span className="block min-w-0 truncate" title={formatDateTimeShort(iso)}>
       <DateWithDay date={iso} />
     </span>
   )
@@ -633,7 +633,7 @@ export default function ClassicOrdersPage() {
             <option value="cancelled">{STATUS_LABEL.cancelled}</option>
           </select>
         </td>
-        <td className="px-2 py-1" />
+        <td className="hidden xl:table-cell px-2 py-1" />
         <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1" />
       </tr>
@@ -648,18 +648,18 @@ export default function ClassicOrdersPage() {
         className={`border-b border-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-amber-50' : 'hover:bg-gray-50'}`}
         onClick={() => router.push(`${prefix}/classic/operator/orders/${o.id}`)}
       >
-        <td className="pl-3 pr-1 py-2" onClick={e => e.stopPropagation()}>
+        <td className="pl-2 pr-1 py-2" onClick={e => e.stopPropagation()}>
           <input type="checkbox" checked={isSelected}
             onChange={() => setSelected(prev => { const n = new Set(prev); isSelected ? n.delete(o.id) : n.add(o.id); return n })}
             className="w-3.5 h-3.5 accent-purple-600 cursor-pointer" />
         </td>
-        <td className="px-2 py-2 whitespace-nowrap">
-          <span className="text-sm" style={{ color: '#875A7B' }}>{displayOrderCode(o)}</span>
+        <td className="px-1.5 py-2 text-base whitespace-nowrap">
+          <span className="block truncate" style={{ color: '#875A7B' }} title={displayOrderCode(o)}>{displayOrderCode(o)}</span>
         </td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'createdByName') || '—'}</td>
-        <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+        <td className="px-1.5 py-2 text-base text-gray-700 truncate" title={o.deliveryDate || ''}>{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
+        <td className="px-1.5 py-2 text-base text-gray-700 truncate" title={getField(o, 'createdByName') || '—'}>{getField(o, 'createdByName') || '—'}</td>
+        <td className="px-1.5 py-2 text-base text-gray-800 truncate" title={o.restaurantName}>{o.restaurantName}</td>
+        <td className="px-1.5 py-2 text-base text-gray-700 truncate" onClick={e => e.stopPropagation()}>
           {(() => {
             const originalSlotId = (o as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''
             const pendingVal = pendingBatch[o.id]
@@ -681,9 +681,9 @@ export default function ClassicOrdersPage() {
             }
             return (
               <span
-                className={isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}
+                className={`block truncate ${isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}`}
                 style={{ color: hasPending ? '#d97706' : display ? '#875A7B' : undefined }}
-                title={hasPending ? (isEn ? 'Unsaved — click "Save" above to submit' : '未保存,点顶部「保存」提交') : undefined}
+                title={hasPending ? (isEn ? 'Unsaved — click "Save" above to submit' : '未保存,点顶部「保存」提交') : display || undefined}
                 onClick={isReadMode ? undefined : () => { setEditBatchId(o.id); setEditBatchVal(hasPending ? pendingVal : originalSlotId) }}
               >
                 {display || '—'}
@@ -692,37 +692,37 @@ export default function ClassicOrdersPage() {
             )
           })()}
         </td>
-        <td className="px-2 py-2 text-right text-sm text-gray-800 whitespace-nowrap tabular-nums">
+        <td className="px-1.5 py-2 text-right text-base text-gray-800 whitespace-nowrap tabular-nums" title={`€ ${o.totalAmount.toFixed(2)}`}>
           € {o.totalAmount.toFixed(2)}
         </td>
-        <td className="px-2 py-2 min-w-[72px]">
-          <div className="flex items-center gap-1.5">
-            <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
+        <td className="px-1.5 py-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1">
+            <span className={`inline-block whitespace-nowrap px-1 py-0.5 rounded text-base ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
               {STATUS_LABEL[o.status] ?? String(o.status)}
             </span>
             {/* 回单（签收单）核销状态（20261021）：原来把 RETURNED 印成「有退货」——意思反了，
                 RETURNED 是签收单已交回会计核销；未回 / 有问题根本不显示。只对货已离仓的单显示 */}
             {['in_delivery', 'completed', 'locked'].includes(String(o.status)) && (
               o.returnStatus === 'RETURNED'
-                ? <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-green-50 text-green-700 font-medium" data-testid="return-badge">{isEn ? 'Receipt ✓' : '回单已核销'}</span>
+                ? <span className="inline-block whitespace-nowrap px-1 py-0.5 rounded text-base bg-green-50 text-green-700 font-medium" data-testid="return-badge">{isEn ? 'Receipt ✓' : '回单已核销'}</span>
                 : o.returnStatus === 'ISSUE'
-                  ? <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700 font-medium" data-testid="return-badge" title={o.returnIssueNote ?? ''}>{isEn ? 'Receipt issue' : '回单有问题'}</span>
-                  : <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-red-50 text-red-600 font-medium" data-testid="return-badge">{isEn ? 'No receipt' : '未回单'}</span>
+                  ? <span className="inline-block whitespace-nowrap px-1 py-0.5 rounded text-base bg-amber-100 text-amber-700 font-medium" data-testid="return-badge" title={o.returnIssueNote ?? ''}>{isEn ? 'Receipt issue' : '回单有问题'}</span>
+                  : <span className="inline-block whitespace-nowrap px-1 py-0.5 rounded text-base bg-red-50 text-red-600 font-medium" data-testid="return-badge">{isEn ? 'No receipt' : '未回单'}</span>
             )}
             {/* 客退货物处置角标（20261027 M5）：只读展示 OrderReturn/ReturnItem 审核结果，与上面
                 「回单核销」(returnStatus) 完全是两件事——不要混用同一个 data-testid 或配色 */}
             {o.goodsReturnStatus === 'APPROVED' && (
-              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
+              <span className="inline-block whitespace-nowrap px-1 py-0.5 rounded text-base bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
             )}
             {o.goodsReturnStatus === 'REJECTED' && (
-              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
+              <span className="inline-block whitespace-nowrap px-1 py-0.5 rounded text-base bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
             )}
           </div>
         </td>
         {/* Internal Notes */}
-        <td className="px-2 py-2 text-sm text-gray-700 max-w-[140px] truncate" title={getField(o, 'internalNote')}>{getField(o, 'internalNote')}</td>
+        <td className="hidden xl:table-cell px-1.5 py-2 text-base text-gray-700 truncate" title={getField(o, 'internalNote')}>{getField(o, 'internalNote')}</td>
         {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
+        <td className="px-1.5 py-2 text-base text-gray-700 truncate" title={getField(o, 'salesman') || '—'}>{getField(o, 'salesman') || '—'}</td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1">
             {!isReadMode && o.status === 'confirmed' && pendingBatch[o.id] !== undefined && (
@@ -745,7 +745,7 @@ export default function ClassicOrdersPage() {
                     toast.error(err instanceof Error ? err.message : (isEn ? 'Revert failed' : '撤回失败'))
                   }
                 }}
-                className="px-2 py-1 text-xs rounded border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100 whitespace-nowrap">
+                className="px-0.5 py-0.5 text-base rounded border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100 whitespace-nowrap">
                 {isEn ? 'Revert' : '撤回'}
               </button>
             )}
@@ -929,18 +929,31 @@ export default function ClassicOrdersPage() {
         onOpen={order => router.push(`${prefix}/classic/operator/orders/${order.id}`)}
         sortKey={sortField} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
         sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
-        renderExtra={order => <div className="text-sm text-gray-500 space-y-2"><p>{formatDriverSlotFromOrder(order) || '—'}</p>{!isReadMode && <select aria-label={isEn ? 'Driver / Batch' : '司机/批次'} value={pendingBatch[order.id] ?? (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''} onChange={event => stageBatch(order.id, event.target.value, (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? '')} className="w-full min-h-11 border rounded px-2"><option value="">{isEn ? 'Unassigned' : '待分配'}</option>{driverSlots.map(slot => <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>)}</select>}</div>}
+        renderExtra={order => <div className="text-base text-gray-500 space-y-2"><p>{formatDriverSlotFromOrder(order) || '—'}</p>{!isReadMode && <select aria-label={isEn ? 'Driver / Batch' : '司机/批次'} value={pendingBatch[order.id] ?? (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''} onChange={event => stageBatch(order.id, event.target.value, (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? '')} className="w-full min-h-11 border rounded px-2"><option value="">{isEn ? 'Unassigned' : '待分配'}</option>{driverSlots.map(slot => <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>)}</select>}</div>}
       />
-      <div className="hidden md:block overflow-auto relative">
+      <div className="hidden md:block overflow-x-hidden relative">
         {loading && sorted.length > 0 && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
             <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
           </div>
         )}
-        <table className="w-full text-sm border-collapse bg-white">
+        <table className="w-full table-fixed text-base border-collapse bg-white">
+          <colgroup>
+            <col className="w-[3%]" />
+            <col className="w-[11%] xl:w-[10%]" />
+            <col className="w-[11%] xl:w-[10%]" />
+            <col className="w-[10%] xl:w-[9%]" />
+            <col className="w-[15%] xl:w-[13%]" />
+            <col className="w-[11%] xl:w-[10%]" />
+            <col className="w-[10%] xl:w-[9%]" />
+            <col className="w-[17%] xl:w-[15%]" />
+            <col className="hidden xl:table-column xl:w-[8%]" />
+            <col className="w-[5%] xl:w-[7%]" />
+            <col className="w-[7%] xl:w-[6%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10">
-            <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-600" style={{ background: '#f9f9f9' }}>
-              <th className="pl-3 pr-1 py-3 w-8">
+            <tr className="border-b border-gray-200 text-left text-base font-semibold text-gray-600" style={{ background: '#f9f9f9' }}>
+              <th className="pl-2 pr-1 py-2">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll}
                   className="w-3.5 h-3.5 accent-purple-600 cursor-pointer" />
               </th>
@@ -962,7 +975,7 @@ export default function ClassicOrdersPage() {
                 return (
                   <th
                     key={i}
-                    className={`px-2 py-3 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
+                    className={`${i === 7 ? 'hidden xl:table-cell ' : ''}px-1.5 py-2 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
                     onClick={field ? () => {
                       if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
                       else { setSortField(field); setSortDir('asc') }
@@ -982,17 +995,17 @@ export default function ClassicOrdersPage() {
           </thead>
           <tbody>
             {loading && sorted.length === 0 && (
-              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-base">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && sorted.length === 0 && (
-              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-base">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
             )}
             {sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>
         </table>
       </div>
       <div className="flex flex-wrap gap-2 items-center justify-between px-2 py-3">
-        <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
+        <span className="text-base text-gray-500">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>
     </div>
