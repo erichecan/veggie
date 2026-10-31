@@ -973,6 +973,22 @@ export default function ClassicPlaceOrderPage() {
     setLines(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)))
   }
 
+  function updateUnitPrice(line: QuotationLine, rawValue: string) {
+    const unitPrice = parseFloat(rawValue) || 0
+    const product = products.find(p => p.id === line.productId)
+    const resolved = product
+      ? computeLinePrice(product, line.orderedQty, line.uomId)
+      : null
+    const matchesResolvedPrice = resolved != null && round2(unitPrice) === round2(resolved.unitPrice)
+
+    patchLine(line.id, {
+      unitPrice,
+      priceManual: !matchesResolvedPrice,
+      priceLabel: matchesResolvedPrice ? resolved.priceLabel : 'Manual',
+      priceLabelDetail: matchesResolvedPrice ? resolved.priceLabelDetail : undefined,
+    })
+  }
+
   // 取消赠品勾选、行上又没有勾选前的快照时（页面打开时这行就是赠品）按当前客户/单位重新询价，
   // 不能把操作员丢在一个 0 上自己去翻价格表。见 lib/order-line-gift.ts。
   function repriceGiftLine(line: QuotationLine): GiftPriceSnapshot | null {
@@ -1883,7 +1899,7 @@ export default function ClassicPlaceOrderPage() {
                           value={line.isGift ? 0 : line.unitPrice}
                           disabled={!!line.isGift}
                           title={line.isGift ? (isEn ? 'Gift line — price locked at 0' : '赠品行——单价锁定为 0') : undefined}
-                          onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0, priceManual: true, priceLabel: 'Manual', priceLabelDetail: undefined })}
+                          onChange={e => updateUnitPrice(line, e.target.value)}
                           onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
