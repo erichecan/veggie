@@ -370,6 +370,7 @@ export default function ClassicPlaceOrderPage() {
   // ── Odoo-style Tab navigation ─────────────────────────────────────────────
   const orderDateRef = useRef<HTMLInputElement>(null)
   const salesRef     = useRef<HTMLDivElement>(null)
+  const paymentTermsRef = useRef<HTMLInputElement>(null)
   const priceTypeRef = useRef<HTMLSelectElement>(null)
 
   // ── Credit control ────────────────────────────────────────────────────────
@@ -1479,6 +1480,47 @@ export default function ClassicPlaceOrderPage() {
                 </div>
               )}
 
+              {/* Sales */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-600 w-36 shrink-0">Sales</label>
+                <div
+                  className="flex-1"
+                  onKeyDown={e => {
+                    if (e.key === 'Tab') {
+                      e.preventDefault()
+                      paymentTermsRef.current?.focus()
+                    }
+                  }}
+                >
+                  <SearchableDropdown
+                    ref={salesRef}
+                    options={[{ value: '', label: isEn ? '— Select Salesperson —' : '— 选择业务员 —' }, ...userPickerOptions(salesUsers, salesTeam, isEn)]}
+                    value={salesTeam}
+                    onChange={setSalesTeam}
+                    placeholder={isEn ? '— Select Salesperson —' : '— 选择业务员 —'}
+                  />
+                </div>
+              </div>
+
+              {/* Payment Terms */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-600 w-36 shrink-0">Payment Terms</label>
+                <input
+                  ref={paymentTermsRef}
+                  type="text"
+                  value={paymentTerms}
+                  onChange={e => setPaymentTerms(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Tab') {
+                      e.preventDefault()
+                      priceTypeRef.current?.focus()
+                    }
+                  }}
+                  placeholder={isEn ? 'Payment terms' : '付款条件'}
+                  className="flex-1 text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
+                />
+              </div>
+
             </div>
 
             {/* ── Right column ───────────────────────────────────────────── */}
@@ -1510,28 +1552,6 @@ export default function ClassicPlaceOrderPage() {
                   onChange={setDeliveryDate}
                   className="text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
                 />
-              </div>
-
-              {/* Sales */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-600 w-36 shrink-0">Sales</label>
-                <div
-                  className="flex-1"
-                  onKeyDown={e => {
-                    if (e.key === 'Tab') {
-                      e.preventDefault()
-                      priceTypeRef.current?.focus()
-                    }
-                  }}
-                >
-                  <SearchableDropdown
-                    ref={salesRef}
-                    options={[{ value: '', label: isEn ? '— Select Salesperson —' : '— 选择业务员 —' }, ...userPickerOptions(salesUsers, salesTeam, isEn)]}
-                    value={salesTeam}
-                    onChange={setSalesTeam}
-                    placeholder={isEn ? '— Select Salesperson —' : '— 选择业务员 —'}
-                  />
-                </div>
               </div>
 
               {/* Pricelist */}
@@ -1593,18 +1613,6 @@ export default function ClassicPlaceOrderPage() {
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Payment Terms */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-600 w-36 shrink-0">Payment Terms</label>
-                <input
-                  type="text"
-                  value={paymentTerms}
-                  onChange={e => setPaymentTerms(e.target.value)}
-                  placeholder={isEn ? 'Payment terms' : '付款条件'}
-                  className="flex-1 text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
-                />
               </div>
 
               {/* Price Type */}
@@ -1744,7 +1752,7 @@ export default function ClassicPlaceOrderPage() {
                 onMerge={mergeDuplicates}
               />
 
-              {/* Horizontally scrollable 13-column table */}
+              {/* Order lines: compact fixed-width control columns, with product name given room to breathe. */}
               <OrderLineEditor
                 lines={lines}
                 editing={true}
@@ -1752,24 +1760,23 @@ export default function ClassicPlaceOrderPage() {
                 tableClassName="w-full table-fixed border-collapse"
                 tableStyle={{ width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
-                emptyColSpan={14}
+                emptyColSpan={13}
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
-                    <th className="px-1.5 py-2 text-left">NO</th>
-                    <th className="px-1.5 py-2 text-left">Product</th>
+                    <th className="w-10 px-1.5 py-2 text-left">NO</th>
+                    <th className="w-[220px] px-1.5 py-2 text-left">Product</th>
                     <th className="px-1.5 py-2 text-left">Description</th>
-                    <th className="px-1.5 py-2 text-right">Ordered Qty</th>
+                    <th className="w-24 px-1.5 py-2 text-right">Ordered Qty</th>
                     <th className="px-1.5 py-2 text-left">UoM</th>
                     <th className="px-1.5 py-2 text-left">Note</th>
-                    <th className="px-1.5 py-2 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
-                    <th className="px-1.5 py-2 text-right">Unit Price</th>
+                    <th className="w-14 px-1.5 py-2 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
+                    <th className="w-24 px-1.5 py-2 text-right">Unit Price</th>
                     <th className="hidden xl:table-cell px-1.5 py-2 text-right">Cost</th>
                     <th className="hidden xl:table-cell px-1.5 py-2 text-left">Price</th>
-                    <th className="px-1.5 py-2 text-left">Taxes</th>
-                    <th className="px-1.5 py-2 text-right">Total</th>
+                    <th className="w-20 px-1.5 py-2 text-left">Taxes</th>
+                    <th className="w-24 px-1.5 py-2 text-right">Total</th>
                     <th className="hidden 2xl:table-cell px-1.5 py-2 text-right">Forecast Qty</th>
-                    <th className="hidden 2xl:table-cell px-1.5 py-2 text-right" title={isEn ? 'ATP (Available To Promise) = On Hand − Pending Demand' : 'ATP 可承诺量 = 在手量 - 待履行量'}>ATP</th>
                   </tr>
                 )}
                 renderRow={(line, idx, opts) => {
@@ -1794,7 +1801,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Product — 就地搜索，与编辑页共用同一份实现 */}
-                      <td className="px-1.5 py-1 relative">
+                      <td className="w-[220px] px-1.5 py-1 relative">
                         {opts.productCell({ lineId: line.id, productName: line.productName })}
                       </td>
 
@@ -1883,7 +1890,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
-                      <td className="px-1.5 py-1 text-center">
+                      <td className="w-14 px-1.5 py-1 text-center">
                         <input
                           type="checkbox"
                           checked={!!line.isGift}
@@ -1893,7 +1900,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Unit Price */}
-                      <td className="px-1.5 py-1">
+                      <td className="w-24 px-1.5 py-1">
                         <input
                           type="number"
                           min="0"
@@ -1950,7 +1957,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Taxes */}
-                      <td className="px-1.5 py-1">
+                      <td className="w-20 px-1.5 py-1">
                         <select
                           value={line.taxRate}
                           onChange={e => patchLine(line.id, { taxRate: Number(e.target.value) })}
@@ -1964,7 +1971,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* Total（删除按钮已移到 NO 列常显，见该处注释） */}
-                      <td className="px-1.5 py-1 text-right">
+                      <td className="w-24 px-1.5 py-1 text-right">
                         <span className="font-medium text-gray-700">
                           {lineTotal > 0 ? eur(lineTotal) : '—'}
                         </span>
@@ -1975,24 +1982,6 @@ export default function ClassicPlaceOrderPage() {
                         {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
                       </td>
 
-                      {/* ATP */}
-                      <td className="hidden 2xl:table-cell px-1.5 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}`) : ''}>
-                        {isOutOfStock ? (
-                          <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
-                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                            {lineAtp.toFixed(1)}
-                          </span>
-                        ) : isLowStock ? (
-                          <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-amber-500" />
-                            {lineAtp.toFixed(1)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500">
-                            {lineAtp > 0 ? lineAtp.toFixed(1) : '—'}
-                          </span>
-                        )}
-                      </td>
                     </>
                   )
                 }}

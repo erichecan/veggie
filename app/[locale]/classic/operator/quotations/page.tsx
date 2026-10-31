@@ -21,6 +21,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
+import type { DriverSlotInfo } from '@/lib/driver-slot'
 
 const PAGE_SIZE = 50
 
@@ -133,6 +134,8 @@ export default function ClassicQuotationsPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
+  const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
+  const [savingDriverOrderId, setSavingDriverOrderId] = useState<string | null>(null)
 
   const [activeTab, setActiveTab] = useState<TabValue>('all')
   const [orderTodayActive, setOrderTodayActive] = useState(false)
@@ -192,6 +195,24 @@ export default function ClassicQuotationsPage() {
       toast.error(e instanceof Error ? e.message : 'Failed to update delivery date')
     }
     setEditDateId(null)
+  }
+
+  async function saveQuotationDriver(order: Order, driverSlotId: string) {
+    if (order.status !== 'pending' || savingDriverOrderId) return
+    setSavingDriverOrderId(order.id)
+    try {
+      await apiPut(`/api/orders/${order.id}/batch`, { driverSlotId: driverSlotId || null })
+      const slot = driverSlots.find(item => item.id === driverSlotId)
+      toast.success(driverSlotId
+        ? (isEn ? `Assigned ${slot?.driverName ?? 'driver'} to quotation` : `已为报价单安排司机${slot ? `：${slot.driverName}` : ''}`)
+        : (isEn ? 'Driver assignment cleared' : '已清除司机安排'))
+      refresh()
+      void loadRefData()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to assign driver' : '安排司机失败'))
+    } finally {
+      setSavingDriverOrderId(null)
+    }
   }
 
   async function startEditItems(o: Order) {
@@ -353,12 +374,14 @@ export default function ClassicQuotationsPage() {
 
   async function loadRefData() {
     try {
-      const [rawCustomers, rawTrips] = await Promise.all([
+      const [rawCustomers, rawTrips, rawDriverSlots] = await Promise.all([
         apiGet<Customer[]>('/api/customers?slim=1').catch(() => [] as Customer[]),
         apiGet<Trip[]>('/api/trips').catch(() => [] as Trip[]),
+        apiGet<DriverSlotInfo[]>('/api/driver-slots').catch(() => [] as DriverSlotInfo[]),
       ])
       setCustomers(rawCustomers)
       setTrips(rawTrips)
+      setDriverSlots(rawDriverSlots)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     }
@@ -536,8 +559,16 @@ export default function ClassicQuotationsPage() {
       if (!t.driverName) return
       t.restaurants?.forEach((r: { orderIds?: string[] }) => r.orderIds?.forEach(id => m.set(id, t.driverName!)))
     })
+    const slotsById = new Map(driverSlots.map(slot => [slot.id, slot]))
+    orders.forEach(order => {
+      const slotId = order.driverSlotId ?? (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId
+      const slot = slotId ? slotsById.get(slotId) : undefined
+      if (slot && (order.status === 'pending' || !m.has(order.id))) {
+        m.set(order.id, `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`)
+      }
+    })
     return m
-  }, [trips])
+  }, [trips, orders, driverSlots])
 
   // ── Filter pipeline ───────────────────────────────────────────────────────
 
@@ -717,7 +748,13 @@ export default function ClassicQuotationsPage() {
     }
     setBulkConfirming(true)
     const results = await Promise.allSettled(
-      pendingIds.map(id => apiPut(`/api/orders/${id}`, { status: 'CONFIRMED' }))
+      pendingIds.map(id => {
+        const order = orders.find(item => item.id === id)
+        return apiPut(`/api/orders/${id}`, {
+          status: 'CONFIRMED',
+          ...(order?.driverSlotId ? { driverSlotId: order.driverSlotId } : {}),
+        })
+      })
     )
     const successCount = results.filter(r => r.status === 'fulfilled').length
     const failCount = results.filter(r => r.status === 'rejected').length
@@ -978,6 +1015,25 @@ ${orderSections}
               </span>
             )}
           </td>
+          {/* Driver — pending quotations store an assignment intention only; confirmation creates the wave. */}
+          <td className="px-1.5 py-2 text-base text-gray-700" onClick={e => e.stopPropagation()}>
+            {!isReadMode && o.status === 'pending' ? (
+              <select
+                aria-label={isEn ? 'Driver / Batch' : '司机/批次'}
+                value={o.driverSlotId ?? ''}
+                disabled={savingDriverOrderId === o.id}
+                onChange={e => void saveQuotationDriver(o, e.target.value)}
+                className="w-full min-w-0 border border-gray-300 rounded bg-white px-1.5 py-1 text-sm focus:outline-none focus:border-purple-500 disabled:opacity-60"
+              >
+                <option value="">{isEn ? 'Unassigned' : '待安排'}</option>
+                {driverSlots.map(slot => (
+                  <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="block truncate" title={orderDriverMap.get(o.id) ?? '—'}>{orderDriverMap.get(o.id) ?? '—'}</span>
+            )}
+          </td>
           {/* Total — clickable for Quotations to open item editor */}
           <td className="px-1.5 py-2 text-right text-base text-gray-800 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             {canEditItems ? (
@@ -1050,7 +1106,7 @@ ${orderSections}
         </tr>
         {isEditingItems && (
           <tr key={`${o.id}-items`}>
-            <td colSpan={10} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
+          <td colSpan={11} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
               <div className="border border-purple-200 rounded bg-white overflow-hidden shadow-sm">
                 <table className="w-full text-xs">
                   <thead>
@@ -1160,6 +1216,7 @@ ${orderSections}
         {dateLabelCell('quotationDateFrom', 'quotationDateTo')}
         <td className="px-2 py-1"><input value={colFilters.customer}  onChange={e => setCf('customer', e.target.value)}  className={inputCls} /></td>
         {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
+        <td className="px-2 py-1"><input value={colFilters.salesTeam} onChange={e => setCf('salesTeam', e.target.value)} placeholder={isEn ? 'Driver' : '司机'} className={inputCls} /></td>
         <td className="px-2 py-1" />
         <td className="px-2 py-1">
           <select value={colFilters.status} onChange={e => setCf('status', e.target.value)} className={selectCls}>
@@ -1278,7 +1335,12 @@ ${orderSections}
         sortKey={sortField ?? 'code'} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
         sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
         groupLabel={groupBy === 'none' ? undefined : order => Array.from(grouped?.entries() ?? []).find(([, groupOrders]) => groupOrders.some(item => item.id === order.id))?.[0] ?? ''}
-        renderExtra={order => <p className="text-base text-gray-500 break-words">{getField(order, 'salesman')}{order.source === 'PORTAL' ? (isEn ? ' · Customer portal' : ' · 客户自助') : ''}</p>}
+        renderExtra={order => (
+          <div className="text-base text-gray-500 break-words">
+            <p>{getField(order, 'salesman')}{order.source === 'PORTAL' ? (isEn ? ' · Customer portal' : ' · 客户自助') : ''}</p>
+            <p>{isEn ? 'Driver' : '司机'}: {orderDriverMap.get(order.id) ?? '—'}</p>
+          </div>
+        )}
       />
       <div className="hidden md:block overflow-x-hidden relative">
         {loading && filtered.length > 0 && (
@@ -1289,15 +1351,16 @@ ${orderSections}
         <table className="w-full table-fixed bg-white text-base">
           <colgroup>
             <col className="w-[3%]" />
-            <col className="w-[14%] xl:w-[11%]" />
-            <col className="w-[14%] xl:w-[11%]" />
-            <col className="w-[20%] xl:w-[18%]" />
-            <col className="w-[16%] xl:w-[11%]" />
-            <col className="w-[10%]" />
-            <col className="w-[13%] xl:w-[10%]" />
-            <col className="hidden w-0 xl:table-column xl:w-[7%]" />
-            <col className="hidden w-0 xl:table-column xl:w-[10%]" />
-            <col className="w-[10%] xl:w-[9%]" />
+            <col className="w-[12%] xl:w-[10%]" />
+            <col className="w-[12%] xl:w-[10%]" />
+            <col className="w-[18%] xl:w-[16%]" />
+            <col className="w-[14%] xl:w-[10%]" />
+            <col className="w-[11%] xl:w-[9%]" />
+            <col className="w-[10%] xl:w-[8%]" />
+            <col className="w-[11%] xl:w-[9%]" />
+            <col className="hidden w-0 xl:table-column xl:w-[6%]" />
+            <col className="hidden w-0 xl:table-column xl:w-[8%]" />
+            <col className="w-[9%] xl:w-[8%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-gray-200 text-left text-base font-bold text-gray-700 align-bottom">
@@ -1310,6 +1373,7 @@ ${orderSections}
                   { field: 'quotationDate', label: 'Quotation\nDate',   right: false },
                   { field: 'customer',      label: 'Customer',          right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
+                  { field: null,            label: 'Driver',            right: false },
                   { field: 'total',         label: 'Untaxed\nTotal',    right: true  },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: null,            label: 'Source',            right: false },
@@ -1321,7 +1385,7 @@ ${orderSections}
                 return (
                   <th
                     key={i}
-                    className={`${field === null || field === 'internalNote' ? 'hidden xl:table-cell ' : ''}px-1.5 py-2 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
+                    className={`${label === 'Source' || field === 'internalNote' ? 'hidden xl:table-cell ' : ''}px-1.5 py-2 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
                     onClick={field ? () => {
                       if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
                       else { setSortField(field); setSortDir('asc') }
@@ -1341,16 +1405,16 @@ ${orderSections}
           </thead>
           <tbody>
             {loading && filtered.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-base">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-base">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-base">{isEn ? 'No data' : '暂无数据'}</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-base">{isEn ? 'No data' : '暂无数据'}</td></tr>
             )}
             {grouped ? (
               Array.from(grouped.entries()).map(([groupName, groupOrders]) => (
                 <Fragment key={groupName}>
                   <tr className="bg-gray-100 border-b border-gray-200">
-                    <td colSpan={10} className="px-4 py-1.5 text-base font-semibold text-gray-600">
+                    <td colSpan={11} className="px-4 py-1.5 text-base font-semibold text-gray-600">
                       {groupName} <span className="ml-2 text-gray-400">({groupOrders.length})</span>
                     </td>
                   </tr>

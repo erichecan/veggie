@@ -289,6 +289,22 @@ function BatchCard({
     }
   }
 
+  async function confirmDeparture() {
+    if (!window.confirm(isEn
+      ? `Confirm departure for ${label}? Delivery date, customer, and driver can no longer be changed afterward, and this cannot be undone.`
+      : `确认 ${label} 出发吗？出发后交货日期、客户和司机不可再改，且不可撤销。`)) return
+    setBusy(true)
+    try {
+      await apiPut(`/api/waves/${waveId}/dispatch`, { date })
+      toast.success(isEn ? `${label} departure confirmed` : `${label} 已确认出发`)
+      onLockChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to confirm departure' : '确认出发失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // 单托盘打印：复用 dispatch-print-data 已有的 batchLabel 选择器("批次号 时段 司机名"，
   // 见 lib/print/dispatch-loader.ts)，只取这一个托盘的订单，不是整个波次。锁定仍锁整个
   // 波次(没有托盘级锁)，与"打印任何单据都自动锁批次防改派"的既有设计一致。
@@ -396,6 +412,16 @@ function BatchCard({
         </button>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {!dispatchedAt && !completedAt && orders.length > 0 && (
+            <button
+              onClick={confirmDeparture}
+              disabled={busy}
+              className="px-2.5 py-1 text-xs rounded border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-40"
+              title={isEn ? 'Confirm this driver trip has departed' : '确认该司机车次已出发'}
+            >
+              {isEn ? '🚚 Confirm departure' : '🚚 确认出发'}
+            </button>
+          )}
           <span className="text-sm font-semibold text-gray-900 mr-2">€{fmtMoney(totalAmount)}</span>
           <span className="text-xs text-gray-400 mr-3">{isEn ? 'Excl. tax' : '未税'} €{fmtMoney(untaxTotal)}</span>
           {!dispatchedAt && !completedAt && <>

@@ -7,11 +7,11 @@ import { WavePickLockedError } from '@/lib/wave-pick-lock'
 import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 
 /**
- * 销售单列表分配/清空交货批次。
+ * 销售单/报价单列表分配/清空交货批次。
  * 单一存储 = PickingWave.orderIds(见 lib/wave-assign.ts)。本接口与销售单 PUT、调度台拖拽
- * 共用同一写入逻辑,保证双向一致。
- * - driverSlotId 非空：归到 (订单 deliveryDate ?? 今天, driverSlot) 的 wave。
- * - driverSlotId 为空：从订单当前所属 wave 移除。
+ * 共用同一写入逻辑,保证双向一致。PENDING 报价单只保存 driverSlotId 意向，不进入波次；
+ * 报价单批量确认时再由订单 PUT 把司机意向同步到真实波次。已确认订单按
+ * driverSlotId 加入 (订单 deliveryDate ?? 今天, driverSlot) 对应的 wave；清空时从当前 wave 移除。
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -19,11 +19,26 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     try {
       const { driverSlotId } = (await req.json()) as { driverSlotId: string | null }
 
-      const order = await prisma.order.findUnique({ where: { id }, select: { id: true, code: true, status: true } })
+      const order = await prisma.order.findUnique({ where: { id }, select: { id: true, code: true, status: true, driverSlotId: true } })
       if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      // assignOrderToWave 对报价单/已取消单返回 null(不进波次),这里先拦一道给出准确提示,
-      // 否则会落到下面 !result 的分支报"司机批次不存在",与真实原因南辕北辙。
-      if (driverSlotId && (order.status === 'PENDING' || order.status === 'CANCELLED')) {
+      // 报价阶段只存计划司机，不进 PickingWave，也不改报价状态/库存。
+      if (order.status === 'PENDING') {
+        const slot = driverSlotId
+          ? await prisma.driverSlot.findFirst({ where: { id: driverSlotId, archived: false } })
+          : null
+        if (driverSlotId && !slot) return NextResponse.json({ error: '司机批次不存在或已归档' }, { status: 400 })
+        await prisma.order.update({ where: { id }, data: { driverSlotId: slot?.id ?? null } })
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'order', resourceId: id,
+          detail: slot
+            ? `为报价单 ${order.code || id} 预安排司机 ${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`
+            : `清除报价单 ${order.code || id} 的预安排司机`,
+        })
+        return NextResponse.json({ ok: true, driverSlotId: slot?.id ?? null, driverName: slot?.driverName ?? null })
+      }
+      // 已取消订单不能重新安排司机。
+      if (driverSlotId && order.status === 'CANCELLED') {
         return NextResponse.json({ error: '报价单/已取消订单不能分配配送批次，请先确认订单' }, { status: 400 })
       }
 
