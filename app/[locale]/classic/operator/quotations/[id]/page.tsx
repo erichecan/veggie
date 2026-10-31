@@ -1123,7 +1123,7 @@ export default function QuotationDetailPage() {
                 search: isEn ? 'Search product…' : '搜索商品…',
               }}
               onReady={handleEditorReady}
-              emptyColSpan={18}
+              emptyColSpan={isQuotation ? 16 : 18}
               rowStyle={(l) => {
                 if (!editing || !l.productId) return undefined
                 const fc = forecastMap.get(l.productId)
@@ -1138,7 +1138,7 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 w-6"></th>
                   <th className="px-2 py-3 text-left">NO</th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
-                  <th className="px-2 py-3 text-left">Product</th>
+                  <th className="w-[200px] px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
@@ -1151,8 +1151,8 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-right">Total</th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
-                  <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
-                  <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
+                  {!isQuotation && <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>}
+                  {!isQuotation && <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>}
                 </tr>
               )}
               renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
@@ -1182,7 +1182,7 @@ export default function QuotationDetailPage() {
                       {!isOutOfStock && isLowStock && <span className="ml-1 text-[10px] text-amber-600" title={isEn ? 'Low stock' : '低库存'}>⚠️</span>}
                     </td>
                     <td className="hidden 2xl:table-cell px-2 py-2 text-gray-500 text-base truncate">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
-                    <td className="px-2 py-2" style={{ color: PURPLE }}>
+                    <td className="w-[200px] px-2 py-2" style={{ color: PURPLE }}>
                       {editing
                         ? productCell({
                             lineId: l.id,
@@ -1319,8 +1319,8 @@ export default function QuotationDetailPage() {
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
                     <td className="hidden 2xl:table-cell px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
                     <td className="hidden 2xl:table-cell px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
-                    <td className="hidden 2xl:table-cell px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
-                    <td className="hidden 2xl:table-cell px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
+                    {!isQuotation && <td className="hidden 2xl:table-cell px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>}
+                    {!isQuotation && <td className="hidden 2xl:table-cell px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>}
                   </>
                 )
               }}
