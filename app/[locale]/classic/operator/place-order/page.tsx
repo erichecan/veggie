@@ -1742,9 +1742,9 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-1.5 py-2 text-left">Product</th>
                     <th className="px-1.5 py-2 text-left">Description</th>
                     <th className="px-1.5 py-2 text-right">Ordered Qty</th>
+                    <th className="px-1.5 py-2 text-left">UoM</th>
                     <th className="px-1.5 py-2 text-left">Note</th>
                     <th className="px-1.5 py-2 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
-                    <th className="px-1.5 py-2 text-left">UoM</th>
                     <th className="px-1.5 py-2 text-right">Unit Price</th>
                     <th className="hidden xl:table-cell px-1.5 py-2 text-right">Cost</th>
                     <th className="hidden xl:table-cell px-1.5 py-2 text-left">Price</th>
@@ -1822,6 +1822,35 @@ export default function ClassicPlaceOrderPage() {
                         />
                       </td>
 
+                      {/* UoM — placed directly after ordered quantity for faster entry */}
+                      <td className="px-1.5 py-1 text-gray-500 truncate">
+                        {line.productId && (saleUomOptions[line.productId] ?? []).some(o => o.active) ? (
+                          (() => {
+                            const p = products.find(pp => pp.id === line.productId)
+                            const anchorUomId = p?.uomId
+                            const opts = saleUomOptions[line.productId] ?? []
+                            // 基础单位没有独立行时(从没配过 sale-uoms)视为默认可下单；
+                            // 有行则以那行的 active 为准 —— 关掉了就不能再出现在下拉里(20260901)
+                            const anchorActive = opts.find(o => o.uomId === anchorUomId)?.active ?? true
+                            return (
+                              <select
+                                value={line.uomId ?? anchorUomId ?? ''}
+                                onChange={e => switchLineUnit(line.id, e.target.value)}
+                                className="w-full text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                              >
+                                {anchorUomId && anchorActive && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
+                                {/* ⛔ 排除锚点：saleUomOptions 本来就含默认单位，避免默认单位在下拉中重复 */}
+                                {opts
+                                  .filter(o => o.uomId !== anchorUomId && o.active)
+                                  .map(o => (
+                                    <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
+                                  ))}
+                              </select>
+                            )
+                          })()
+                        ) : (line.uom || '—')}
+                      </td>
+
                       {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
                       <td className="px-1.5 py-1">
                         <input
@@ -1843,37 +1872,6 @@ export default function ClassicPlaceOrderPage() {
                           onChange={e => patchLine(line.id, applyGiftToggle(line, e.target.checked, () => repriceGiftLine(line)))}
                           title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
                         />
-                      </td>
-
-                      {/* UoM — 有额外可售单位(20260714 试点)时显示切换下拉，否则只读文本 */}
-                      <td className="px-1.5 py-1 text-gray-500 truncate">
-                        {line.productId && (saleUomOptions[line.productId] ?? []).some(o => o.active) ? (
-                          (() => {
-                            const p = products.find(pp => pp.id === line.productId)
-                            const anchorUomId = p?.uomId
-                            const opts = saleUomOptions[line.productId] ?? []
-                            // 基础单位没有独立行时(从没配过 sale-uoms)视为默认可下单；
-                            // 有行则以那行的 active 为准 —— 关掉了就不能再出现在下拉里(20260901)
-                            const anchorActive = opts.find(o => o.uomId === anchorUomId)?.active ?? true
-                            return (
-                              <select
-                                value={line.uomId ?? anchorUomId ?? ''}
-                                onChange={e => switchLineUnit(line.id, e.target.value)}
-                                className="w-full text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
-                              >
-                                {anchorUomId && anchorActive && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
-                                {/* ⛔ 排除锚点：saleUomOptions 本来就含默认单位，
-                                    不排的话它会在下拉里出现两次（一次英文 name、一次中文 nameZh，
-                                    同一个 uomId）——看起来像两个不同的单位 */}
-                                {opts
-                                  .filter(o => o.uomId !== anchorUomId && o.active)
-                                  .map(o => (
-                                    <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
-                                  ))}
-                              </select>
-                            )
-                          })()
-                        ) : (line.uom || '—')}
                       </td>
 
                       {/* Unit Price */}
