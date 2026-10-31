@@ -9,7 +9,7 @@ const WAVE_TRACKED_FIELDS = ['status', 'orderIds', 'zones', 'driverName', 'waveT
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const wave = await prisma.pickingWave.findUnique({ where: { id } })
+    const wave = await prisma.pickingWave.findUnique({ where: { id }, include: { pallets: { select: { seq: true } } } })
     if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
     return NextResponse.json(serializeApi(wave))
   } catch (error) {

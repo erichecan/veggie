@@ -6,6 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { assertWaveNotDispatched, WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { removeOrderFromPalletsInWave } from '@/lib/wave-assign'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -18,6 +19,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const wave = await prisma.pickingWave.findUnique({ where: { id } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
+      const palletsBeforeRemoval = await prisma.pallet.findMany({ where: { waveId: id }, select: { seq: true, items: true } })
+      const affectedBatchNums = palletsBeforeRemoval
+        .filter(p => ((p.items as Array<{ orderId: string }>) ?? []).some(item => orderIds.includes(item.orderId)))
+        .map(p => p.seq)
       await assertWaveNotPickLocked(id)
       await assertWaveNotDispatched(id)
 
@@ -58,7 +63,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `从波次 ${wave.name} 移除 ${orderIds.length} 个订单`,
+        detail: `从配送分配 ${deliveryAssignmentLabel({
+          driverName: wave.driverName,
+          timeOfDay: wave.timeOfDay,
+          batchNums: affectedBatchNums,
+        })} 移除 ${orderIds.length} 个订单`,
       })
 
       return NextResponse.json(serializeApi(updated))

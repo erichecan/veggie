@@ -69,10 +69,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
       return NextResponse.json({
         waveId: wave.id,
-        waveName: wave.name,
+        waveName: [wave.driverName ?? slot?.driverName ?? '', wave.timeOfDay?.toUpperCase() ?? slot?.timeOfDay?.toUpperCase() ?? ''].filter(Boolean).join(' '),
         driverName: wave.driverName ?? slot?.driverName ?? '',
         timeOfDay: slot?.timeOfDay ?? null,
-        batchNum: slot?.batchNum ?? wave.waveNumber ?? null,
+        batchNum: pallets.length === 1 ? pallets[0].seq : slot?.batchNum ?? null,
         waveType: wave.waveType,
         waveDate: wave.waveDate ? wave.waveDate.toISOString().slice(0, 10) : null,
         palletCount: pallets.length,

@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 /**
  * 分配完成标记：纯进度标记，可反悔。
@@ -31,11 +32,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         where: { id },
         data: { assignmentDoneAt: done ? new Date() : null },
       })
+      const pallets = await prisma.pallet.findMany({ where: { waveId: id }, select: { seq: true } })
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `${done ? '标记分配完成' : '撤销分配完成'}：批次 ${wave.name ?? id}`,
+        detail: `${done ? '标记配送分配完成' : '撤销配送分配完成'}：${deliveryAssignmentLabel({
+          driverName: wave.driverName,
+          timeOfDay: wave.timeOfDay,
+          batchNums: pallets.map(p => p.seq),
+        })}`,
       })
 
       return NextResponse.json(serializeApi(updated))

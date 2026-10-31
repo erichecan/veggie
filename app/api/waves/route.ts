@@ -3,7 +3,6 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { nextWaveCode } from '@/lib/order-code'
 
 export async function GET(req: Request) {
   try {
@@ -14,7 +13,7 @@ export async function GET(req: Request) {
       const waveDate = new Date(dateStr + 'T00:00:00Z')
       const waves = await prisma.pickingWave.findMany({
         where: { waveDate },
-        orderBy: { waveNumber: 'asc' },
+        orderBy: [{ driverName: 'asc' }, { timeOfDay: 'asc' }],
         // 调度台需要按托盘(batchNum)子分组展示波次内部的订单，见 lib/wave-assign.ts
         include: { pallets: { orderBy: { seq: 'asc' } } },
       })
@@ -110,14 +109,18 @@ export async function POST(req: Request) {
         }
       }
 
-      const waveCode = await nextWaveCode(prisma, new Date())
+      const assignmentName = [
+        typeof data.driverName === 'string' ? data.driverName : '',
+        typeof data.timeOfDay === 'string' ? data.timeOfDay.toUpperCase() : '',
+      ].filter(Boolean).join(' ')
       // 原子：建波次 + 回写订单状态。波次带 orderIds 时，SSOT=wave.orderIds，
       // 订单 status 是其派生镜像，进入波次即由 CONFIRMED 升级为 WAVE_ASSIGNED。
       const wave = await prisma.$transaction(async (tx) => {
         const w = await tx.pickingWave.create({
           data: {
             ...data,
-            name: waveCode,
+            name: typeof data.name === 'string' ? data.name : (assignmentName || '配送任务'),
+            waveNumber: null,
             status: data.status?.toUpperCase() ?? 'PENDING',
             orderIds: data.orderIds ?? [],
             zones,

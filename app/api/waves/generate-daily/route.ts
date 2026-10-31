@@ -31,12 +31,9 @@ export async function POST(req: Request) {
 
       const existing = await prisma.pickingWave.findMany({
         where: { waveDate },
-        select: { driverName: true, timeOfDay: true, waveNumber: true },
+        select: { driverName: true, timeOfDay: true },
       })
       const existingKeys = new Set(existing.map(w => `${w.driverName}::${w.timeOfDay}`))
-      let nextNumber = existing.length > 0
-        ? Math.max(...existing.map(w => w.waveNumber ?? 0)) + 1
-        : 1
 
       const created = []
       for (const [key, groupSlots] of groups) {
@@ -46,9 +43,9 @@ export async function POST(req: Request) {
         const dateLabel = waveDate.toISOString().slice(0, 10)
         const wave = await prisma.pickingWave.create({
           data: {
-            name: `${dateLabel} #${nextNumber} ${repSlot.driverName}`,
+            name: `${dateLabel} ${repSlot.driverName} ${repSlot.timeOfDay.toUpperCase()}`,
             waveDate,
-            waveNumber: nextNumber,
+            waveNumber: null,
             waveType,
             driverSlotId: repSlot.id,
             driverName: repSlot.driverName,
@@ -59,12 +56,11 @@ export async function POST(req: Request) {
           },
         })
         created.push(wave)
-        nextNumber++
       }
 
       const all = await prisma.pickingWave.findMany({
         where: { waveDate },
-        orderBy: { waveNumber: 'asc' },
+        orderBy: [{ driverName: 'asc' }, { timeOfDay: 'asc' }],
         include: { pallets: { orderBy: { seq: 'asc' } } },
       })
 

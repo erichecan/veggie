@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 /**
  * POST /api/waves/[id]/pick-lock
@@ -25,7 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   return withAuth(req, async (user) => {
     try {
-      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true, waveDate: true, dispatchedAt: true, completedAt: true } })
+      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, driverName: true, timeOfDay: true, waveDate: true, dispatchedAt: true, completedAt: true, pallets: { select: { seq: true } } } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
       if (wave.dispatchedAt || wave.completedAt) return NextResponse.json({ error: '波次已出发，拣货锁不能重新打开' }, { status: 409 })
 
@@ -39,9 +40,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         : body.printType === 'sales' ? '销售单'
         : '拣货单'
       const variantLabel = body.variant === 'storable' ? '整箱整袋' : body.variant === 'consumable' ? '零散货' : ''
+      const assignmentLabel = deliveryAssignmentLabel({
+        driverName: wave.driverName,
+        timeOfDay: wave.timeOfDay,
+        batchNums: wave.pallets.map(p => p.seq),
+      })
       const detail = body.reason === 'manual'
-        ? `锁定批次 ${wave.name ?? id}`
-        : `打印${typeLabel}${variantLabel ? `（${variantLabel}）` : ''}，锁定批次 ${wave.name ?? id}`
+        ? `锁定配送分配 ${assignmentLabel}`
+        : `打印${typeLabel}${variantLabel ? `（${variantLabel}）` : ''}，锁定配送分配 ${assignmentLabel}`
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
@@ -79,7 +85,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true, pickLockedAt: true } })
+      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, driverName: true, timeOfDay: true, pickLockedAt: true, pallets: { select: { seq: true } } } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
       if (!wave.pickLockedAt) return NextResponse.json({ error: '该批次未锁定' }, { status: 400 })
 
@@ -91,7 +97,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `解锁批次 ${wave.name ?? id}（仅解锁，订单归属不变）`,
+        detail: `解锁配送分配 ${deliveryAssignmentLabel({ driverName: wave.driverName, timeOfDay: wave.timeOfDay, batchNums: wave.pallets.map(p => p.seq) })}（仅解锁，订单归属不变）`,
       })
 
       return NextResponse.json(serializeApi(updated))

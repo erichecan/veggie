@@ -34,7 +34,7 @@ export default function ClassicWaveDetailPage() {
   const router = useRouter()
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
-  const [wave, setWave] = useState<PickingWave | null>(null)
+  const [wave, setWave] = useState<(PickingWave & { pallets?: { seq: number }[] }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [shortages, setShortages] = useState<{ productId: string; productName: string; demandQty: number; stockQty: number; shortageQty: number; shortageRate: number }[]>([])
   const [shortageSummary, setShortageSummary] = useState<{ totalProducts: number; shortageProducts: number; shortageRate: number } | null>(null)
@@ -88,12 +88,13 @@ export default function ClassicWaveDetailPage() {
     )
   }
 
-  const waveLabel = wave.name ?? `Wave ${wave.waveNumber ?? '?'}`
+  const waveLabel = `${wave.driverName ?? (isEn ? 'Unassigned' : '未指定司机')} ${wave.timeOfDay?.toUpperCase() ?? ''}`.trim()
+  const batchNums = [...new Set((wave.pallets ?? []).map(p => p.seq))].sort((a, b) => a - b)
   const totalItems = wave.zones.reduce((s, z) => s + z.items.length, 0)
 
   const driverLabel = wave.driverName ?? (isEn ? 'Unassigned' : '未指定')
   const isBulk = wave.waveType === 'bulk'
-  const sc = slotColor(wave.waveNumber ?? 1)
+  const sc = slotColor(batchNums[0] ?? 1)
 
   return (
     <>
@@ -120,7 +121,7 @@ export default function ClassicWaveDetailPage() {
                 className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg flex-shrink-0"
                 style={{ background: sc.badge }}
               >
-                {wave.waveNumber ?? '?'}
+                {batchNums.length > 0 ? batchNums.map(n => `#${n}`).join('/') : '—'}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">

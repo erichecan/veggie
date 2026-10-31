@@ -111,6 +111,13 @@ interface ActionLogRow {
   createdAt: string
 }
 
+function clarifyLegacyWaveNumber(detail: string): string {
+  return detail.replace(
+    /(?:批次|波次)\s+(\d{4}-\d{2}-\d{2}\s+#\d+\s+[^，：]+)/g,
+    '旧波次编号 $1（不是配送批次号）',
+  )
+}
+
 // ─── PrintQueue ───────────────────────────────────────────────────────────────
 // 打印不再靠 window.open 开新标签页去导航 /classic/print/dispatch/[type]——两个原因都致命：
 // 1) "先开空白页、锁定接口返回后再跳转"这套写法，装了 uBlock Origin / 隐私类插件的浏览器会
@@ -1329,7 +1336,7 @@ function OperationLog({ logs, isEn }: { logs: ActionLogRow[]; isEn: boolean }) {
                     {formatDateTime(log.createdAt)}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>
+                  <td className="px-3 py-2 text-gray-700">{log.detail ? clarifyLegacyWaveNumber(log.detail) : log.action}</td>
                 </tr>
               ))}
             </tbody>

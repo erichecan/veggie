@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { prisma } from '@/lib/db'
 import { completeWaveDelivery, describeFailures } from '@/lib/wave-complete'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -15,12 +16,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (result.reason === 'not-dispatched') return NextResponse.json({ error: '该批次尚未出发' }, { status: 400 })
         return NextResponse.json({ error: '该批次已标记完成' }, { status: 400 })
       }
-      const updated = await prisma.pickingWave.findUnique({ where: { id } })
+      const updated = await prisma.pickingWave.findUnique({ where: { id }, include: { pallets: { select: { seq: true } } } })
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `标记完成：批次 ${result.waveName ?? id} 已完成配送，${result.completedIds.length} 张订单回填实送数量与状态（开票/提成等核销确认后生成）${result.tripIds.length ? `，行程 ${result.tripIds.length} 条置为完成` : ''}${describeFailures(result.failures)}`,
+        detail: `标记完成：${deliveryAssignmentLabel({
+          driverName: updated?.driverName,
+          timeOfDay: updated?.timeOfDay,
+          batchNums: updated?.pallets.map(p => p.seq) ?? [],
+        })} 已完成配送，${result.completedIds.length} 张订单回填实送数量与状态（开票/提成等核销确认后生成）${result.tripIds.length ? `，行程 ${result.tripIds.length} 条置为完成` : ''}${describeFailures(result.failures)}`,
       })
 
       return NextResponse.json(serializeApi(updated))

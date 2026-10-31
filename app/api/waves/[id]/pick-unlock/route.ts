@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { removeOrderFromPalletsInWave } from '@/lib/wave-assign'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 /**
  * POST /api/waves/[id]/pick-unlock
@@ -23,12 +24,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     try {
       const wave = await prisma.pickingWave.findUnique({
         where: { id },
-        select: { id: true, name: true, pickLockedAt: true, orderIds: true },
+        select: { id: true, driverName: true, timeOfDay: true, pickLockedAt: true, orderIds: true },
       })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
       if (!wave.pickLockedAt) return NextResponse.json({ error: '该批次未锁定' }, { status: 400 })
 
       const orderIds = wave.orderIds as string[]
+      const pallets = await prisma.pallet.findMany({ where: { waveId: id }, select: { seq: true } })
 
       const updated = await prisma.$transaction(async (tx) => {
         const w = await tx.pickingWave.update({
@@ -53,7 +55,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `解锁批次 ${wave.name ?? id}，取消司机安排，${orderIds.length} 个订单退回待分配`,
+        detail: `解锁配送分配 ${deliveryAssignmentLabel({
+          driverName: wave.driverName,
+          timeOfDay: wave.timeOfDay,
+          batchNums: pallets.map(p => p.seq),
+        })}，取消司机安排，${orderIds.length} 个订单退回待分配`,
       })
 
       return NextResponse.json(serializeApi(updated))

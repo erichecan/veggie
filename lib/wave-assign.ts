@@ -200,15 +200,16 @@ export async function assignOrderToWave(
   })
   if (wave) await assertWaveNotPickLocked(wave.id)
   if (!wave) {
-    const existing = await prisma.pickingWave.findMany({ where: { waveDate }, select: { waveNumber: true } })
-    const nextNumber = existing.length > 0 ? Math.max(...existing.map((w) => w.waveNumber ?? 0)) + 1 : 1
     const dateLabel = waveDate.toISOString().slice(0, 10)
+    const waveName = `${dateLabel} ${slot.driverName} ${slot.timeOfDay.toUpperCase()}`
     try {
       wave = await prisma.pickingWave.create({
         data: {
-          name: `${dateLabel} #${nextNumber} ${slot.driverName}`,
+          name: waveName,
           waveDate,
-          waveNumber: nextNumber,
+          // waveNumber used to be a date-wide counter. Delivery batch numbers are
+          // the pallet seq values, which match DriverSlot.batchNum.
+          waveNumber: null,
           waveType: slot.timeOfDay === 'pm' ? 'bulk' : 'loose',
           driverSlotId,
           driverName: slot.driverName,

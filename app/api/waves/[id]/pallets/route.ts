@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { fetchUomSequenceRows, resolveUomSequenceByName, uomSequenceKey } from '@/lib/print/uom-sequence'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 /** 托盘内一条货物明细：来自某订单某餐馆的某商品 */
 type PalletItem = {
@@ -161,7 +162,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'pallet', resourceId: id,
-        detail: `保存波次 ${wave.name ?? id} 的托盘编排（${incoming.length} 个托盘）`,
+        detail: `保存配送分配 ${deliveryAssignmentLabel({
+          driverName: wave.driverName,
+          timeOfDay: wave.timeOfDay,
+          batchNums: incoming.map(p => p.seq),
+        })} 的托盘编排`,
       })
 
       const saved = await prisma.pallet.findMany({

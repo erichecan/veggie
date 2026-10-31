@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { dispatchWave } from '@/lib/wave-dispatch'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 /**
  * 确认出发：将波次内订单的交货日期(deliveryDate)回填为排程日期，
@@ -25,11 +26,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: result.reason }, { status })
       }
 
-      const fresh = await prisma.pickingWave.findUnique({ where: { id } })
+      const fresh = await prisma.pickingWave.findUnique({ where: { id }, include: { pallets: { select: { seq: true } } } })
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `确认出发：批次 ${fresh?.name ?? id}，${result.updatedCount} 个订单交货日期=${result.deliveryDate.toISOString().slice(0, 10)}、状态转 IN_DELIVERY（库存在此步真正扣减，确认订单时只预留不扣减）`,
+        detail: `确认出发：${deliveryAssignmentLabel({
+          driverName: fresh?.driverName,
+          timeOfDay: fresh?.timeOfDay,
+          batchNums: fresh?.pallets.map(p => p.seq) ?? [],
+        })}，${result.updatedCount} 个订单交货日期=${result.deliveryDate.toISOString().slice(0, 10)}、状态转 IN_DELIVERY（库存在此步真正扣减，确认订单时只预留不扣减）`,
       })
 
       return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: result.updatedCount, tripId: result.tripId }))

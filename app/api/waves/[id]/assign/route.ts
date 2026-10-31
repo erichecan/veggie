@@ -6,6 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { assertWaveNotDispatched, WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { removeOrderFromPalletsInWave, putOrderIntoPallet } from '@/lib/wave-assign'
+import { deliveryAssignmentLabel } from '@/lib/delivery-assignment-label'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -122,10 +123,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return w
       })
 
+      const assignedPallets = await prisma.pallet.findMany({ where: { waveId: id }, select: { seq: true } })
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `分配 ${orderIds.length} 个订单到波次 ${wave.name}`,
+        detail: `分配 ${orderIds.length} 个订单到配送分配 ${deliveryAssignmentLabel({
+          driverName: wave.driverName,
+          timeOfDay: wave.timeOfDay,
+          batchNums: slot ? [slot.batchNum] : assignedPallets.map(p => p.seq),
+        })}`,
       })
 
       return NextResponse.json(serializeApi(updated))
