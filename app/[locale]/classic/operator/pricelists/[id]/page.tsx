@@ -916,10 +916,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
                     <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">End Date</SortableTh>
                     <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Product Category</SortableTh>
-                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">{isEn ? 'Public Price' : '公开价'}</SortableTh>
-                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">{isEn ? 'Sales Price' : '销售价'}</SortableTh>
-                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">{isEn ? 'Cost' : '成本'}</SortableTh>
-                    <th className="text-center px-3 py-2">{isEn ? 'Selectable' : '可售'}</th>
+                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Price</SortableTh>
+                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Sales Price</SortableTh>
+                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Cost</SortableTh>
+                    <th className="text-center px-3 py-2">Selectable</th>
                   </tr>
                 </thead>
                 <tbody>
