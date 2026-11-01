@@ -1293,6 +1293,11 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
         ) : estimatedPrice != null ? (
           <div className="font-medium text-gray-900 tabular-nums">€{estimatedPrice.toFixed(2)}</div>
         ) : item.computeType === 'fixed' ? `€${(item.fixedPrice ?? 0).toFixed(2)}` : ''}
+        {item.computeType === 'formula' && (
+          <div className="mt-0.5 whitespace-nowrap text-[10px] leading-tight text-gray-400">
+            {Number(item.priceDiscount ?? 0).toFixed(1)} % discount and {Number(item.priceSurcharge ?? 0).toFixed(1)} surcharge
+          </div>
+        )}
       </td>
       <td className="px-2 py-1.5 text-center text-gray-500">
         {cost != null ? cost.toFixed(2) : ''}

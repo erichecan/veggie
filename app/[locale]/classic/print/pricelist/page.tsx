@@ -3,7 +3,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { apiGet } from '@/lib/api'
+import { api } from '@/lib/api'
 import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
 import { formatPrintTimestamp } from '@/lib/print/trip-common'
@@ -332,7 +332,7 @@ function PricelistPrintInner() {
 
   useEffect(() => {
     const query = ids ? `?ids=${ids}` : ''
-    apiGet<EnrichedPricelist[]>(`/api/pricelists/print${query}`)
+    api<EnrichedPricelist[]>(`/api/pricelists/print${query}`, { method: 'GET', cache: 'no-store' })
       .then(pricelists => {
         const body = buildPricelistHtml(pricelists, lang)
         const title = pricelists.length === 1 ? t.singleTitle(pricelists[0].name) : t.reportTitle

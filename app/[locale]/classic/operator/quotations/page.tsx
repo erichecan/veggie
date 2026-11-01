@@ -22,6 +22,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
 import type { DriverSlotInfo } from '@/lib/driver-slot'
+import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 
 const PAGE_SIZE = 50
 
@@ -136,6 +137,8 @@ export default function ClassicQuotationsPage() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
   const [savingDriverOrderId, setSavingDriverOrderId] = useState<string | null>(null)
+  const [editDriverOrderId, setEditDriverOrderId] = useState<string | null>(null)
+  const [editDriverSlotId, setEditDriverSlotId] = useState('')
 
   const [activeTab, setActiveTab] = useState<TabValue>('all')
   const [orderTodayActive, setOrderTodayActive] = useState(false)
@@ -326,7 +329,7 @@ export default function ClassicQuotationsPage() {
     if (debouncedColText.salesman) params.set('colSalesman', debouncedColText.salesman)
     // 表头排序(internalNote 列除外,服务端没有对应可排序字段,该列排序仍由前端对当页数据做)
     if (sortField && sortField !== 'internalNote') {
-      const sortFieldMap: Record<string, string> = { customer: 'restaurantName', total: 'totalAmount' }
+      const sortFieldMap: Record<string, string> = { customer: 'restaurantName', total: 'totalAmount', driver: 'deliveryBatch' }
       params.set('sortField', sortFieldMap[sortField] ?? sortField)
       params.set('sortDir', sortDir)
     }
@@ -1018,18 +1021,28 @@ ${orderSections}
           {/* Driver — pending quotations store an assignment intention only; confirmation creates the wave. */}
           <td className="px-1.5 py-2 text-base text-gray-700" onClick={e => e.stopPropagation()}>
             {!isReadMode && o.status === 'pending' ? (
-              <select
-                aria-label={isEn ? 'Driver / Batch' : '司机/批次'}
-                value={o.driverSlotId ?? ''}
-                disabled={savingDriverOrderId === o.id}
-                onChange={e => void saveQuotationDriver(o, e.target.value)}
-                className="w-full min-w-0 border border-gray-300 rounded bg-white px-1.5 py-1 text-sm focus:outline-none focus:border-purple-500 disabled:opacity-60"
-              >
-                <option value="">{isEn ? 'Unassigned' : '待安排'}</option>
-                {driverSlots.map(slot => (
-                  <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>
-                ))}
-              </select>
+              editDriverOrderId === o.id ? (
+                <DriverSlotCombobox
+                  slots={driverSlots}
+                  value={editDriverSlotId}
+                  onSelect={slotId => {
+                    setEditDriverOrderId(null)
+                    void saveQuotationDriver(o, slotId)
+                  }}
+                  onClose={() => setEditDriverOrderId(null)}
+                />
+              ) : (
+                <span
+                  className="block truncate cursor-pointer hover:text-purple-700 hover:underline"
+                  title={isEn ? 'Type to search driver or batch' : '输入字母搜索司机或批次'}
+                  onClick={() => {
+                    setEditDriverSlotId(o.driverSlotId ?? '')
+                    setEditDriverOrderId(o.id)
+                  }}
+                >
+                  {orderDriverMap.get(o.id) ?? (isEn ? 'Unassigned' : '待安排')}
+                </span>
+              )
             ) : (
               <span className="block truncate" title={orderDriverMap.get(o.id) ?? '—'}>{orderDriverMap.get(o.id) ?? '—'}</span>
             )}
@@ -1333,7 +1346,7 @@ ${orderSections}
         filterControls={<>{([{ key: 'quotationDateFrom', en: 'Quotation from', zh: '报价开始' }, { key: 'quotationDateTo', en: 'Quotation to', zh: '报价截止' }, { key: 'deliveryDateFrom', en: 'Delivery from', zh: '交货开始' }, { key: 'deliveryDateTo', en: 'Delivery to', zh: '交货截止' }] as const).map(field => <label key={field.key} className="flex flex-col gap-1">{isEn ? field.en : field.zh}<input type="date" value={colFilters[field.key]} onChange={event => setCf(field.key, event.target.value)} className="min-h-11 border rounded px-2 w-full min-w-0" /></label>)}</>}
         onOpen={order => router.push(`${prefix}/classic/operator/orders/${order.id}`)}
         sortKey={sortField ?? 'code'} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
-        sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
+        sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'deliveryBatch', label: isEn ? 'Driver' : '司机' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
         groupLabel={groupBy === 'none' ? undefined : order => Array.from(grouped?.entries() ?? []).find(([, groupOrders]) => groupOrders.some(item => item.id === order.id))?.[0] ?? ''}
         renderExtra={order => (
           <div className="text-base text-gray-500 break-words">
@@ -1373,7 +1386,7 @@ ${orderSections}
                   { field: 'quotationDate', label: 'Quotation\nDate',   right: false },
                   { field: 'customer',      label: 'Customer',          right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
-                  { field: null,            label: 'Driver',            right: false },
+                  { field: 'driver',        label: 'Driver',            right: false },
                   { field: 'total',         label: 'Untaxed\nTotal',    right: true  },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: null,            label: 'Source',            right: false },

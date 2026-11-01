@@ -61,6 +61,12 @@ export async function GET(req: NextRequest) {
             id: true, name: true, internalRef: true, saleDescription: true,
             listPrice: true, price: true, standardPrice: true, commissionPrice: true, categoryId: true,
             category: { select: { name: true, nameZh: true } },
+            saleUoms: {
+              select: {
+                uomId: true, isDefault: true, factor: true, priceOverride: true,
+                priceMode: true, priceDiscountPct: true, priceSurcharge: true, spec: true,
+              },
+            },
           },
         })
       : []
@@ -70,14 +76,14 @@ export async function GET(req: NextRequest) {
     // Pack Spec 列：ProductSaleUom.spec（"按这个单位卖，客户实际拿到的规格说明"，
     // 同 lib/order-line-description.ts 的取值口径）。价格表规则的 item.uomId 限定了
     // 具体单位就用那个单位的 spec，没限定（对该商品所有单位生效）就落回默认单位。
-    const saleUoms = productIds.size > 0
-      ? await prisma.productSaleUom.findMany({
-          where: { productId: { in: [...productIds] } },
-          select: { productId: true, uomId: true, spec: true, isDefault: true },
-        })
-      : []
-    const saleUomByExact = new Map(saleUoms.map(su => [`${su.productId}:${su.uomId}`, su.spec]))
-    const saleUomByDefault = new Map(saleUoms.filter(su => su.isDefault).map(su => [su.productId, su.spec]))
+    const saleUomByExact = new Map<string, string | null>()
+    const saleUomByDefault = new Map<string, string | null>()
+    for (const product of products) {
+      for (const saleUom of product.saleUoms) {
+        saleUomByExact.set(`${product.id}:${saleUom.uomId}`, saleUom.spec)
+        if (saleUom.isDefault) saleUomByDefault.set(product.id, saleUom.spec)
+      }
+    }
 
     // Enrich items with product names
     const enriched = pricelists.map(pl => {
@@ -100,6 +106,16 @@ export async function GET(req: NextRequest) {
             standardPrice: toNumOpt(product.standardPrice),
             commissionPrice: toNumOpt(product.commissionPrice),
             categoryId: product.categoryId ?? undefined,
+            saleUoms: product.saleUoms.map(saleUom => ({
+              uomId: saleUom.uomId,
+              isDefault: saleUom.isDefault,
+              factor: toNum(saleUom.factor),
+              priceOverride: toNumOpt(saleUom.priceOverride) ?? null,
+              priceMode: saleUom.priceMode as NonNullable<ProductType['saleUoms']>[number]['priceMode'],
+              priceDiscountPct: toNum(saleUom.priceDiscountPct),
+              priceSurcharge: toNum(saleUom.priceSurcharge),
+              spec: saleUom.spec,
+            })),
           } as unknown as ProductType
           computedPrice = computeItemPrice(item, productForEngine, basePrice, allPricelistsForEngine, item.minQty || 1, today, 0, item.uomId)
         }
@@ -127,7 +143,9 @@ export async function GET(req: NextRequest) {
       return { ...serializeApi(pl), items: enrichedItems }
     })
 
-    return NextResponse.json(enriched)
+    return NextResponse.json(enriched, {
+      headers: { 'Cache-Control': 'private, no-store, max-age=0, must-revalidate' },
+    })
   } catch (error) {
     console.error('[GET /api/pricelists/print]', error)
     return NextResponse.json({ error: '获取价格表失败' }, { status: 500 })
