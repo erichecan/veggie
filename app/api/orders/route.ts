@@ -9,7 +9,7 @@ import { toNum } from '@/lib/decimal-helpers'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItemsList } from '@/lib/order-items'
 import { attachWaveDisplay } from '@/lib/wave-assign'
-import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { driverNameFromOrder, formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { ORDER_STATUSES, buildOrdersWhere } from '@/lib/orders-query'
 import { checkCustomerCredit } from '@/lib/credit-check'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
@@ -18,6 +18,22 @@ import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 // 不用改动就能继续显示业务员姓名。写入路径一律走 salesUserId,不读这个字段。
 function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: string } | null }>(orders: T[]): (T & { salesman: string | null })[] {
   return orders.map((o) => ({ ...o, salesman: o.salesUser?.name ?? null }))
+}
+
+/**
+ * Driver sort follows the Driver column's human meaning: driver name first, then
+ * time/batch as a stable secondary order. The displayed string starts with the
+ * batch number, so sorting that string directly groups by batch instead.
+ */
+function sortOrdersByDriver<T extends { id: string; driverSlot?: { id: string; batchNum: number; timeOfDay: string; driverName: string } | null; deliveryBatch?: string | null; deliveryBatchDisplay?: string | null }>(orders: T[], direction: 'asc' | 'desc'): void {
+  const multiplier = direction === 'asc' ? 1 : -1
+  orders.sort((a, b) => {
+    const nameCompare = driverNameFromOrder(a).localeCompare(driverNameFromOrder(b), undefined, { sensitivity: 'base', numeric: true })
+    if (nameCompare !== 0) return nameCompare * multiplier
+    const slotCompare = formatDriverSlotFromOrder(a).localeCompare(formatDriverSlotFromOrder(b), undefined, { sensitivity: 'base', numeric: true })
+    if (slotCompare !== 0) return slotCompare * multiplier
+    return a.id.localeCompare(b.id) * multiplier
+  })
 }
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { nextOrderCode } from '@/lib/order-code'
@@ -104,6 +120,10 @@ export async function GET(req: Request) {
       salesUser: { select: { id: true, name: true } },
     } : {
       lines: { orderBy: { sequence: 'asc' as const }, select: leanLineSelect },
+      // Quotations can have a driver selected before confirmation, so they are
+      // not in a PickingWave yet. Include the selected slot for display and sort
+      // fallback; wave/pallet assignment remains the source of truth when present.
+      driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
       salesUser: { select: { id: true, name: true } },
     }
 
@@ -115,11 +135,7 @@ export async function GET(req: Request) {
         // 司机列排序是内存里按派生显示值排的(同下方分页分支)，这里同口径
         const allMatching = await prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, take: IDS_MAX, include })
         const withWave = attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(allMatching))))
-        withWave.sort((a, b) => {
-          const av = formatDriverSlotFromOrder(a)
-          const bv = formatDriverSlotFromOrder(b)
-          return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-        })
+        sortOrdersByDriver(withWave, sortDir)
         return NextResponse.json({ ids: withWave.map(o => String((o as { id: unknown }).id)) })
       }
       const idRows = await prisma.order.findMany({ where, orderBy: [orderBy, { id: 'asc' }], select: { id: true }, take: IDS_MAX })
@@ -136,11 +152,7 @@ export async function GET(req: Request) {
         const sortLimit = hasDateFilterForSort ? 5000 : 500
         const allMatching = await prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, take: sortLimit, include })
         const withWave = attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(allMatching))))
-        withWave.sort((a, b) => {
-          const av = formatDriverSlotFromOrder(a)
-          const bv = formatDriverSlotFromOrder(b)
-          return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-        })
+        sortOrdersByDriver(withWave, sortDir)
         const total = withWave.length
         const start = (page - 1) * pageSize
         return NextResponse.json({
