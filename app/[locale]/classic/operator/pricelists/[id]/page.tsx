@@ -70,7 +70,7 @@ interface PriceReference {
 }
 
 /** Pricelist Items 表格可点击表头排序的列；点第三次回到默认的 sequence 顺序 */
-type ItemSortKey = 'productNo' | 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'price' | 'priceDiscount' | 'cost'
+type ItemSortKey = 'productNo' | 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'publicPrice' | 'price' | 'cost'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -602,13 +602,19 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     const scopedProduct = allProductsForLabels.find(p => p.id === scopedProductId(item))
     const baseCost = scopedProduct?.standardPrice
     const basePublicPrice = scopedProduct?.listPrice
-    // computeItemPrice 必须吃未换算的牌价（决策#6：formula/percentage 规则永远拿基础单位
-    // 牌价算折扣）；成本参考值再按规则限定的单位换算。
+    // 公共售价、价格表销售价、成本统一按规则指定的可售单位展示。
+    // 商品主档的 listPrice / standardPrice 是基础单位值；公开售价还要尊重
+    // ProductSaleUom 上独立配置的 FIXED/FORMULA/AUTO 定价。
+    const saleUomRows = scopedProduct?.saleUoms
+    const publicPrice = scopedProduct && basePublicPrice != null
+      ? (item.uomId && saleUomRows
+          ? priceOf(saleUomRows, item.uomId, basePublicPrice)
+          : basePublicPrice)
+      : undefined
     const estimatedPrice = scopedProduct
       ? computeItemPrice(item, scopedProduct, basePublicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
       : undefined
-    // 20261025 客户反馈：成本参考值需与编辑弹窗一致，按所选销售单位换算。
-    const saleUomRows = scopedProduct?.saleUoms
+    // 成本按基础成本 × 所选单位换算系数；它不受销售公式影响。
     const cost = item.uomId && saleUomRows && baseCost != null
       ? baseCost * factorOf(saleUomRows, item.uomId)
       : baseCost
@@ -616,15 +622,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       item,
       productNo: scopedProduct?.productNo,
       cost,
+      publicPrice,
       estimatedPrice,
       applyLabel: applyOnLabel(item, allProductsForLabels, categories, isEn),
       categoryLabel: productCategoryLabel(item, scopedProduct, categories, isEn),
       priceValue: estimatedPrice ?? item.fixedPrice ?? 0,
-      priceDiscountValue: item.computeType === 'formula'
-        ? item.priceDiscount ?? 0
-        : item.computeType === 'percentage'
-          ? item.percentDiscount ?? 0
-          : 0,
     }
   })
 
@@ -646,8 +648,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           case 'dateStart': return (a.item.dateStart ?? '').localeCompare(b.item.dateStart ?? '') * dir
           case 'dateEnd': return (a.item.dateEnd ?? '').localeCompare(b.item.dateEnd ?? '') * dir
           case 'category': return a.categoryLabel.localeCompare(b.categoryLabel) * dir
+          case 'publicPrice': return ((a.publicPrice ?? 0) - (b.publicPrice ?? 0)) * dir
           case 'price': return (a.priceValue - b.priceValue) * dir
-          case 'priceDiscount': return (a.priceDiscountValue - b.priceDiscountValue) * dir
           case 'cost': return ((a.cost ?? 0) - (b.cost ?? 0)) * dir
           default: return 0
         }
@@ -914,16 +916,16 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
                     <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">End Date</SortableTh>
                     <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Product Category</SortableTh>
-                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2 min-w-[160px]">Public Price</SortableTh>
-                    <SortableTh sortKey="priceDiscount" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Price Discount</SortableTh>
-                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Cost Price</SortableTh>
+                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">{isEn ? 'Public Price' : '公开价'}</SortableTh>
+                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">{isEn ? 'Sales Price' : '销售价'}</SortableTh>
+                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">{isEn ? 'Cost' : '成本'}</SortableTh>
                     <th className="text-center px-3 py-2">{isEn ? 'Selectable' : '可售'}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 12 : 11} className="px-4 py-3 text-gray-400 italic text-xs">{q ? (isEn ? 'No matching items' : '没有匹配的条目') : (isEn ? 'No items yet' : '暂无条目')}</td>
+                      <td colSpan={editMode ? 11 : 10} className="px-4 py-3 text-gray-400 italic text-xs">{q ? (isEn ? 'No matching items' : '没有匹配的条目') : (isEn ? 'No items yet' : '暂无条目')}</td>
                     </tr>
                   )}
                   {pagedItems.map(row => {
@@ -946,6 +948,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         categories={categories}
                         uoms={uoms}
                         cost={row.cost}
+                        publicPrice={row.publicPrice}
                         estimatedPrice={row.estimatedPrice}
                         productCategoryLabel={row.categoryLabel}
                         showDelete={editMode}
@@ -1161,7 +1164,7 @@ function SortableTh({ sortKey, itemSort, onSort, className, children }: {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, cost, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, onEditTiers, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
+function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, publicPrice, cost, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, onEditTiers, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
   item: OdooPricelistItem
   productNo: number | undefined
   inlineEdit: boolean
@@ -1169,6 +1172,7 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
+  publicPrice: number | undefined
   cost: number | undefined
   estimatedPrice: number | undefined
   productCategoryLabel: string
@@ -1203,20 +1207,6 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
   // 等于"没显示"。现在两列合一：能算出具体金额（scopedProduct 存在）就把金额放前面、
   // 公式文字降级成下面一行小字说明；算不出来（分类/全场规则，没有单一商品可套算）
   // 才继续显示公式文字兜底，因为这类规则本来就没有"唯一一个真实价格"可给。
-  const priceText = item.computeType === 'fixed'
-    ? `€${(item.fixedPrice ?? 0).toFixed(2)}`
-    : item.computeType === 'percentage'
-      ? `${(item.percentDiscount ?? 0).toFixed(1)} % discount`
-      : `${(item.priceDiscount ?? 0).toFixed(1)} % discount and ${(item.priceSurcharge ?? 0).toFixed(1)} surcharge`
-
-  // Price Discount：formula 模式下就是 item.priceDiscount 本身（不是"整条公式文字"）；
-  // percentage 模式下是 item.percentDiscount；fixed 模式没有折扣概念，留空。
-  const priceDiscountValue = item.computeType === 'formula'
-    ? item.priceDiscount ?? 0
-    : item.computeType === 'percentage'
-      ? item.percentDiscount ?? 0
-      : null
-
   return (
     <tr
       draggable={canDrag && handleActive}
@@ -1278,6 +1268,9 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
       <td className="px-3 py-1.5 text-gray-500">{item.dateStart ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{productCategoryLabel}</td>
+      <td className="px-3 py-1.5 text-right text-gray-700 tabular-nums">
+        {publicPrice != null ? `€${publicPrice.toFixed(2)}` : ''}
+      </td>
       <td className="px-3 py-1.5 text-gray-800">
         {inlineField ? (
           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -1295,15 +1288,9 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
               </span>
             )}
           </div>
-        ) : item.computeType !== 'fixed' && estimatedPrice != null ? (
-          <>
-            <div className="font-medium text-gray-900">€{estimatedPrice.toFixed(2)}</div>
-            <div className="text-[10px] text-gray-400">{priceText}</div>
-          </>
-        ) : priceText}
-      </td>
-      <td className="px-3 py-1.5 text-right text-gray-500">
-        {priceDiscountValue != null ? priceDiscountValue.toFixed(2) : ''}
+        ) : estimatedPrice != null ? (
+          <div className="font-medium text-gray-900 tabular-nums">€{estimatedPrice.toFixed(2)}</div>
+        ) : item.computeType === 'fixed' ? `€${(item.fixedPrice ?? 0).toFixed(2)}` : ''}
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
         {cost != null ? cost.toFixed(2) : ''}

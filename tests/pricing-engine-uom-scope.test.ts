@@ -144,6 +144,41 @@ test('20261025修复：percentage 命中的 uomId 对应的 factor != 1 时，�
   assert.equal(r.matchedUomId, 'uom-pack')
 })
 
+test('可售单位公式：价格表公式基于该单位自己的公开价继续计算销售价', () => {
+  const pWithUomPublicFormula: Product = {
+    ...uomScaledProduct,
+    saleUoms: [
+      { uomId: 'uom-case', isDefault: true, factor: 1, active: true, sequence: 1, spec: null, uom: { name: 'Case' } },
+      { uomId: 'uom-pack', isDefault: false, factor: 0.25, active: true, sequence: 2, spec: null,
+        priceMode: 'FORMULA', priceDiscountPct: -20, priceSurcharge: 2, uom: { name: 'Pack' } },
+    ],
+  } as unknown as Product
+  const p = pl('pl-uom-public-formula', [
+    item({
+      sequence: 1, applyOn: 'variant', productVariantId: pWithUomPublicFormula.id, uomId: 'uom-pack',
+      computeType: 'formula', formulaBase: 'list_price', priceDiscount: 10, priceSurcharge: 1,
+    }),
+  ])
+  const r = resolvePrice(pWithUomPublicFormula, p, [p], 1, undefined, 'uom-pack')
+  // 单包公开价：(整箱 €100 × 0.25 × 0.8) + €2 = €22；
+  // 价格表销售价：€22 × 0.9 + €1 = €20.80。
+  assert.equal(r.price, 20.8)
+  assert.equal(r.matchedUomId, 'uom-pack')
+})
+
+test('可售单位成本公式基准：standard_price 按所选单位系数换算后再应用价格表公式', () => {
+  const p = pl('pl-uom-cost-formula', [
+    item({
+      sequence: 1, applyOn: 'variant', productVariantId: 'p-uom-scaled', uomId: 'uom-pack',
+      computeType: 'formula', formulaBase: 'standard_price', priceSurcharge: 3,
+    }),
+  ])
+  const r = resolvePrice(uomScaledProduct, p, [p], 1, undefined, 'uom-pack')
+  // 整箱成本 €50 × 0.25 = 单包 €12.50；加价 €3 后销售价 €15.50。
+  assert.equal(r.price, 15.5)
+  assert.equal(r.matchedUomId, 'uom-pack')
+})
+
 test('20261025修复：formulaBase=pricelist 嵌套命中同一个 uomId 时已经是最终价，不能再乘一次 factor', () => {
   const base = pl('pl-10-base', [
     item({

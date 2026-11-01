@@ -67,7 +67,10 @@ export function validateSaleUomItems(items: SaleUomItemInput[]): string | null {
 
     if (it.priceMode === 'FORMULA') {
       const d = it.priceDiscountPct == null || it.priceDiscountPct === '' ? 0 : Number(it.priceDiscountPct)
-      if (!Number.isFinite(d) || d < 0 || d > 100) return '折扣百分比必须在 0–100 之间'
+      // 该字段历史名称带 Discount，但实际语义是“百分比调整”：正数加价、负数打折，
+      // 与 SaleUomsEditor 的提示及 priceOf() 公式一致。此前只允许 0–100，导致负数折扣
+      // 在保存时被拒绝，且最多只能加价 100%。
+      if (!Number.isFinite(d) || d < -100 || d > 1000) return '百分比调整必须在 −100–1000 之间'
       const s = it.priceSurcharge == null || it.priceSurcharge === '' ? 0 : Number(it.priceSurcharge)
       if (!Number.isFinite(s) || s < -1000000 || s > 1000000) return '加减金额必须在 −1,000,000–1,000,000 之间'
     }

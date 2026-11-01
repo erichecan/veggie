@@ -116,6 +116,45 @@ describe('计价：独立售价优先，否则按系数换算', () => {
   it('没配多规格时原样返回基础价', () => {
     assert.equal(priceOf([], 'u-case', 12), 12)
   })
+
+  it('可售单位公式：先按单位系数换算，再应用百分比调整和固定加减', () => {
+    const formulaUoms: SaleUomRow[] = [
+      { uomId: 'u-base', isDefault: true, factor: 1, priceOverride: null },
+      { uomId: 'u-split', isDefault: false, factor: 0.25, priceOverride: null,
+        priceMode: 'FORMULA', priceDiscountPct: -20, priceSurcharge: 2 },
+    ]
+    assert.equal(priceOf(formulaUoms, 'u-split', 100), 22)
+  })
+})
+
+describe('可售单位公开价公式校验', () => {
+  const base = { uomId: 'u-base', isDefault: true, factor: 1 }
+
+  it('负百分比折扣可保存，且最多折到 0', () => {
+    assert.equal(validateSaleUomItems([
+      base,
+      { uomId: 'u-split', isDefault: false, factor: 0.25,
+        priceMode: 'FORMULA', priceDiscountPct: -20 },
+    ]), null)
+    assert.match(validateSaleUomItems([
+      base,
+      { uomId: 'u-split', isDefault: false, factor: 0.25,
+        priceMode: 'FORMULA', priceDiscountPct: -101 },
+    ]) ?? '', /百分比调整/)
+  })
+
+  it('百分比加价上限为 1000%', () => {
+    assert.equal(validateSaleUomItems([
+      base,
+      { uomId: 'u-split', isDefault: false, factor: 0.25,
+        priceMode: 'FORMULA', priceDiscountPct: 1000 },
+    ]), null)
+    assert.match(validateSaleUomItems([
+      base,
+      { uomId: 'u-split', isDefault: false, factor: 0.25,
+        priceMode: 'FORMULA', priceDiscountPct: 1001 },
+    ]) ?? '', /百分比调整/)
+  })
 })
 
 describe('提成价换算（20260901）：照抄价格机制，可 null（不计提成）', () => {
