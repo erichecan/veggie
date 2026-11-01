@@ -295,12 +295,11 @@ export default function ClassicQuotationsPage() {
 
   const statusParam = useMemo(() => {
     if (!colFilters.status) return 'PENDING'
-    // Odoo state value → 服务端 OrderStatus 枚举
+    // 报价单列表只允许报价与已取消记录。确认后的销售单和已完成销售单
+    // 不属于报价列表，即使旧收藏里残留了对应筛选值也回退到报价。
     const map: Record<string, string> = {
       draft: 'PENDING',
       sent: '',       // 系统里没有这个状态，恒空
-      sale: 'CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY',
-      done: 'COMPLETED',
       cancel: 'CANCELLED',
     }
     return map[colFilters.status] ?? 'PENDING'
@@ -578,6 +577,10 @@ export default function ClassicQuotationsPage() {
   const filtered = useMemo(() => {
     let result = [...orders]
 
+    // The endpoint also serves the Sales Orders page. Keep its confirmed,
+    // assigned, in-delivery, and completed records out of the Quotation list.
+    result = result.filter(o => o.status === 'pending' || o.status === 'cancelled')
+
     // Quotations page defaults to pending; honor the Status column filter when set
     // (so choosing "Cancelled" actually surfaces cancelled quotations)
     if (!colFilters.status) {
@@ -657,11 +660,9 @@ export default function ClassicQuotationsPage() {
       const map: Record<string, OrderStatus[]> = {
         draft:  ['pending'],
         sent:   [],
-        sale:   ['confirmed', 'wave_assigned', 'in_delivery'],
-        done:   ['completed'],
         cancel: ['cancelled'],
       }
-      const allowed = map[cf.status] ?? []
+      const allowed = map[cf.status] ?? ['pending']
       result = result.filter(o => allowed.includes(o.status))
     }
     if (cf.internalNote) result = result.filter(o => getField(o, 'internalNote').toLowerCase().includes(cf.internalNote.toLowerCase()))
@@ -1236,8 +1237,6 @@ ${orderSections}
             <option value=""></option>
             <option value="draft">Quotation</option>
             <option value="sent">Quotation Sent</option>
-            <option value="sale">Sales Order</option>
-            <option value="done">Locked</option>
             <option value="cancel">Cancelled</option>
           </select>
         </td>
@@ -1324,7 +1323,10 @@ ${orderSections}
         favouriteState={{ colFilters, tab: activeTab, orderTodayActive, groupBy, facets, myActive, timeKey }}
         onFavouriteApply={state => {
           const s = state as unknown as SavedFavourite
-          if (s.colFilters) setColFilters(s.colFilters)
+          if (s.colFilters) {
+            const validStatuses = new Set(['', 'draft', 'sent', 'cancel'])
+            setColFilters({ ...EMPTY_CF, ...s.colFilters, status: validStatuses.has(s.colFilters.status) ? s.colFilters.status : '' })
+          }
           if (s.tab) setActiveTab(s.tab)
           setOrderTodayActive(s.orderTodayActive ?? false)
           if (s.groupBy) setGroupBy(s.groupBy)
