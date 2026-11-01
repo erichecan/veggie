@@ -915,7 +915,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <SortableTh sortKey="minQty" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Min. Quantity</SortableTh>
                     <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Start Date</SortableTh>
                     <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">End Date</SortableTh>
-                    <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Product Category</SortableTh>
+                    <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2 min-w-[220px]">Product Category</SortableTh>
                     <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Public Price</SortableTh>
                     <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Sales Price</SortableTh>
                     <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Cost</SortableTh>
@@ -1267,7 +1267,9 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
       <td className="px-2 py-1.5 text-center text-gray-600">{item.minQty}</td>
       <td className="px-2 py-1.5 text-center text-gray-500">{item.dateStart ?? ''}</td>
       <td className="px-2 py-1.5 text-center text-gray-500">{item.dateEnd ?? ''}</td>
-      <td className="px-2 py-1.5 text-center text-gray-500">{productCategoryLabel}</td>
+      <td className="min-w-[220px] px-2 py-1.5 text-center text-gray-500 whitespace-normal" title={productCategoryLabel}>
+        {productCategoryLabel}
+      </td>
       <td className="px-2 py-1.5 text-center text-gray-700 tabular-nums">
         {publicPrice != null ? `€${publicPrice.toFixed(2)}` : ''}
       </td>
