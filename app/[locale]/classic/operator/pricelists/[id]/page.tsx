@@ -909,17 +909,17 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 <thead style={{ background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
                   <tr>
                     {/* 上/下移+删除紧跟在 Applicable On 前面，方便在宽表中找到。 */}
-                    {editMode && <th className="w-16 px-2 py-2" />}
-                    <SortableTh sortKey="productNo" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2 w-16">{isEn ? 'Product No' : '商品编号'}</SortableTh>
-                    <SortableTh sortKey="applyOn" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-4 py-2 min-w-[220px]">Applicable On</SortableTh>
-                    <SortableTh sortKey="minQty" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Min. Quantity</SortableTh>
-                    <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
-                    <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">End Date</SortableTh>
-                    <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Product Category</SortableTh>
-                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Price</SortableTh>
-                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Sales Price</SortableTh>
-                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Cost</SortableTh>
-                    <th className="text-center px-3 py-2">Selectable</th>
+                    {editMode && <th className="w-16 px-2 py-2 text-center" />}
+                    <SortableTh sortKey="productNo" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2 w-16">{isEn ? 'Product No' : '商品编号'}</SortableTh>
+                    <SortableTh sortKey="applyOn" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2 min-w-[180px]">Applicable On</SortableTh>
+                    <SortableTh sortKey="minQty" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Min. Quantity</SortableTh>
+                    <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Start Date</SortableTh>
+                    <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">End Date</SortableTh>
+                    <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Product Category</SortableTh>
+                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Public Price</SortableTh>
+                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Sales Price</SortableTh>
+                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-center px-2 py-2">Cost</SortableTh>
+                    <th className="text-center px-2 py-2">Selectable</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1251,8 +1251,8 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
           </div>
         </td>
       )}
-      <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{productNo ?? ''}</td>
-      <td className="px-4 py-1.5 text-gray-800">
+      <td className="px-2 py-1.5 text-center text-gray-500 tabular-nums">{productNo ?? ''}</td>
+      <td className="px-2 py-1.5 text-center text-gray-800">
         {applyOnLabel(item, products, categories, isEn)}
         {scopedUom && (
           <span
@@ -1264,16 +1264,16 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
           </span>
         )}
       </td>
-      <td className="px-3 py-1.5 text-right text-gray-600">{item.minQty}</td>
-      <td className="px-3 py-1.5 text-gray-500">{item.dateStart ?? ''}</td>
-      <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
-      <td className="px-3 py-1.5 text-gray-500">{productCategoryLabel}</td>
-      <td className="px-3 py-1.5 text-right text-gray-700 tabular-nums">
+      <td className="px-2 py-1.5 text-center text-gray-600">{item.minQty}</td>
+      <td className="px-2 py-1.5 text-center text-gray-500">{item.dateStart ?? ''}</td>
+      <td className="px-2 py-1.5 text-center text-gray-500">{item.dateEnd ?? ''}</td>
+      <td className="px-2 py-1.5 text-center text-gray-500">{productCategoryLabel}</td>
+      <td className="px-2 py-1.5 text-center text-gray-700 tabular-nums">
         {publicPrice != null ? `€${publicPrice.toFixed(2)}` : ''}
       </td>
-      <td className="px-3 py-1.5 text-gray-800">
+      <td className="px-2 py-1.5 text-center text-gray-800">
         {inlineField ? (
-          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-center gap-1" onClick={e => e.stopPropagation()}>
             {inlineField === 'fixedPrice' && <span className="text-gray-400">€</span>}
             <InlineNumber
               value={Number(item[inlineField] ?? 0)}
@@ -1292,7 +1292,7 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
           <div className="font-medium text-gray-900 tabular-nums">€{estimatedPrice.toFixed(2)}</div>
         ) : item.computeType === 'fixed' ? `€${(item.fixedPrice ?? 0).toFixed(2)}` : ''}
       </td>
-      <td className="px-3 py-1.5 text-right text-gray-500">
+      <td className="px-2 py-1.5 text-center text-gray-500">
         {cost != null ? cost.toFixed(2) : ''}
       </td>
       <td className="px-3 py-1.5 text-center" onClick={e => e.stopPropagation()}>
