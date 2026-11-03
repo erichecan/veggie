@@ -667,7 +667,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     </div>
                   </div>
 
-
                   {!r.delivered && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
                     <div className="rounded-xl border border-gray-200 bg-white p-3">
                       <label className="mb-2 block text-sm font-semibold text-gray-700">{isEn ? 'Amount Collected (€)' : '实收金额 (€)'}</label>
