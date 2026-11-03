@@ -147,11 +147,22 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
    * "用户自己按方向键挑过"这一种显式选择。
    */
   const [arrowUsed, setArrowUsed] = useState(false)
-  const [dropRect, setDropRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [dropRect, setDropRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
 
   const dropRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const measureDrop = useCallback(() => {
+    const r = inputRef.current?.getBoundingClientRect()
+    if (!r) return
+    const gap = 4
+    const desired = 208
+    const below = Math.max(0, window.innerHeight - r.bottom - gap - 8)
+    const above = Math.max(0, r.top - gap - 8)
+    const placeAbove = below < Math.min(desired, 120) && above > below
+    const maxHeight = Math.max(72, Math.min(desired, placeAbove ? above : below || desired))
+    setDropRect({ top: placeAbove ? Math.max(8, r.top - gap - maxHeight) : r.bottom + gap, left: r.left, width: Math.max(288, r.width), maxHeight })
+  }, [])
   // 放 ref 里：close/activate 已经被一串 useCallback 依赖着，再多一个会变身份的
   // 依赖只会让那串回调和 mousedown 监听跟着反复重建
   const onCancelRef = useRef(onCancel)
@@ -228,11 +239,10 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   useEffect(() => {
     if (!activeLineId) return
     const t = setTimeout(() => {
-      const r = inputRef.current?.getBoundingClientRect()
-      if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
+      measureDrop()
     }, 20)
     return () => clearTimeout(t)
-  }, [activeLineId])
+  }, [activeLineId, measureDrop])
 
   // 下拉是 fixed 定位、量一次就不再自己动——下拉开着的时候如果页面或表格的
   // overflow-x-auto 容器滚动，输入框会跟着移动，下拉却停在原地，两者就错位了
@@ -242,8 +252,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   useEffect(() => {
     if (!activeLineId) return
     function reposition() {
-      const r = inputRef.current?.getBoundingClientRect()
-      if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
+      measureDrop()
     }
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
@@ -251,7 +260,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
       window.removeEventListener('scroll', reposition, true)
       window.removeEventListener('resize', reposition)
     }
-  }, [activeLineId])
+  }, [activeLineId, measureDrop])
 
   const pick = useCallback((lineId: string, p: P) => {
     pickedLineRef.current = lineId
@@ -335,8 +344,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
             className="w-full border border-[#875A7B] rounded px-2 py-0.5 text-xs focus:outline-none"
             onClick={e => e.stopPropagation()}
             onFocus={() => {
-              const r = inputRef.current?.getBoundingClientRect()
-              if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
+              measureDrop()
             }}
           />
         </div>
@@ -353,7 +361,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
         {productName || resolvedPlaceholderText}
       </div>
     )
-  }, [activeLineId, search, updateSearch, handleKey, resolvedSearchPlaceholder, resolvedPlaceholderText, activate])
+  }, [activeLineId, search, updateSearch, handleKey, resolvedSearchPlaceholder, resolvedPlaceholderText, activate, measureDrop])
 
   const dropdown: ReactNode =
     activeLineId && dropRect && typeof document !== 'undefined'
@@ -363,7 +371,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
             style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, minWidth: dropdownMinWidth, zIndex: 9999 }}
             onMouseDown={e => e.preventDefault()}  // 别让 mousedown 抢走输入框的焦点
           >
-            <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl max-h-52 overflow-y-auto">
+            <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl overflow-y-auto" style={{ maxHeight: dropRect.maxHeight }}>
               {items.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-400 text-center">{resolvedEmptyText}</div>
               ) : (

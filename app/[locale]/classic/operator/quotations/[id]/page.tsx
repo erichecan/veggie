@@ -1141,8 +1141,8 @@ export default function QuotationDetailPage() {
               }}
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-base font-bold text-gray-700 align-bottom">
-                  <th className="px-2 py-3 w-6"></th>
-                  <th className="px-2 py-3 text-left">NO</th>
+                  <th className="px-2 py-3 w-12 min-w-12"></th>
+                  <th className="px-2 py-3 w-12 min-w-12 text-left">NO</th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="w-[200px] px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
@@ -1173,15 +1173,15 @@ export default function QuotationDetailPage() {
                 const isLowStock = atp != null && atp > 0 && atp < LOW_STOCK_THRESHOLD
                 return (
                   <>
-                    <td className="px-2 py-2">
+                    <td className="w-12 min-w-12 px-2 py-2">
                       {editing ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {dragHandle}
                           {deleteButton}
                         </div>
                       ) : <span className="text-gray-300 select-none" title={isEn ? 'Enable editing to drag and reorder' : '编辑后可拖动调整顺序'}>☰</span>}
                     </td>
-                    <td className="px-2 py-2 text-gray-700">
+                    <td className="w-12 min-w-12 px-2 py-2 text-center text-gray-700">
                       {i + 1}
                       {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
                       {isOutOfStock && <span className="ml-1 text-[10px] text-red-600" title={isEn ? 'Out of stock' : '无可用库存'}>🚨</span>}

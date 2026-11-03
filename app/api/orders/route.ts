@@ -482,7 +482,7 @@ export async function POST(req: Request) {
       })
 
       // 邮件确认（不阻塞）
-      if (process.env.RESEND_API_KEY) {
+      if (!data.silentDraft && process.env.RESEND_API_KEY) {
         const cust = await prisma.customer.findFirst({
           where: { id: restaurantId },
           select: { email: true, name: true },

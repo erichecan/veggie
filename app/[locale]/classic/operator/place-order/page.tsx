@@ -16,7 +16,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { getSession, type UserSession } from '@/lib/session'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
@@ -384,6 +384,9 @@ export default function ClassicPlaceOrderPage() {
     { type: 'system', text: 'Creating a new record...', time: formatDateTime(new Date()) },
   ])
   const [submitting, setSubmitting]   = useState(false)
+  const [serverOrderId, setServerOrderId] = useState<string | null>(null)
+  const [draftSaving, setDraftSaving] = useState(false)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
 
   // ── Preview / Print / Email ───────────────────────────────────────────────
   const [showPreview,     setShowPreview]     = useState(false)
@@ -511,21 +514,22 @@ export default function ClassicPlaceOrderPage() {
   // 新建页防抖存草稿：切去别的 tab 改引用数据被上面的 hook 自动刷新回来时，不至于把
   // 正在填的新单内容冲掉；提交成功/主动放弃后清掉，不是永久草稿。
   type PlaceOrderDraft = {
-    lines: QuotationLine[]; customerId: string; deliveryDate: string; salesTeam: string
+    lines: QuotationLine[]; customerId: string; orderDate: string; deliveryDate: string; salesTeam: string
     pricelistId: string; paymentTerms: string; priceType: CustomerPriceType
-    internalNotes: string; externalNote: string
+    internalNotes: string; externalNote: string; serverOrderId?: string
   }
   const draft = useDraftAutosave<PlaceOrderDraft>({
     userId: session?.userId,
     entity: 'place-order',
     recordKey: draftId,
-    data: { lines, customerId, deliveryDate, salesTeam, pricelistId, paymentTerms, priceType, internalNotes, externalNote },
+    data: { lines, customerId, orderDate, deliveryDate, salesTeam, pricelistId, paymentTerms, priceType, internalNotes, externalNote, serverOrderId: serverOrderId ?? undefined },
   })
   function restoreDraft() {
     const d = draft.restore()
     if (!d) return
     setLines(d.lines)
     setCustomerId(d.customerId)
+    setOrderDate(d.orderDate || nowLocal())
     setDeliveryDate(d.deliveryDate)
     setSalesTeam(d.salesTeam)
     setPricelistId(d.pricelistId)
@@ -533,6 +537,7 @@ export default function ClassicPlaceOrderPage() {
     setPriceType(d.priceType)
     setInternalNotes(d.internalNotes)
     setExternalNote(d.externalNote)
+    setServerOrderId(d.serverOrderId ?? null)
   }
 
   // ── Keyboard navigation handlers ──────────────────────────────────────────
@@ -1111,6 +1116,42 @@ export default function ClassicPlaceOrderPage() {
     }
   }
 
+  async function persistServerDraft(showToast = false) {
+    if (!customer || !lines.some(l => l.productId) || draftSaving) return
+    setDraftSaving(true)
+    try {
+      const payload = buildOrderPayload('pending')
+      const editableLines = lines.filter(l => l.productId).map((l, sequence) => ({
+        productId: l.productId, productName: l.productName, spec: l.description || null,
+        note: l.note || null, unitPrice: l.isGift ? 0 : l.unitPrice,
+        orderedQty: Math.max(0.001, Number(l.orderedQty)), uomId: l.uomId || null,
+        uomName: l.uom || null, taxRate: l.taxRate, isGift: !!l.isGift, sequence,
+      }))
+      const updatePayload = {
+        ...payload, lines: editableLines, totalAmount: untaxed,
+        paymentTerm: paymentTerms || null,
+      }
+      const saved = serverOrderId
+        ? await apiPut<{ id: string }>(`/api/orders/${serverOrderId}`, updatePayload)
+        : await apiPost<{ id: string }>('/api/orders', { ...payload, silentDraft: true })
+      if (!serverOrderId && saved?.id) setServerOrderId(saved.id)
+      setDraftSavedAt(Date.now())
+      if (showToast) toast.success(isEn ? 'Draft saved' : '草稿已保存')
+    } catch (e) {
+      if (showToast) toast.error(e instanceof Error ? e.message : (isEn ? 'Draft save failed' : '草稿保存失败'))
+      else console.error('[Place Order draft autosave]', e)
+    } finally {
+      setDraftSaving(false)
+    }
+  }
+
+  // 五分钟没有新的表单输入时，将有内容的草稿保存到服务端；每次修改都会重新计时。
+  useEffect(() => {
+    if (!customer || !lines.some(l => l.productId) || submitting) return
+    const timer = window.setTimeout(() => { void persistServerDraft() }, 5 * 60 * 1000)
+    return () => window.clearTimeout(timer)
+  }, [customerId, lines, orderDate, deliveryDate, salesTeam, pricelistId, paymentTerms, priceType, internalNotes, externalNote, submitting])
+
   async function handleSave() {
     if (!customer) { toast.warning(isEn ? 'Please select a customer first' : '请先选择客户'); return }
     const valid = lines.filter(l => l.productId)
@@ -1118,7 +1159,9 @@ export default function ClassicPlaceOrderPage() {
     if (submitting) return
     setSubmitting(true)
     try {
-      const created = await apiPost<{ id: string }>('/api/orders', buildOrderPayload('pending'))
+      const created = serverOrderId
+        ? await apiPut<{ id: string }>(`/api/orders/${serverOrderId}`, { ...buildOrderPayload('pending'), lines: lines.filter(l => l.productId).map((l, sequence) => ({ productId: l.productId, productName: l.productName, spec: l.description || null, note: l.note || null, unitPrice: l.unitPrice, orderedQty: l.orderedQty, uomId: l.uomId, uomName: l.uom, taxRate: l.taxRate, isGift: !!l.isGift, sequence })), totalAmount: untaxed })
+        : await apiPost<{ id: string }>('/api/orders', buildOrderPayload('pending'))
       toast.success(isEn ? 'Quotation saved' : '报价单已保存')
       draft.clearDraft()
       router.push(
@@ -1140,7 +1183,9 @@ export default function ClassicPlaceOrderPage() {
     if (submitting) return
     setSubmitting(true)
     try {
-      const created = await apiPost<{ id: string }>('/api/orders', buildOrderPayload('confirmed'))
+      const created = serverOrderId
+        ? await apiPut<{ id: string }>(`/api/orders/${serverOrderId}`, { ...buildOrderPayload('confirmed'), lines: lines.filter(l => l.productId).map((l, sequence) => ({ productId: l.productId, productName: l.productName, spec: l.description || null, note: l.note || null, unitPrice: l.unitPrice, orderedQty: l.orderedQty, uomId: l.uomId, uomName: l.uom, taxRate: l.taxRate, isGift: !!l.isGift, sequence })), totalAmount: untaxed })
+        : await apiPost<{ id: string }>('/api/orders', buildOrderPayload('confirmed'))
       setStatus('sale')
       toast.success(isEn ? 'Order confirmed' : '订单已确认')
       draft.clearDraft()
@@ -1156,8 +1201,16 @@ export default function ClassicPlaceOrderPage() {
     }
   }
 
-  function handleDiscard() {
+  async function handleDiscard() {
     if ((lines.length > 0 || customerId) && !confirm(isEn ? 'Discard current changes and return to the list?' : '放弃当前修改并返回列表？')) return
+    if (serverOrderId) {
+      try {
+        await apiPut(`/api/orders/${serverOrderId}`, { status: 'CANCELLED' })
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Could not discard saved draft' : '无法放弃已保存的草稿'))
+        return
+      }
+    }
     draft.clearDraft()
     router.push(`${prefix}/classic/operator/quotations`)
   }
@@ -1251,6 +1304,16 @@ export default function ClassicPlaceOrderPage() {
           >
             {submitting ? 'Saving…' : 'Save'}
           </button>
+
+          <button
+            onClick={() => { void persistServerDraft(true) }}
+            disabled={draftSaving || !customer || !lines.some(l => l.productId)}
+            className="h-8 px-3 text-sm rounded border border-[#875A7B] bg-white text-[#69445f] hover:bg-[#875A7B]/5 disabled:opacity-50"
+            title={isEn ? 'Save this order as a draft' : '将当前订单保存为草稿'}
+          >
+            {draftSaving ? (isEn ? 'Saving draft…' : '正在保存草稿…') : (isEn ? 'Save Draft' : '保存草稿')}
+          </button>
+          {draftSavedAt && <span className="text-xs text-gray-500">{isEn ? 'Draft saved' : '草稿已保存'} · {new Date(draftSavedAt).toLocaleTimeString()}</span>}
 
           <button
             onClick={handleDiscard}
@@ -1764,7 +1827,7 @@ export default function ClassicPlaceOrderPage() {
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
-                    <th className="w-10 px-1.5 py-2 text-left">NO</th>
+                    <th className="w-16 min-w-16 px-1.5 py-2 text-left">NO</th>
                     <th className="w-[220px] px-1.5 py-2 text-left">Product</th>
                     <th className="px-1.5 py-2 text-left">Description</th>
                     <th className="w-24 px-1.5 py-2 text-right">Ordered Qty</th>
@@ -1792,10 +1855,10 @@ export default function ClassicPlaceOrderPage() {
                           客户 20260918 反馈「创建的过程就要允许删除商品」——功能一直在，
                           只是看不见。这里换成两个编辑页用的那个红色垃圾桶（OrderLineEditor
                           的 deleteButton），三个订单页的删除入口至此长一个样。 */}
-                      <td className="px-1.5 py-1 text-gray-400 select-none">
-                        <span className="inline-flex items-center gap-1.5">
+                      <td className="w-16 min-w-16 px-1.5 py-1 text-gray-400 select-none">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                           {opts.deleteButton}
-                          <span>{idx + 1}</span>
+                          <span className="inline-block min-w-4 text-center">{idx + 1}</span>
                           {isDuplicate && <span className="text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
                         </span>
                       </td>
