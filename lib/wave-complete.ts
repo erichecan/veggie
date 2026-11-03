@@ -30,13 +30,18 @@ export async function completeWaveDelivery(
 
   const trips = await prisma.trip.findMany({
     where: { waveId, status: { not: 'COMPLETED' } },
-    select: { id: true },
+    select: { id: true, departTime: true },
   })
   const tripIds = trips.map(t => t.id)
   if (tripIds.length > 0) {
-    await prisma.trip.updateMany({ where: { id: { in: tripIds } }, data: { status: 'COMPLETED' } })
-    for (const tripId of tripIds) {
-      await recalcTripDriverCommission(tripId, prisma).catch(e => console.error('[wave complete: trip commission]', e))
+    for (const trip of trips) {
+      // Cron/operator completion can bypass the driver's detail-page button. Preserve a consistent
+      // departure time from the wave in that case instead of leaving completed trip cards blank.
+      await prisma.trip.update({
+        where: { id: trip.id },
+        data: { status: 'COMPLETED', departTime: trip.departTime ?? wave.dispatchedAt.toISOString() },
+      })
+      await recalcTripDriverCommission(trip.id, prisma).catch(e => console.error('[wave complete: trip commission]', e))
     }
   }
 

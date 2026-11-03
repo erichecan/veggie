@@ -33,6 +33,18 @@ export async function GET(req: Request) {
         }, driverRowScope(user)),
         orderBy: { createdAt: 'desc' },
       })
+      // Wave-generated trips can be completed by the nightly job without the driver's detail-page
+      // transition. For those historical rows, use the wave's actual departure stamp for display.
+      const missingDepartWaveIds = [...new Set(trips
+        .filter(trip => !trip.departTime && trip.waveId)
+        .map(trip => trip.waveId!))]
+      const departureWaves = missingDepartWaveIds.length > 0
+        ? await prisma.pickingWave.findMany({
+            where: { id: { in: missingDepartWaveIds } },
+            select: { id: true, dispatchedAt: true },
+          })
+        : []
+      const dispatchedAtByWaveId = new Map(departureWaves.map(w => [w.id, w.dispatchedAt]))
       const allOrderIds = [...new Set(trips.flatMap(trip =>
         (trip.restaurants as Array<{ orderIds?: string[] }>).flatMap(r => r.orderIds ?? []),
       ))]
@@ -42,6 +54,7 @@ export async function GET(req: Request) {
       const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
       const tripsWithOrderCodes = trips.map(trip => ({
         ...trip,
+        departTime: trip.departTime ?? (trip.waveId ? dispatchedAtByWaveId.get(trip.waveId) : null),
         restaurants: (trip.restaurants as Array<{ orderIds?: string[]; [key: string]: unknown }>).map(restaurant => ({
           ...restaurant,
           orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),

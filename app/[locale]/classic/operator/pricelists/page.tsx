@@ -18,6 +18,7 @@ import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { PRICELIST_EXPORT_COLUMNS } from '@/lib/export/columns/pricelists'
 import { pricelistImportColumns, PRICELIST_IMPORT_EXAMPLE_ROWS } from './pricelist-import-columns'
+import TimedConfirmDialog from '@/components/shared/timed-confirm-dialog'
 
 const PAGE_SIZE = 80
 
@@ -84,6 +85,7 @@ export default function ClassicPricelistsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(saved?.sortDir ?? 'asc')
   const [importOpen, setImportOpen] = useState(false)
   const [batchBusy, setBatchBusy] = useState(false)
+  const [archiveTargets, setArchiveTargets] = useState<OdooPricelist[] | null>(null)
 
   function handleTabChange(next: 'active' | 'archived') {
     setTab(next)
@@ -249,10 +251,16 @@ export default function ClassicPricelistsPage() {
   async function setActiveSelected(active: boolean) {
     const targets = lists.filter(pl => visibleSelected.has(pl.id))
     if (targets.length === 0 || batchBusy) return
-    const msg = active
-      ? (isEn ? `Unarchive ${targets.length} pricelist(s)?` : `确认恢复 ${targets.length} 个价格表？`)
-      : (isEn ? `Archive ${targets.length} pricelist(s)? Customers keep their links; archived pricelists can be restored from the Archived tab.` : `确认归档 ${targets.length} 个价格表？客户上的挂靠不变，可在「已停用」里恢复。`)
+    if (!active) {
+      setArchiveTargets(targets)
+      return
+    }
+    const msg = isEn ? `Unarchive ${targets.length} pricelist(s)?` : `确认恢复 ${targets.length} 个价格表？`
     if (!confirm(msg)) return
+    await updateSelectedActive(targets, active)
+  }
+
+  async function updateSelectedActive(targets: OdooPricelist[], active: boolean) {
     setBatchBusy(true)
     const failed: string[] = []
     for (const pl of targets) {
@@ -392,7 +400,7 @@ export default function ClassicPricelistsPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border bg-white hover:shadow-sm transition-all"
               style={on ? { borderColor: '#875A7B', color: '#875A7B', background: '#f3eff5' } : { borderColor: '#e5e7eb', color: '#6b7280' }}
             >
-              {t === 'active' ? (isEn ? 'Active' : '使用中') : (isEn ? 'Archived' : '已停用')}
+              {t === 'active' ? (isEn ? 'Active' : '使用中') : (isEn ? 'Archived' : '已归档')}
             </button>
           )
         })}
@@ -509,6 +517,20 @@ export default function ClassicPricelistsPage() {
         <Pagination page={page} totalPages={Math.ceil(filteredLists.length / PAGE_SIZE)} onPageChange={setPage} />
       </div>
 
+      <TimedConfirmDialog
+        open={!!archiveTargets}
+        onOpenChange={open => { if (!open) setArchiveTargets(null) }}
+        title={isEn ? 'Archive selected pricelists?' : '确认归档所选价格表？'}
+        description={isEn
+          ? `${archiveTargets?.length ?? 0} pricelist(s) will be archived and removed from every customer currently using them. You can restore the pricelist later, but customer links will need to be added again.`
+          : `将归档 ${archiveTargets?.length ?? 0} 个价格表，并从之前挂靠这些价格表的客户中删除关联。之后可以恢复价格表，但客户关联需要重新添加。`}
+        confirmLabel={isEn ? 'Archive' : '确认归档'}
+        cancelLabel={isEn ? 'Cancel' : '取消'}
+        destructive
+        onConfirm={async () => {
+          if (archiveTargets) await updateSelectedActive(archiveTargets, false)
+        }}
+      />
       <BulkImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}

@@ -67,9 +67,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const before = await prisma.odooPricelist.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '价格表不存在' }, { status: 404 })
 
-      const pricelist = await prisma.odooPricelist.update({
-        where: { id },
-        data: cleaned as Parameters<typeof prisma.odooPricelist.update>[0]['data'],
+      const { pricelist, unlinkedCustomerCount } = await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
+        // 归档价格表时同时解除所有客户挂靠，避免客户继续沿用一张已归档的价格表。
+        // 与 active=false 一起提交，不能出现只归档成功、客户关系却残留的中间状态。
+        const unlinked = cleaned.active === false
+          ? await tx.customerPricelist.deleteMany({ where: { pricelistId: id } })
+          : { count: 0 }
+        const updated = await tx.odooPricelist.update({
+          where: { id },
+          data: cleaned as Parameters<typeof prisma.odooPricelist.update>[0]['data'],
+        })
+        return { pricelist: updated, unlinkedCustomerCount: unlinked.count }
       })
 
       // 字段级 diff
@@ -91,7 +99,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await writeLog({
           userId: user.userId, userEmail: user.email, userName: user.name,
           action: 'UPDATE', resource: 'pricelist', resourceId: id,
-          detail: `更新价格表: ${pricelist.name || id} — ${summary}`,
+          detail: `更新价格表: ${pricelist.name || id} — ${summary}${unlinkedCustomerCount > 0 ? `；归档时解除 ${unlinkedCustomerCount} 个客户挂靠` : ''}`,
           changes: Object.keys(changed).length > 0 ? changed : undefined,
         })
       }

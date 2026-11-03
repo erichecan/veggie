@@ -74,8 +74,9 @@ export async function GET(req: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
 
     // Pack Spec 列：ProductSaleUom.spec（"按这个单位卖，客户实际拿到的规格说明"，
-    // 同 lib/order-line-description.ts 的取值口径）。价格表规则的 item.uomId 限定了
-    // 具体单位就用那个单位的 spec，没限定（对该商品所有单位生效）就落回默认单位。
+    // 同 lib/order-line-description.ts 的取值口径）。规则限定 item.uomId 时只取对应
+    // 可售单位自己的 spec；即使为空也不回退到默认/基础单位，避免不同单位规格混用。
+    // 未限定单位时才使用默认可售单位的 spec。
     const saleUomByExact = new Map<string, string | null>()
     const saleUomByDefault = new Map<string, string | null>()
     for (const product of products) {
@@ -121,7 +122,9 @@ export async function GET(req: NextRequest) {
         }
 
         const packSpec = pid
-          ? (item.uomId ? saleUomByExact.get(`${pid}:${item.uomId}`) : undefined) ?? saleUomByDefault.get(pid) ?? null
+          ? item.uomId
+            ? saleUomByExact.get(`${pid}:${item.uomId}`) ?? null
+            : saleUomByDefault.get(pid) ?? null
           : null
 
         return {

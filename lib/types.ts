@@ -659,6 +659,8 @@ export interface TripRestaurant {
   orderIds: string[]
   /** 对应销售单号，顺序与 orderIds 一致 */
   orderCodes?: string[]
+  /** Server-stamped start/end times for each sales order in this restaurant stop. */
+  orderTimings?: Record<string, { startedAt?: string; endedAt?: string }>
   items: OrderItem[]
   delivered: boolean
   payment?: number

@@ -13,6 +13,7 @@ import { TripStatusBadge } from '@/components/shared/status-badge'
 import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
 import SignaturePad from '@/components/driver/SignaturePad'
 import { orderIncTaxTotal } from '@/lib/order-items'
+import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -68,7 +69,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const EXCEPTION_REASONS = isEn ? EXCEPTION_REASONS_EN : EXCEPTION_REASONS_ZH
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [trip, setTrip] = useState<Trip | null>(null)
-  const [expandedRest, setExpandedRest] = useState<string | null>(null)
+  const [orderTimingBusy, setOrderTimingBusy] = useState<string | null>(null)
 
   // 报告异常 modal
   const [exceptionModal, setExceptionModal] = useState<{ restId: string } | null>(null)
@@ -144,13 +145,22 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   // 误以为已经送达/收款成功。统一在这里兜底报错，调用方原有的"成功后才执行"的代码
   // （toast.success/router.push/关弹窗）天然不会跑，不用逐个改调用方。
   async function saveTrip(updated: Trip) {
+    let saved: Trip | undefined
     try {
-      await apiPut(`/api/trips/${updated.id}`, updated)
+      saved = await apiPut<Trip>(`/api/trips/${updated.id}`, updated)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed, please try again' : '保存失败，请重试'))
       throw e
     }
-    setTrip(updated)
+    if (saved) {
+      const localOrderCodes = new Map(updated.restaurants.map(r => [r.restaurantId, r.orderCodes]))
+      setTrip({
+        ...saved,
+        restaurants: saved.restaurants.map(r => ({ ...r, orderCodes: localOrderCodes.get(r.restaurantId) })),
+      })
+    } else {
+      setTrip(updated)
+    }
   }
 
   function cloneTrip(): Trip {
@@ -172,6 +182,23 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     updated.status = 'in_progress'
     await saveTrip(updated)
     toast.success(isEn ? 'Departure confirmed, delivery started' : '已确认出发，开始配送')
+  }
+
+  async function changeOrderTiming(orderId: string, action: 'start' | 'end') {
+    if (!trip || orderTimingBusy) return
+    setOrderTimingBusy(orderId)
+    try {
+      const updated = await apiPost<Trip>(`/api/trips/${trip.id}/order-timing`, { orderId, action })
+      setTrip(updated)
+      toast.success(action === 'start'
+        ? (isEn ? 'Order timer started' : '订单已开始计时')
+        : (isEn ? 'Order timer ended' : '订单已结束计时'))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Could not update order timer' : '订单计时更新失败'))
+      load()
+    } finally {
+      setOrderTimingBusy(null)
+    }
   }
 
   /**
@@ -335,7 +362,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       }
       updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
       await saveTrip(updated)
-      setExpandedRest(null)
       setSignModal(null)
       toast.success(isEn ? `${signModal.restName} signed for` : `${signModal.restName} 已签收`)
     } finally {
@@ -365,6 +391,11 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const processedCount = trip.restaurants.filter(r => r.delivered || r.returns.length > 0).length
   const allProcessed = processedCount === trip.restaurants.length
   const tripStatus = trip.status.toLowerCase()
+  const orderTimingById: Record<string, { startedAt?: string; endedAt?: string }> = Object.assign({}, ...trip.restaurants.map(r => r.orderTimings ?? {}))
+  const activeOrderId = Object.entries(orderTimingById).find(([, timing]) => timing.startedAt && !timing.endedAt)?.[0] ?? null
+  const allOrderTimersEnded = trip.restaurants
+    .flatMap(r => r.orderIds ?? [])
+    .every(orderId => !!orderTimingById[orderId]?.endedAt)
 
   const routeMarkers: MapMarker[] = trip.restaurants
     .map((r, i): MapMarker | null => {
@@ -376,8 +407,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const missingCoordsCount = trip.restaurants.length - routeMarkers.length
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="mx-auto max-w-3xl space-y-4 px-3 pb-8 pt-3 sm:px-5">
+      <div className="mb-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <button
@@ -398,9 +429,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           <Button
             onClick={endTrip}
             style={allProcessed ? { background: PURPLE, borderColor: PURPLE } : {}}
-            className={allProcessed ? 'text-white hover:opacity-90' : ''}
+            className={`min-h-12 w-full text-base font-semibold sm:w-auto ${allProcessed ? 'text-white hover:opacity-90' : ''}`}
             variant={allProcessed ? 'default' : 'outline'}
-            disabled={tripStatus === 'pending' || tripStatus === 'verifying' || !allProcessed}
+            disabled={tripStatus === 'pending' || tripStatus === 'verifying' || !allProcessed || !allOrderTimersEnded}
           >
             {isEn ? `End Trip (${processedCount}/${trip.restaurants.length})` : `结束行程 (${processedCount}/${trip.restaurants.length})`}
           </Button>
@@ -437,14 +468,14 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               </div>
             ))}
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={verifyAllCargo} className="flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button variant="outline" onClick={verifyAllCargo} className="min-h-14 w-full text-base font-semibold sm:flex-1">
               {isEn ? 'Verify All' : '一键核货完成'}
             </Button>
             <Button
               onClick={startDelivery}
               style={{ background: PURPLE, borderColor: PURPLE }}
-              className="flex-1 text-white hover:opacity-90"
+              className="min-h-14 w-full text-base font-bold text-white hover:opacity-90 sm:flex-1"
               disabled={!allVerified}
             >
               {isEn ? 'Confirm Departure 🚛' : '确认出发 🚛'}
@@ -459,7 +490,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           <Button
             onClick={startDelivery}
             style={{ background: PURPLE, borderColor: PURPLE }}
-            className="w-full text-white hover:opacity-90"
+            className="min-h-14 w-full text-base font-bold text-white hover:opacity-90"
           >
             {isEn ? 'Confirm Departure 🚛' : '确认出发 🚛'}
           </Button>
@@ -491,13 +522,17 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const dueIncTax = Math.max(0, Math.round((grossDueIncTax - returnAdjustment.incTax) * 100) / 100)
           const dueTax = Math.max(0, Math.round((dueIncTax - dueExTax) * 100) / 100)
           const isProcessed = r.delivered || hasException
+          const orderIds = r.orderIds ?? []
+          const allRestOrderTimersEnded = orderIds.length > 0 && orderIds.every(orderId => !!orderTimingById[orderId]?.endedAt)
+          const activeOrderAtRest = !!activeOrderId && orderIds.includes(activeOrderId)
+          const canOperateRest = tripStatus === 'in_progress' && !isProcessed && (activeOrderAtRest || allRestOrderTimersEnded)
           const borderColor = r.delivered ? 'border-green-300' : hasException ? 'border-orange-300' : 'border-gray-200'
           const headerBg = r.delivered ? 'bg-green-50' : hasException ? 'bg-orange-50' : 'bg-gray-50'
           const navUrl = buildNavUrl(r.restaurantId, r.address)
 
           return (
             <div key={r.restaurantId} className={`bg-white rounded-xl border overflow-hidden ${borderColor}`}>
-              <div className={`px-4 py-3 flex items-center justify-between ${headerBg}`}>
+              <div className={`px-4 py-3 flex flex-wrap items-center justify-between gap-3 ${headerBg}`}>
                 {/* 左侧：餐馆名 + 状态 + 报告异常按钮 */}
                 <div className="flex items-center gap-2 flex-wrap min-w-0">
                   <span
@@ -506,132 +541,158 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   >
                     {i + 1}
                   </span>
-                  <button
-                    className="font-medium text-gray-900 text-left"
-                    onClick={() => setExpandedRest(expandedRest === r.restaurantId ? null : r.restaurantId)}
-                  >
-                    🏪 {r.restaurantName}
-                  </button>
+                  <span className="font-semibold text-gray-900">🏪 {r.restaurantName}</span>
                   {r.orderCodes?.length ? <span className="text-xs text-purple-700 font-medium">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</span> : null}
                   {r.delivered && <span className="text-xs text-green-600 font-medium">{isEn ? '✓ Delivered' : '✓ 已送达'}</span>}
                   {!r.delivered && hasException && (
                     <span className="text-xs text-orange-600 font-medium">{isEn ? '⚠ Exception' : '⚠ 有异常'}</span>
                   )}
-                  {navUrl && (
-                    <button
-                      className="text-xs px-2 py-0.5 rounded border border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100 whitespace-nowrap"
-                      onClick={e => { e.stopPropagation(); window.open(navUrl, '_blank') }}
-                    >
-                      {isEn ? '🧭 Navigate' : '🧭 导航'}
-                    </button>
-                  )}
                   {/* 20260922：已完成的行程也能报告异常——"几天前送的货要退"这种历史订单退换货，
                       不需要单独一个页面，同一张已完成的行程本身就是入口 */}
-                  {((!isProcessed && (tripStatus === 'in_progress' || tripStatus === 'verifying')) || tripStatus === 'completed') && (
+                  {((canOperateRest) || tripStatus === 'completed') && (
                     <button
-                      className="text-xs px-2 py-0.5 rounded border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100 whitespace-nowrap"
+                      disabled={tripStatus !== 'completed' && !canOperateRest}
+                      className="min-h-10 rounded-lg border border-orange-300 bg-orange-50 px-3 text-sm font-semibold text-orange-700 hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                       onClick={e => { e.stopPropagation(); openExceptionModal(r.restaurantId) }}
                     >
                       {isEn ? 'Report Exception' : '报告异常'}
                     </button>
                   )}
                 </div>
-                {/* 右侧：金额 + 折叠箭头 */}
-                <button
-                  className="flex items-center gap-3 text-sm text-gray-500 shrink-0 ml-2"
-                  onClick={() => setExpandedRest(expandedRest === r.restaurantId ? null : r.restaurantId)}
-                >
-                  <span>{isEn ? 'Due' : '应收'} €{dueIncTax.toFixed(2)}</span>
-                  {r.payment !== undefined && <span className="font-medium" style={{ color: PURPLE }}>{isEn ? 'Collected' : '实收'} €{r.payment.toFixed(2)}</span>}
-                  <span className="text-gray-400">{expandedRest === r.restaurantId ? '▲' : '▼'}</span>
-                </button>
               </div>
 
-              {expandedRest === r.restaurantId && (
-                <div className="p-4 space-y-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500">
-                        <th className="pb-2 font-medium">{isEn ? 'Product' : '商品'}</th>
-                        <th className="pb-2 font-medium">{isEn ? 'Spec' : '规格'}</th>
-                        <th className="pb-2 text-right font-medium">{isEn ? 'Qty' : '数量'}</th>
-                        <th className="pb-2 text-right font-medium">{isEn ? 'Subtotal' : '小计'}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {r.items.map((item, i) => (
-                        <tr key={i}>
-                          <td className="py-1.5 font-medium">{item.productName}</td>
-                          <td className="py-1.5 text-gray-500">{item.spec}</td>
-                          <td className="py-1.5 text-right">{item.quantity}</td>
-                          <td className="py-1.5 text-right" style={{ color: PURPLE }}>€{item.subtotal.toFixed(2)}</td>
-                        </tr>
+              <div className="space-y-4 p-3 sm:p-4">
+                  <div className="grid grid-cols-2 items-stretch gap-2">
+                    <div className="flex min-h-14 flex-col justify-center rounded-xl border border-gray-200 bg-gray-50 px-3">
+                      <span className="text-xs font-medium text-gray-500">{isEn ? 'Due' : '应收'}</span>
+                      <span className="text-lg font-bold text-gray-900">€{dueIncTax.toFixed(2)}</span>
+                    </div>
+                    {navUrl ? (
+                      <button
+                        type="button"
+                        className="min-h-14 rounded-xl border border-blue-700 bg-blue-700 px-3 text-base font-bold text-white shadow-sm hover:bg-blue-800"
+                        onClick={() => window.open(navUrl, '_blank')}
+                      >{isEn ? '🧭 Navigate' : '🧭 导航'}</button>
+                    ) : (
+                      <button type="button" disabled className="min-h-14 rounded-xl border border-gray-200 bg-gray-100 px-3 text-base font-semibold text-gray-400">
+                        {isEn ? 'No location' : '无导航地址'}
+                      </button>
+                    )}
+                  </div>
+
+                  {orderIds.length > 0 && (
+                    <div className="space-y-2" aria-label={isEn ? 'Order timers' : '订单计时'}>
+                      {orderIds.map((orderId, orderIndex) => {
+                        const timing = r.orderTimings?.[orderId] ?? {}
+                        const isCurrent = activeOrderId === orderId
+                        const canStart = tripStatus === 'in_progress' && !activeOrderId && !timing.startedAt && !timing.endedAt
+                        const canEnd = tripStatus === 'in_progress' && isCurrent
+                        const orderLabel = r.orderCodes?.[orderIndex] ?? orderId.slice(-8).toUpperCase()
+                        const buttonLabel = canEnd
+                          ? (isEn ? 'End Order' : '结束订单')
+                          : timing.endedAt
+                            ? (isEn ? 'Completed' : '已结束')
+                            : (isEn ? 'Start Order' : '开始订单')
+                        return (
+                          <div key={orderId} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-800">{isEn ? 'Order' : '订单'} · {orderLabel}</p>
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                                {timing.startedAt && <span>{isEn ? 'Start' : '开始'}: {formatDateTime(timing.startedAt)}</span>}
+                                {timing.endedAt && <span>{isEn ? 'End' : '结束'}: {formatDateTime(timing.endedAt)}</span>}
+                                {!timing.startedAt && <span>{isEn ? 'Waiting to start' : '待开始'}</span>}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={(!canStart && !canEnd) || orderTimingBusy !== null}
+                              onClick={() => changeOrderTiming(orderId, canEnd ? 'end' : 'start')}
+                              className={`min-h-12 min-w-32 rounded-lg px-4 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600 disabled:shadow-none ${canEnd ? 'bg-red-600 hover:bg-red-700' : 'bg-green-700 hover:bg-green-800'}`}
+                            >{orderTimingBusy === orderId ? '…' : buttonLabel}</button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <details className="rounded-xl border border-gray-200 bg-gray-50">
+                    <summary className="min-h-12 cursor-pointer list-none px-4 py-3 text-sm font-semibold text-gray-800">
+                      <span className="flex items-center justify-between gap-3">
+                        <span>{isEn ? `Order Items (${r.items.length})` : `订单商品（${r.items.length}）`}</span>
+                        <span className="text-xs font-normal text-gray-500">{isEn ? 'Tap to expand' : '点击展开'}</span>
+                      </span>
+                    </summary>
+                    <div className="space-y-2 border-t border-gray-200 p-3">
+                      {r.items.map((item, itemIndex) => (
+                        <div key={`${item.productId}-${itemIndex}`} className="rounded-lg border border-gray-100 bg-white p-3">
+                          <div className="font-semibold text-gray-900">{item.productName}</div>
+                          {item.spec && <div className="mt-1 text-sm text-gray-500">{item.spec}</div>}
+                          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                            <div><div className="text-xs text-gray-500">{isEn ? 'Qty' : '数量'}</div><div className="mt-1 font-semibold">{item.quantity}</div></div>
+                            <div className="text-right"><div className="text-xs text-gray-500">{isEn ? 'Subtotal' : '小计'}</div><div className="mt-1 font-semibold" style={{ color: PURPLE }}>€{item.subtotal.toFixed(2)}</div></div>
+                          </div>
+                        </div>
                       ))}
-                    </tbody>
-                    <tfoot>
-                      {returnAdjustment.incTax > 0 && (
-                        <tr>
-                          <td colSpan={3} className="pt-2 text-right text-gray-500">{isEn ? 'Reported returns' : '已报退货抵扣'}</td>
-                          <td className="pt-2 text-right text-red-600">−€{returnAdjustment.incTax.toFixed(2)}</td>
-                        </tr>
-                      )}
-                      {dueTax > 0 && (
-                        <>
-                          <tr className="border-t border-gray-200">
-                            <td colSpan={3} className="pt-2 text-right text-gray-500">{isEn ? 'Subtotal (excl. tax)' : '合计（不含税）'}</td>
-                            <td className="pt-2 text-right text-gray-600">€{dueExTax.toFixed(2)}</td>
-                          </tr>
-                          <tr>
-                            <td colSpan={3} className="pt-1 text-right text-gray-500">{isEn ? 'Tax' : '税额'}</td>
-                            <td className="pt-1 text-right text-gray-600">€{dueTax.toFixed(2)}</td>
-                          </tr>
-                        </>
-                      )}
-                      <tr className={dueTax > 0 ? '' : 'border-t border-gray-200'}>
-                        <td colSpan={3} className="pt-2 text-right font-medium text-gray-700">
-                          {returnAdjustment.incTax > 0
-                            ? (isEn ? 'Amount to Collect After Returns' : '退货后应收合计')
-                            : dueTax > 0
-                              ? (isEn ? 'Total Due (incl. tax)' : '应收合计（含税）')
-                              : (isEn ? 'Total Due' : '应收合计')}
-                        </td>
-                        <td className="pt-2 text-right font-bold" style={{ color: PURPLE }}>
-                          €{dueIncTax.toFixed(2)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                    </div>
+                  </details>
+
+                  <div className="space-y-1 border-t border-gray-200 pt-3">
+                    {returnAdjustment.incTax > 0 && (
+                      <div className="flex items-center justify-between text-sm text-red-600">
+                        <span>{isEn ? 'Reported returns' : '已报退货抵扣'}</span>
+                        <span>−€{returnAdjustment.incTax.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {dueTax > 0 && (
+                      <>
+                        <div className="flex items-center justify-between text-sm text-gray-500">
+                          <span>{isEn ? 'Subtotal (excl. tax)' : '合计（不含税）'}</span>
+                          <span>€{dueExTax.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm text-gray-500">
+                          <span>{isEn ? 'Tax' : '税额'}</span>
+                          <span>€{dueTax.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-sm font-medium text-gray-700">
+                        {returnAdjustment.incTax > 0
+                          ? (isEn ? 'Amount to Collect After Returns' : '退货后应收合计')
+                          : dueTax > 0
+                            ? (isEn ? 'Total Due (incl. tax)' : '应收合计（含税）')
+                            : (isEn ? 'Total Due' : '应收合计')}
+                      </span>
+                      <span className="text-xl font-bold" style={{ color: PURPLE }}>€{dueIncTax.toFixed(2)}</span>
+                    </div>
+                  </div>
+
 
                   {!r.delivered && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
-                    <div className="border-t pt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? '💰 Amount Collected (€)' : '💰 实收货款（元）'}</label>
+                    <div className="rounded-xl border border-gray-200 bg-white p-3">
+                      <label className="mb-2 block text-sm font-semibold text-gray-700">{isEn ? 'Amount Collected (€)' : '实收金额 (€)'}</label>
                       <NumericInput
                         step="0.01"
                         placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
                         value={r.payment ?? dueIncTax}
                         onBlur={e => setPayment(r.restaurantId, parseFloat(e.target.value) || 0)}
-                        className="w-48 rounded-md border-2 border-purple-300 bg-white px-3 py-2 text-base text-gray-900 shadow-sm outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                        disabled={!canOperateRest}
+                        className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                       />
                     </div>
                   )}
 
                   {r.returns.length > 0 && (
                     <div className="border-t pt-4">
-                      <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? '📦 Returns/Exchanges' : '📦 退换货记录'}</p>
+                      <p className="mb-2 text-sm font-medium text-gray-700">{isEn ? '📦 Returns/Exchanges' : '📦 退换货记录'}</p>
                       <div className="space-y-2">
                         {r.returns.map((ret, i) => (
-                          <div key={i} className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
+                          <div key={i} className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
                             <span className="font-medium">{ret.productName}</span>
                             <span className="text-red-500">×{ret.quantity}</span>
-                            {ret.actionType && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${ret.actionType === 'exchange' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
-                                {ret.actionType === 'exchange' ? (isEn ? 'Exchange' : '换货') : (isEn ? 'Return' : '退货')}
-                              </span>
-                            )}
-                            {ret.reason && <span className="text-gray-400 text-xs">{ret.reason}</span>}
-                            {ret.photo && (
-                              <img src={ret.photo} alt={isEn ? 'Return photo' : '退货图'} className="w-10 h-10 rounded object-cover border" />
-                            )}
+                            {ret.actionType && <span className={`rounded px-1.5 py-0.5 text-xs ${ret.actionType === 'exchange' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>{ret.actionType === 'exchange' ? (isEn ? 'Exchange' : '换货') : (isEn ? 'Return' : '退货')}</span>}
+                            {ret.reason && <span className="text-xs text-gray-400">{ret.reason}</span>}
+                            {ret.photo && <img src={ret.photo} alt={isEn ? 'Return photo' : '退货图'} className="h-10 w-10 rounded border object-cover" />}
                           </div>
                         ))}
                       </div>
@@ -640,72 +701,49 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
                   {r.signature && (
                     <div className="border-t pt-4">
-                      <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? '✍️ Customer Signature' : '✍️ 客户签收'}</p>
-                      <div className="inline-block rounded border bg-white p-2">
-                        <img src={r.signature} alt={isEn ? 'Customer signature' : '客户签名'} className="h-20 object-contain" />
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {isEn ? 'Signed by' : '签收人'}：{r.signerName ?? '—'}
-                        {r.signedAt && ` · ${new Date(r.signedAt).toLocaleString(isEn ? 'en-GB' : 'zh-CN')}`}
-                      </p>
+                      <p className="mb-2 text-sm font-medium text-gray-700">{isEn ? '✍️ Customer Signature' : '✍️ 客户签收'}</p>
+                      <div className="inline-block rounded border bg-white p-2"><img src={r.signature} alt={isEn ? 'Customer signature' : '客户签名'} className="h-20 object-contain" /></div>
+                      <p className="mt-1 text-xs text-gray-500">{isEn ? 'Signed by' : '签收人'}：{r.signerName ?? '—'}{r.signedAt && ` · ${new Date(r.signedAt).toLocaleString(isEn ? 'en-GB' : 'zh-CN')}`}</p>
                     </div>
                   )}
 
                   {r.pods.length > 0 && (
                     <div className="border-t pt-4">
-                      <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? '📷 POD Photos' : '📷 POD 签收照片'}</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {r.pods.map((pod, i) => (
-                          <img key={i} src={pod} alt={`POD ${i+1}`} className="w-20 h-20 rounded object-cover border" />
-                        ))}
-                      </div>
+                      <p className="mb-2 text-sm font-medium text-gray-700">{isEn ? '📷 POD Photos' : '📷 POD 签收照片'}</p>
+                      <div className="flex flex-wrap gap-2">{r.pods.map((pod, podIndex) => <img key={podIndex} src={pod} alt={`POD ${podIndex + 1}`} className="h-20 w-20 rounded border object-cover" />)}</div>
                     </div>
                   )}
 
-                  {!r.delivered && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
-                    <div className="border-t pt-4 flex gap-2 flex-wrap">
+                  {!r.delivered && tripStatus === 'in_progress' && (
+                    <div className="grid grid-cols-2 gap-2 border-t pt-4 sm:grid-cols-3">
                       <Button
                         variant="outline"
-                        size="sm"
+                        disabled={!canOperateRest}
+                        className="min-h-12 border-2 text-sm font-semibold disabled:bg-gray-100 disabled:text-gray-400"
                         onClick={() => openExceptionModal(r.restaurantId)}
-                      >
-                        {isEn ? '⚠ Report Exception' : '⚠ 报告异常'}
-                      </Button>
+                      >{isEn ? 'Report Exception' : '报告异常'}</Button>
                       <Button
                         variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setPodRestId(r.restaurantId)
-                          podInputRef.current?.click()
-                        }}
-                      >
-                        {isEn ? '📷 Upload POD' : '📷 上传 POD'}
-                      </Button>
+                        disabled={!canOperateRest}
+                        className="min-h-12 border-2 text-sm font-semibold disabled:bg-gray-100 disabled:text-gray-400"
+                        onClick={() => { setPodRestId(r.restaurantId); podInputRef.current?.click() }}
+                      >{isEn ? 'Upload POD' : '上传 POD'}</Button>
                       <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 ml-auto"
+                        disabled={!canOperateRest || !allRestOrderTimersEnded}
+                        className="col-span-2 min-h-14 bg-green-700 text-base font-bold text-white hover:bg-green-800 disabled:bg-gray-300 disabled:text-gray-600 sm:col-span-1"
                         onClick={() => openSignModal(r.restaurantId)}
-                      >
-                        {isEn ? '✍️ Customer Sign-off' : '✍️ 客户签收'}
-                      </Button>
+                      >{isEn ? 'Customer Sign-off' : '客户签收'}</Button>
                     </div>
                   )}
 
-                  {/* 20260922：已完成的行程（历史订单退换货入口）——货已经签收过了，
-                      这里只留"报告异常"，不再出现 POD/客户签收这些已经做完的动作 */}
                   {tripStatus === 'completed' && (
                     <div className="border-t pt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openExceptionModal(r.restaurantId)}
-                      >
-                        {isEn ? '⚠ Report Late Return/Exchange' : '⚠ 补报退换货'}
+                      <Button variant="outline" size="sm" onClick={() => openExceptionModal(r.restaurantId)}>
+                        {isEn ? 'Report Late Return/Exchange' : '补报退换货'}
                       </Button>
                     </div>
                   )}
-                </div>
-              )}
+              </div>
             </div>
           )
         })}

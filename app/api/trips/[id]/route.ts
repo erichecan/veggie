@@ -66,13 +66,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: '行程不存在' }, { status: 404 })
     }
     const restaurants = trip.restaurants as Array<{ orderIds?: string[]; [key: string]: unknown }>
+    const departureWave = !trip.departTime && trip.waveId
+      ? await prisma.pickingWave.findUnique({ where: { id: trip.waveId }, select: { dispatchedAt: true } })
+      : null
     const orderIds = [...new Set(restaurants.flatMap(restaurant => restaurant.orderIds ?? []))]
     const orders = orderIds.length > 0
       ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, code: true } })
       : []
-    const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
+    const orderCodeById = new Map((orders as Array<{ id: string; code: string | null }>).map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
     const tripWithOrderCodes = {
       ...trip,
+      departTime: trip.departTime ?? departureWave?.dispatchedAt ?? null,
       restaurants: restaurants.map(restaurant => ({
         ...restaurant,
         orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
@@ -93,6 +97,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const data = await req.json()
       const before = await prisma.trip.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+      const driverScope = driverRowScope(user)
+      if (driverScope && before.driverId !== driverScope.userId) {
+        return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+      }
 
       const blocked = findBlockedReturnStatusChange(before.restaurants, data.restaurants)
       if (blocked) {
@@ -113,12 +121,42 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (issues.length > 0) {
           return NextResponse.json({ error: describeIssues(issues) }, { status: 400 })
         }
-        data.restaurants = restaurants
+        // Order timings are written only by the dedicated, server-stamped timer endpoint.
+        // Preserve the database values so a stale or edited client payload cannot forge them.
+        const oldRestaurants = Array.isArray(before.restaurants)
+          ? before.restaurants as Array<{ restaurantId: string; orderTimings?: unknown }>
+          : []
+        const oldById = new Map(oldRestaurants.map(r => [r.restaurantId, r]))
+        data.restaurants = (restaurants as unknown as Array<{ restaurantId: string; orderTimings?: unknown; [key: string]: unknown }>).map(r => {
+          const old = oldById.get(r.restaurantId)
+          if (old?.orderTimings !== undefined) r.orderTimings = old.orderTimings
+          else delete r.orderTimings
+          return r
+        })
       }
 
       const newStatus = data.status?.toUpperCase()
-      if (newStatus === 'IN_PROGRESS' && String(before.status).toUpperCase() !== 'IN_PROGRESS' && !data.departTime) {
+      const beforeStatus = String(before.status).toUpperCase()
+      if (driverScope && newStatus === 'COMPLETED') {
+        if (beforeStatus !== 'IN_PROGRESS') {
+          return NextResponse.json({ error: '请先确认出发，再结束行程' }, { status: 409 })
+        }
+        const restaurants = Array.isArray(before.restaurants)
+          ? before.restaurants as Array<{ orderIds?: string[]; orderTimings?: Record<string, { endedAt?: string }> }>
+          : []
+        const unfinished = restaurants.flatMap(r => r.orderIds ?? []).filter(orderId =>
+          !restaurants.some(r => !!r.orderTimings?.[orderId]?.endedAt),
+        )
+        if (unfinished.length > 0) {
+          return NextResponse.json({ error: '请先结束此行程中的每个订单计时，再结束行程' }, { status: 409 })
+        }
+      }
+      // departTime is server-owned. The transition caused by the driver's Confirm Departure
+      // click is the only point that starts the trip clock.
+      if (newStatus === 'IN_PROGRESS' && beforeStatus !== 'IN_PROGRESS') {
         data.departTime = new Date().toISOString()
+      } else {
+        data.departTime = before.departTime
       }
       const trip = await prisma.trip.update({
         where: { id },

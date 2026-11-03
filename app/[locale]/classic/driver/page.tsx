@@ -14,39 +14,47 @@ import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
-function TripRow({ trip, onClick }: { trip: Trip; onClick: () => void }) {
-  const [hover, setHover] = useState(false)
+function TripCard({ trip, onClick }: { trip: Trip; onClick: () => void }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const restCount = trip.restaurants.length
   const deliveredCount = trip.restaurants.filter(r => r.delivered).length
+  const amountCollected = trip.restaurants.reduce((sum, restaurant) => sum + (restaurant.payment ?? 0), 0)
   return (
-    <tr
-      style={{ background: hover ? '#f3eff5' : undefined, cursor: 'pointer' }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onClick={onClick}
-    >
-      <td className="px-4 py-3 text-xs" style={{ color: PURPLE }} title={trip.id}>
-        <span className="font-medium">{trip.name || `Trip · ${trip.id.slice(-6).toUpperCase()}`}</span>
-      </td>
-      <td className="px-4 py-3 text-center">
-        <TripStatusBadge status={trip.status} />
-      </td>
-      <td className="px-4 py-3 text-center text-gray-600">{restCount}</td>
-      <td className="px-4 py-3 text-center text-gray-600">{deliveredCount} / {restCount}</td>
-      <td className="px-4 py-3 text-center text-gray-600">
-        {trip.totalPayment > 0 ? `€${trip.totalPayment.toFixed(2)}` : '—'}
-      </td>
-      <td className="px-4 py-3 text-center text-xs text-gray-400">
-        {trip.departTime ? formatDateTime(trip.departTime) : '—'}
-      </td>
-      <td className="px-4 py-3 text-center">
-        <button className="text-xs hover:underline" style={{ color: PURPLE }} onClick={e => { e.stopPropagation(); onClick() }}>
-          {isEn ? 'Start Delivery' : '执行配送'}
+    <article className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-4 sm:px-5">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-500">{isEn ? 'Trip #' : '行程号'}</p>
+          <h2 className="mt-1 break-words text-base font-bold text-gray-900 sm:text-lg">
+            {trip.name || `Trip · ${trip.id.slice(-6).toUpperCase()}`}
+          </h2>
+        </div>
+        <div className="shrink-0"><TripStatusBadge status={trip.status} /></div>
+      </div>
+      <dl className="px-4 sm:px-5">
+        {[
+          [isEn ? 'Restaurants' : '餐馆数', String(restCount)],
+          [isEn ? 'Progress' : '完成进度', `${deliveredCount} / ${restCount}`],
+          [isEn ? 'Amount Collected' : '实收金额', `€${amountCollected.toFixed(2)}`],
+          [isEn ? 'Start Time' : '出发时间', trip.departTime ? formatDateTime(trip.departTime) : '—'],
+        ].map(([label, value], index) => (
+          <div key={label} className={`flex min-h-14 items-center justify-between gap-3 py-3 ${index < 3 ? 'border-b border-gray-100' : ''}`}>
+            <dt className="text-sm font-medium text-gray-500">{label}</dt>
+            <dd className="text-right text-sm font-semibold text-gray-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+        <button
+          type="button"
+          onClick={onClick}
+          className="min-h-12 w-full rounded-lg px-4 text-base font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#875A7B]"
+          style={{ background: PURPLE }}
+        >
+          {isEn ? 'View Orders' : '查看订单'}
         </button>
-      </td>
-    </tr>
+      </div>
+    </article>
   )
 }
 
@@ -109,39 +117,24 @@ export default function ClassicDriverPage() {
         page={1}
         pageSize={filtered.length || 1}
       />
-      <div className="p-4">
+      <div className="mx-auto max-w-4xl p-3 sm:p-5">
         {loading && (
           <div className="bg-white border border-gray-200 py-16 text-center text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>
         )}
-        {!loading && (
-          <div className="bg-white border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Trip #' : '行程号'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Restaurants' : '餐馆数'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Progress' : '完成进度'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Amount Collected' : '实收金额'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Start Time' : '开始时间'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Action' : '操作'}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-gray-400">{isEn ? 'No delivery tasks' : '暂无配送任务'}</td>
-                  </tr>
-                )}
-                {filtered.map(trip => (
-                  <TripRow
-                    key={trip.id}
-                    trip={trip}
-                    onClick={() => router.push(`${prefix}/classic/driver/trip/${trip.id}`)}
-                  />
-                ))}
-              </tbody>
-            </table>
+        {!loading && filtered.length === 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-gray-400">
+            {isEn ? 'No delivery tasks' : '暂无配送任务'}
+          </div>
+        )}
+        {!loading && filtered.length > 0 && (
+          <div className="space-y-4">
+            {filtered.map(trip => (
+              <TripCard
+                key={trip.id}
+                trip={trip}
+                onClick={() => router.push(`${prefix}/classic/driver/trip/${trip.id}`)}
+              />
+            ))}
           </div>
         )}
       </div>

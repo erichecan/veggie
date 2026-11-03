@@ -256,6 +256,9 @@ export async function POST(req: Request) {
               if (row.active !== undefined) settingsUpdate.active = row.active
               if (row.selectable !== undefined) settingsUpdate.selectable = row.selectable
               if (row.pricelistSequence !== undefined) settingsUpdate.sequence = row.pricelistSequence
+              if (row.active === false) {
+                await tx.customerPricelist.deleteMany({ where: { pricelistId } })
+              }
               await tx.odooPricelist.update({ where: { id: pricelistId }, data: settingsUpdate })
             } else {
               const createdPricelist = await tx.odooPricelist.create({
