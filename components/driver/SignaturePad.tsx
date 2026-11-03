@@ -156,7 +156,7 @@ export default function SignaturePad({ onChange, height = 180, disabled = false,
           type="button"
           onClick={undo}
           disabled={disabled || empty}
-          className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-600 disabled:opacity-40"
+          className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-40"
         >
           ↩ 撤销一笔
         </button>
@@ -164,7 +164,7 @@ export default function SignaturePad({ onChange, height = 180, disabled = false,
           type="button"
           onClick={clear}
           disabled={disabled || empty}
-          className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-600 disabled:opacity-40"
+          className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-40"
         >
           ✕ 清空重签
         </button>

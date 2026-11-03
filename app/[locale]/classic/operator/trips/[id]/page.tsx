@@ -9,7 +9,7 @@ import type { Trip, TripStatus, TripRestaurant, ReturnItem } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { formatDateWithDay } from '@/lib/format-date'
+import { formatDateTime, formatDateWithDay } from '@/lib/format-date'
 import { DELIVERY_BATCHES, batchPeriod } from '@/lib/delivery-batches'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
@@ -70,6 +70,16 @@ function normalizeTrip(t: Record<string, unknown>): Trip {
   }
 }
 
+function formatElapsed(ms: number, isEn: boolean): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  const totalMinutes = Math.floor(ms / 60_000)
+  if (totalMinutes === 0) return isEn ? '< 1m' : '不足1分钟'
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (isEn) return hours ? `${hours}h ${minutes}m` : `${minutes}m`
+  return hours ? `${hours}小时${minutes}分` : `${minutes}分钟`
+}
+
 // Status pipeline steps
 const PIPELINE_ZH: { status: TripStatus; label: string }[] = [
   { status: 'pending',            label: '待出发' },
@@ -95,6 +105,13 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [expandedStops, setExpandedStops] = useState<Set<number>>(new Set())
+  const [timingNow, setTimingNow] = useState<number | null>(null)
+
+  useEffect(() => {
+    setTimingNow(Date.now())
+    const timer = window.setInterval(() => setTimingNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // 完成此站 — 实收金额
   const [stopPayments, setStopPayments] = useState<Record<string, string>>({})
@@ -493,7 +510,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             {trip.departTime && (
               <div>
                 <span className="text-gray-400">{isEn ? 'Depart Time' : '出发时间'}</span>
-                <span className="ml-2 font-medium">{formatDateWithDay(trip.departTime)}</span>
+                <span className="ml-2 font-medium">{formatDateTime(trip.departTime)}</span>
               </div>
             )}
             <div>
@@ -570,6 +587,16 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           )}
           {trip.restaurants.map((r: TripRestaurant, i: number) => {
             const expanded = expandedStops.has(i)
+            const timedOrders = r.orderIds.map((orderId, orderIndex) => ({
+              orderId,
+              orderCode: r.orderCodes?.[orderIndex] ?? orderId.slice(-8).toUpperCase(),
+              timing: r.orderTimings?.[orderId] ?? {},
+            }))
+            const startedTimes = timedOrders.map(o => o.timing.startedAt ? Date.parse(o.timing.startedAt) : NaN).filter(Number.isFinite)
+            const endedTimes = timedOrders.map(o => o.timing.endedAt ? Date.parse(o.timing.endedAt) : NaN).filter(Number.isFinite)
+            const stopStart = startedTimes.length ? Math.min(...startedTimes) : null
+            const allOrdersEnded = timedOrders.length > 0 && timedOrders.every(o => !!o.timing.endedAt)
+            const stopEnd = allOrdersEnded && endedTimes.length ? Math.max(...endedTimes) : timingNow
             return (
               <div key={i} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 {/* 站点头部 — 始终可见，点击展开/折叠 */}
@@ -625,6 +652,44 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                               {oid.slice(0, 8)}…
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 后台行程管理也展示司机逐单计时：订单时间由服务端记录，本站总用时取首单开始到末单结束。 */}
+                    {timedOrders.length > 0 && (
+                      <div className="rounded-lg border border-purple-100 bg-purple-50/40 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-purple-800">{isEn ? 'Driver delivery timing' : '司机配送计时'}</p>
+                          {stopStart !== null && stopEnd !== null && (
+                            <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-purple-800">
+                              {isEn ? 'Stop duration' : '本站用时'}: {formatElapsed(stopEnd - stopStart, isEn)}
+                              {!allOrdersEnded && <span className="ml-1 font-normal text-purple-600">({isEn ? 'in progress' : '进行中'})</span>}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {timedOrders.map(({ orderId, orderCode, timing }) => {
+                            const startedMs = timing.startedAt ? Date.parse(timing.startedAt) : NaN
+                            const endedMs = timing.endedAt ? Date.parse(timing.endedAt) : NaN
+                            const durationMs = Number.isFinite(startedMs) && (Number.isFinite(endedMs) || timingNow !== null)
+                              ? (Number.isFinite(endedMs) ? endedMs : timingNow!) - startedMs
+                              : null
+                            return (
+                              <div key={orderId} className="grid grid-cols-1 gap-1 rounded-md border border-purple-100 bg-white px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                                <div className="min-w-0">
+                                  <span className="font-semibold text-gray-800">{isEn ? 'Order' : '订单'} {orderCode}</span>
+                                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-gray-500">
+                                    <span>{isEn ? 'Start' : '开始'}: {timing.startedAt ? formatDateTime(timing.startedAt) : (isEn ? 'Not started' : '未开始')}</span>
+                                    <span>{isEn ? 'End' : '结束'}: {timing.endedAt ? formatDateTime(timing.endedAt) : (timing.startedAt ? (isEn ? 'In progress' : '进行中') : '—')}</span>
+                                  </div>
+                                </div>
+                                <span className={`font-semibold ${timing.endedAt ? 'text-green-700' : timing.startedAt ? 'text-amber-700' : 'text-gray-400'}`}>
+                                  {durationMs === null ? (isEn ? (timing.startedAt ? 'Timing…' : 'No timing yet') : (timing.startedAt ? '计时中…' : '暂无计时')) : `${isEn ? 'Duration' : '用时'} ${formatElapsed(durationMs, isEn)}`}
+                                </span>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     )}

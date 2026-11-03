@@ -10,6 +10,7 @@ import { Pagination } from '@/components/ui/pagination'
 import type { Trip, TripStatus, TripRestaurant, Order } from '@/lib/types'
 import { batchPeriod } from '@/lib/delivery-batches'
 import { formatDriverSlot, type DriverSlotInfo } from '@/lib/driver-slot'
+import { formatDateTime } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
@@ -110,6 +111,10 @@ export default function ClassicTripsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
+  const [sortKey, setSortKey] = useState('tripTime')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>({})
 
   // Creation modal state
   const [showCreate, setShowCreate] = useState(false)
@@ -257,26 +262,73 @@ export default function ClassicTripsPage() {
   function clearAllFilters() {
     setSearchInput('')
     clearFacets()
+    setColumnFilters({})
+    setColumnMultiFilters({})
     setPage(1)
   }
 
   const searched = searchInput
     ? trips.filter(t =>
         t.id.toLowerCase().includes(searchInput.toLowerCase()) ||
+        (t.waveId ?? '').toLowerCase().includes(searchInput.toLowerCase()) ||
         (t.name ?? '').toLowerCase().includes(searchInput.toLowerCase()) ||
-        (t.driverName ?? '').toLowerCase().includes(searchInput.toLowerCase())
+        (t.driverName ?? '').toLowerCase().includes(searchInput.toLowerCase()) ||
+        t.restaurants.some(r => r.restaurantName.toLowerCase().includes(searchInput.toLowerCase()))
       )
     : trips
-  const filtered = filterByFacets(searched, facets, FACET_DEFS)
+  const filteredByFacets = filterByFacets(searched, facets, FACET_DEFS)
+  const filtered = filteredByFacets.filter(t => {
+    const tripDate = t.departTime || t.createdAt
+    const tripDay = tripDate ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin' }).format(new Date(tripDate)) : ''
+    const from = columnFilters.tripTime_from
+    const to = columnFilters.tripTime_to
+    const batchSearch = columnFilters.name?.trim().toLowerCase()
+    if (batchSearch && !(t.name ?? '').toLowerCase().includes(batchSearch) && !(t.waveId ?? '').toLowerCase().includes(batchSearch)) return false
+    if (from && tripDay < from) return false
+    if (to && tripDay > to) return false
+    return Object.entries(columnMultiFilters).every(([key, values]) => {
+      if (!values.length) return true
+      const rowValue = key === 'driverName' ? (t.driverName ?? '')
+        : key === 'timeSlot' ? (t.timeSlot ?? '')
+        : key === 'status' ? t.status : ''
+      return values.includes(String(rowValue))
+    })
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    const value = (trip: Trip): string | number => {
+      if (sortKey === 'tripTime') return new Date(trip.departTime || trip.createdAt).getTime()
+      if (sortKey === 'restaurants') return trip.restaurants.length
+      if (sortKey === 'timingProgress') {
+        const orders = trip.restaurants.flatMap(r => r.orderIds)
+        return orders.length ? orders.filter(id => trip.restaurants.some(r => !!r.orderTimings?.[id]?.endedAt)).length / orders.length : 0
+      }
+      if (sortKey === 'driverName') return trip.driverName ?? ''
+      if (sortKey === 'timeSlot') return trip.timeSlot ?? ''
+      if (sortKey === 'status') return trip.status
+      return trip.name ?? ''
+    }
+    const av = value(a), bv = value(b)
+    const comparison = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : String(av).localeCompare(String(bv), isEn ? 'en' : 'zh', { numeric: true, sensitivity: 'base' })
+    return sortDir === 'asc' ? comparison : -comparison
+  })
 
   const PAGE_SIZE = 20
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   // ── Columns ───────────────────────────────────────────────────────────────
   const columns: OdooColumn[] = [
     {
       key: 'timeSlot',
       label: isEn ? 'Slot' : '时段',
+      sortable: true,
+      filterType: 'multi-select',
+      filterOptions: [
+        { value: 'AM', label: isEn ? 'Morning (AM)' : '上午 (AM)' },
+        { value: 'PM', label: isEn ? 'Afternoon (PM)' : '下午 (PM)' },
+      ],
       render: (v) => {
         if (!v) return <span className="text-gray-400">—</span>
         return (
@@ -288,41 +340,62 @@ export default function ClassicTripsPage() {
     },
     {
       key: 'name',
-      label: isEn ? 'Trip Name' : '行程名称',
-      render: (_, row) => {
-        const driverName = row.driverName as string | undefined
-        const restaurants = (row.restaurants as TripRestaurant[]) ?? []
-        if (driverName) {
-          return (
-            <span className="font-medium">
-              {driverName} · {isEn ? `${restaurants.length} restaurants` : `${restaurants.length}家餐馆`}
-            </span>
-          )
-        }
-        if (restaurants.length > 0) {
-          const names = restaurants.map(r => r.restaurantName)
-          const preview = names.slice(0, 2).join(isEn ? ', ' : '、')
-          const extra = names.length > 2 ? ` +${names.length - 2}` : ''
-          return <span className="font-medium text-gray-700">{preview}{extra}</span>
-        }
-        return <span className="text-gray-400">—</span>
-      },
+      label: isEn ? 'Batch / Trip' : '配送批次 / 行程',
+      sortable: true,
+      filterType: 'text-popover',
+      minWidth: 180,
+      render: (v, row) => <span className="font-medium text-gray-700" title={String(v ?? '')}>{String(v ?? (row.id as string).slice(0, 8))}</span>,
+    },
+    {
+      key: 'driverName',
+      label: isEn ? 'Driver' : '司机',
+      sortable: true,
+      filterType: 'multi-select',
+      width: 150,
+      render: v => v ? <span className="font-medium">{String(v)}</span> : <span className="text-gray-400">—</span>,
     },
     {
       key: 'restaurants',
       label: isEn ? 'Restaurants' : '餐馆数',
+      sortable: true,
       render: (_, row) => (
         <span className="text-sm">{(row.restaurants as unknown[]).length}{isEn ? '' : ' 家'}</span>
       ),
     },
     {
+      key: 'timingProgress',
+      label: isEn ? 'Order Timing' : '订单计时',
+      sortable: true,
+      width: 120,
+      render: (_, row) => {
+        const restaurants = row.restaurants as TripRestaurant[]
+        const orderIds = restaurants.flatMap(r => r.orderIds)
+        const ended = orderIds.filter(id => restaurants.some(r => !!r.orderTimings?.[id]?.endedAt)).length
+        const started = orderIds.filter(id => restaurants.some(r => !!r.orderTimings?.[id]?.startedAt)).length
+        return orderIds.length
+          ? <span className={ended === orderIds.length ? 'font-semibold text-green-700' : started ? 'font-medium text-amber-700' : 'text-gray-500'} title={isEn ? `${started} started, ${ended} ended` : `${started} 已开始，${ended} 已结束`}>{ended}/{orderIds.length}</span>
+          : <span className="text-gray-400">—</span>
+      },
+    },
+    {
       key: 'status',
       label: isEn ? 'Status' : '状态',
+      sortable: true,
+      filterType: 'multi-select',
+      filterOptions: Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
       render: (v) => (
         <span className={`inline-block px-2 py-0.5 rounded text-xs ${STATUS_COLOR[v as TripStatus] ?? 'bg-gray-100 text-gray-600'}`}>
           {STATUS_LABEL[v as TripStatus] ?? String(v)}
         </span>
       ),
+    },
+    {
+      key: 'tripTime',
+      label: isEn ? 'Departure / Created' : '出发时间 / 创建时间',
+      sortable: true,
+      filterType: 'date-range',
+      width: 175,
+      render: (_, row) => <span className="whitespace-nowrap">{formatDateTime(String(row.departTime ?? row.createdAt ?? ''))}</span>,
     },
     {
       key: '_print',
@@ -433,6 +506,16 @@ export default function ClassicTripsPage() {
               return next
             })
           }}
+          onSort={key => {
+            if (sortKey === key) setSortDir(current => current === 'asc' ? 'desc' : 'asc')
+            else { setSortKey(key); setSortDir(key === 'tripTime' ? 'desc' : 'asc') }
+          }}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          columnFilters={columnFilters}
+          columnMultiFilters={columnMultiFilters}
+          onColumnFilterChange={(key, value) => { setColumnFilters(prev => ({ ...prev, [key]: value })); setPage(1) }}
+          onColumnMultiFilterChange={(key, values) => { setColumnMultiFilters(prev => ({ ...prev, [key]: values })); setPage(1) }}
           onRowClick={row => router.push(`${prefix}/classic/operator/trips/${String(row.id)}`)}
           emptyText={isEn ? 'No delivery trips' : '暂无配送行程'}
         />

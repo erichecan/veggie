@@ -407,21 +407,21 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const missingCoordsCount = trip.restaurants.length - routeMarkers.length
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-3 pb-8 pt-3 sm:px-5">
+    <div className="mx-auto max-w-3xl space-y-4 px-0 pb-8 pt-2 sm:px-2 sm:pt-3">
       <div className="mb-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <button
               onClick={() => router.push(`${prefix}/classic/driver`)}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="min-h-11 rounded-lg px-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
             >
               {isEn ? '← Back to task list' : '← 返回任务列表'}
             </button>
           </div>
           <h1 className="text-xl font-bold text-gray-900">{isEn ? 'Delivery Execution' : '配送执行'}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-sm font-medium text-gray-600">{trip.name || `Trip · ${trip.id.slice(-6).toUpperCase()}`}</span>
-            <span className="font-mono text-[10px] text-gray-400" title={trip.id}>{trip.id.slice(0, 8)}…</span>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="min-w-0 break-words text-sm font-medium leading-snug text-gray-600">{trip.name || `Trip · ${trip.id.slice(-6).toUpperCase()}`}</span>
+            <span className="shrink-0 font-mono text-[10px] text-gray-400" title={trip.id}>{trip.id.slice(0, 8)}…</span>
             <TripStatusBadge status={trip.status} />
           </div>
         </div>
@@ -456,10 +456,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           <p className="font-medium text-yellow-800 mb-3">{isEn ? '📦 Cargo Check Before Departure' : '📦 出发前货物核查'}</p>
           <div className="space-y-2 mb-4">
             {trip.restaurants.map(r => (
-              <div key={r.restaurantId} className="flex items-center justify-between text-sm">
-                <span className="text-gray-700">🏪 {r.restaurantName}{r.orderCodes?.length ? <span className="ml-2 text-xs text-purple-700">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</span> : null}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">{isEn ? `${r.items.length} SKUs` : `${r.items.length} 种商品`}</span>
+              <div key={r.restaurantId} className="flex flex-wrap items-start justify-between gap-2 text-sm">
+                <span className="min-w-0 flex-1 break-words leading-snug text-gray-700">🏪 {r.restaurantName}{r.orderCodes?.length ? <span className="ml-2 break-words text-xs text-purple-700">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</span> : null}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-gray-600 sm:text-sm">{isEn ? `${r.items.length} SKUs` : `${r.items.length} 种商品`}</span>
                   {r.cargoVerified
                     ? <span className="text-green-600 font-medium">{isEn ? '✓ Verified' : '✓ 已核'}</span>
                     : <span className="text-gray-400">{isEn ? 'Pending' : '待核'}</span>
@@ -500,11 +500,11 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       {/* 总收款信息 */}
       {(tripStatus === 'in_progress' || tripStatus === 'completed') && (
         <div className="rounded-xl p-4 mb-5 flex justify-between items-center" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
-          <span className="font-medium" style={{ color: PURPLE }}>{isEn ? '💰 Total Collected' : '💰 累计实收'}</span>
+          <span className="min-w-0 break-words font-medium" style={{ color: PURPLE }}>{isEn ? '💰 Total Collected' : '💰 累计实收'}</span>
           {/* 直接按各站已填实收求和，而不是读 trip.totalPayment：后者建行程时预填的是**税前**计划金额
               （lib/trip-from-wave.ts），司机还没收任何钱时这里就显示一个不含税的数，标签却是「累计实收」。
               各站填完实收后两者本来就相等（markDelivered / complete 时同样按 payment 求和回写） */}
-          <span className="text-2xl font-bold" style={{ color: PURPLE }}>€{trip.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0).toFixed(2)}</span>
+          <span className="shrink-0 text-xl font-bold sm:text-2xl" style={{ color: PURPLE }}>€{trip.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0).toFixed(2)}</span>
         </div>
       )}
 
@@ -526,58 +526,51 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const allRestOrderTimersEnded = orderIds.length > 0 && orderIds.every(orderId => !!orderTimingById[orderId]?.endedAt)
           const activeOrderAtRest = !!activeOrderId && orderIds.includes(activeOrderId)
           const canOperateRest = tripStatus === 'in_progress' && !isProcessed && (activeOrderAtRest || allRestOrderTimersEnded)
+          const navigationOrderId = (activeOrderAtRest ? activeOrderId : null)
+            ?? orderIds.find(orderId => !orderTimingById[orderId]?.endedAt)
+            ?? orderIds[0]
           const borderColor = r.delivered ? 'border-green-300' : hasException ? 'border-orange-300' : 'border-gray-200'
           const headerBg = r.delivered ? 'bg-green-50' : hasException ? 'bg-orange-50' : 'bg-gray-50'
           const navUrl = buildNavUrl(r.restaurantId, r.address)
 
           return (
             <div key={r.restaurantId} className={`bg-white rounded-xl border overflow-hidden ${borderColor}`}>
-              <div className={`px-4 py-3 flex flex-wrap items-center justify-between gap-3 ${headerBg}`}>
-                {/* 左侧：餐馆名 + 状态 + 报告异常按钮 */}
-                <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <div className={`px-3 py-3 sm:px-4 ${headerBg}`}>
+                <div className="flex min-w-0 items-start gap-2">
                   <span
                     className="shrink-0 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
                     style={{ background: PURPLE }}
                   >
                     {i + 1}
                   </span>
-                  <span className="font-semibold text-gray-900">🏪 {r.restaurantName}</span>
-                  {r.orderCodes?.length ? <span className="text-xs text-purple-700 font-medium">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</span> : null}
-                  {r.delivered && <span className="text-xs text-green-600 font-medium">{isEn ? '✓ Delivered' : '✓ 已送达'}</span>}
-                  {!r.delivered && hasException && (
-                    <span className="text-xs text-orange-600 font-medium">{isEn ? '⚠ Exception' : '⚠ 有异常'}</span>
-                  )}
-                  {/* 20260922：已完成的行程也能报告异常——"几天前送的货要退"这种历史订单退换货，
-                      不需要单独一个页面，同一张已完成的行程本身就是入口 */}
-                  {((canOperateRest) || tripStatus === 'completed') && (
-                    <button
-                      disabled={tripStatus !== 'completed' && !canOperateRest}
-                      className="min-h-10 rounded-lg border border-orange-300 bg-orange-50 px-3 text-sm font-semibold text-orange-700 hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
-                      onClick={e => { e.stopPropagation(); openExceptionModal(r.restaurantId) }}
-                    >
-                      {isEn ? 'Report Exception' : '报告异常'}
-                    </button>
-                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 break-words font-semibold leading-snug text-gray-900">🏪 {r.restaurantName}</span>
+                      {r.delivered && <span className="text-xs font-medium text-green-700">{isEn ? '✓ Delivered' : '✓ 已送达'}</span>}
+                      {!r.delivered && hasException && <span className="text-xs font-medium text-orange-700">{isEn ? '⚠ Exception' : '⚠ 有异常'}</span>}
+                    </div>
+                    {r.orderCodes?.length ? <p className="mt-1 break-words text-xs font-medium leading-relaxed text-purple-700">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</p> : null}
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-4 p-3 sm:p-4">
-                  <div className="grid grid-cols-2 items-stretch gap-2">
+                  <div className={`grid ${orderIds.length === 0 && navUrl ? 'grid-cols-2' : 'grid-cols-1'} items-stretch gap-2`}>
                     <div className="flex min-h-14 flex-col justify-center rounded-xl border border-gray-200 bg-gray-50 px-3">
                       <span className="text-xs font-medium text-gray-500">{isEn ? 'Due' : '应收'}</span>
                       <span className="text-lg font-bold text-gray-900">€{dueIncTax.toFixed(2)}</span>
                     </div>
-                    {navUrl ? (
+                    {orderIds.length === 0 && navUrl ? (
                       <button
                         type="button"
-                        className="min-h-14 rounded-xl border border-blue-700 bg-blue-700 px-3 text-base font-bold text-white shadow-sm hover:bg-blue-800"
+                        className="min-h-14 rounded-xl border border-blue-700 bg-blue-700 px-3 text-base font-bold leading-tight text-white shadow-sm hover:bg-blue-800"
                         onClick={() => window.open(navUrl, '_blank')}
                       >{isEn ? '🧭 Navigate' : '🧭 导航'}</button>
-                    ) : (
+                    ) : orderIds.length === 0 ? (
                       <button type="button" disabled className="min-h-14 rounded-xl border border-gray-200 bg-gray-100 px-3 text-base font-semibold text-gray-400">
                         {isEn ? 'No location' : '无导航地址'}
                       </button>
-                    )}
+                    ) : null}
                   </div>
 
                   {orderIds.length > 0 && (
@@ -594,21 +587,31 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                             ? (isEn ? 'Completed' : '已结束')
                             : (isEn ? 'Start Order' : '开始订单')
                         return (
-                          <div key={orderId} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
+                          <div key={orderId} className="grid grid-cols-1 items-center gap-2 rounded-xl border border-gray-200 bg-white p-3">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-gray-800">{isEn ? 'Order' : '订单'} · {orderLabel}</p>
+                            <p className="break-words text-sm font-semibold leading-snug text-gray-800">{isEn ? 'Order' : '订单'} · {orderLabel}</p>
                               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
                                 {timing.startedAt && <span>{isEn ? 'Start' : '开始'}: {formatDateTime(timing.startedAt)}</span>}
                                 {timing.endedAt && <span>{isEn ? 'End' : '结束'}: {formatDateTime(timing.endedAt)}</span>}
                                 {!timing.startedAt && <span>{isEn ? 'Waiting to start' : '待开始'}</span>}
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              disabled={(!canStart && !canEnd) || orderTimingBusy !== null}
-                              onClick={() => changeOrderTiming(orderId, canEnd ? 'end' : 'start')}
-                              className={`min-h-12 min-w-32 rounded-lg px-4 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600 disabled:shadow-none ${canEnd ? 'bg-red-600 hover:bg-red-700' : 'bg-green-700 hover:bg-green-800'}`}
-                            >{orderTimingBusy === orderId ? '…' : buttonLabel}</button>
+                            <div className={`grid gap-2 ${navigationOrderId === orderId ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                              <button
+                                type="button"
+                                disabled={(!canStart && !canEnd) || orderTimingBusy !== null}
+                                onClick={() => changeOrderTiming(orderId, canEnd ? 'end' : 'start')}
+                                className={`min-h-14 min-w-0 rounded-lg px-2 text-sm font-bold leading-tight text-white shadow-sm disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600 disabled:shadow-none ${canEnd ? 'bg-red-600 hover:bg-red-700' : 'bg-green-700 hover:bg-green-800'}`}
+                              >{orderTimingBusy === orderId ? '…' : buttonLabel}</button>
+                              {navigationOrderId === orderId && (
+                                <button
+                                  type="button"
+                                  disabled={!navUrl}
+                                  onClick={() => navUrl && window.open(navUrl, '_blank')}
+                                  className="min-h-14 min-w-0 rounded-lg border border-blue-700 bg-blue-700 px-2 text-sm font-bold leading-tight text-white shadow-sm hover:bg-blue-800 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                                >{navUrl ? (isEn ? '🧭 Navigate' : '🧭 导航') : (isEn ? 'No location' : '无导航地址')}</button>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
@@ -625,8 +628,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     <div className="space-y-2 border-t border-gray-200 p-3">
                       {r.items.map((item, itemIndex) => (
                         <div key={`${item.productId}-${itemIndex}`} className="rounded-lg border border-gray-100 bg-white p-3">
-                          <div className="font-semibold text-gray-900">{item.productName}</div>
-                          {item.spec && <div className="mt-1 text-sm text-gray-500">{item.spec}</div>}
+                          <div className="break-words font-semibold leading-snug text-gray-900">{item.productName}</div>
+                          {item.spec && <div className="mt-1 break-words text-sm leading-relaxed text-gray-500">{item.spec}</div>}
                           <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                             <div><div className="text-xs text-gray-500">{isEn ? 'Qty' : '数量'}</div><div className="mt-1 font-semibold">{item.quantity}</div></div>
                             <div className="text-right"><div className="text-xs text-gray-500">{isEn ? 'Subtotal' : '小计'}</div><div className="mt-1 font-semibold" style={{ color: PURPLE }}>€{item.subtotal.toFixed(2)}</div></div>
@@ -718,18 +721,18 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       <Button
                         variant="outline"
                         disabled={!canOperateRest}
-                        className="min-h-12 border-2 text-sm font-semibold disabled:bg-gray-100 disabled:text-gray-400"
+                        className="min-h-12 min-w-0 whitespace-normal border-2 border-amber-300 bg-amber-50 px-2 text-center text-sm font-semibold leading-tight text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                         onClick={() => openExceptionModal(r.restaurantId)}
                       >{isEn ? 'Report Exception' : '报告异常'}</Button>
                       <Button
                         variant="outline"
                         disabled={!canOperateRest}
-                        className="min-h-12 border-2 text-sm font-semibold disabled:bg-gray-100 disabled:text-gray-400"
+                        className="min-h-12 min-w-0 whitespace-normal border-2 px-2 text-center text-sm font-semibold leading-tight disabled:bg-gray-100 disabled:text-gray-400"
                         onClick={() => { setPodRestId(r.restaurantId); podInputRef.current?.click() }}
                       >{isEn ? 'Upload POD' : '上传 POD'}</Button>
                       <Button
-                        disabled={!canOperateRest || !allRestOrderTimersEnded}
-                        className="col-span-2 min-h-14 bg-green-700 text-base font-bold text-white hover:bg-green-800 disabled:bg-gray-300 disabled:text-gray-600 sm:col-span-1"
+                        disabled={!canOperateRest}
+                        className="col-span-2 min-h-14 min-w-0 whitespace-normal px-2 text-center text-base font-bold leading-tight text-white bg-green-700 hover:bg-green-800 disabled:bg-gray-300 disabled:text-gray-600 sm:col-span-1"
                         onClick={() => openSignModal(r.restaurantId)}
                       >{isEn ? 'Customer Sign-off' : '客户签收'}</Button>
                     </div>
@@ -737,7 +740,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
                   {tripStatus === 'completed' && (
                     <div className="border-t pt-4">
-                      <Button variant="outline" size="sm" onClick={() => openExceptionModal(r.restaurantId)}>
+                      <Button variant="outline" className="min-h-11 whitespace-normal text-center" onClick={() => openExceptionModal(r.restaurantId)}>
                         {isEn ? 'Report Late Return/Exchange' : '补报退换货'}
                       </Button>
                     </div>
@@ -759,10 +762,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       {/* 报告异常 Modal */}
       {/* Sign on Glass —— 客户手写签收。合同第四条把「司机电子签收」写进验收闭环 */}
       {signModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+          <div className="max-h-[90dvh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-xl bg-white p-4 sm:p-5">
             <div>
-              <h3 className="font-bold text-gray-900">{isEn ? `Customer Sign-off — ${signModal.restName}` : `客户签收 — ${signModal.restName}`}</h3>
+              <h3 className="break-words font-bold leading-snug text-gray-900">{isEn ? `Customer Sign-off — ${signModal.restName}` : `客户签收 — ${signModal.restName}`}</h3>
               <p className="text-xs text-gray-500 mt-0.5">{isEn ? 'Hand the phone to the customer to sign below and confirm receipt' : '请把手机递给客户，由客户本人在下方签名确认收货'}</p>
             </div>
 
@@ -771,7 +774,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Recipient Name' : '签收人姓名'}</label>
               <input
-                className="w-full border rounded px-3 py-2 text-sm"
+                className="min-h-12 w-full rounded-lg border-2 border-purple-300 px-3 py-2 text-base focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
                 placeholder={isEn ? "Customer's name, or driver fills in" : '请客户写下或司机代填姓名'}
                 value={signerName}
                 onChange={e => setSignerName(e.target.value)}
@@ -781,13 +784,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               <p className="text-xs text-gray-400 mt-1">{isEn ? "The signature image alone can't identify the signer, so the name is recorded separately for accountability" : '签名图像认不出是谁签的，姓名要单独记，日后追责才有依据'}</p>
             </div>
 
-            <div className="flex gap-2 justify-end pt-1">
-              <Button variant="outline" size="sm" onClick={() => setSignModal(null)} disabled={signing}>
+            <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+              <Button variant="outline" className="min-h-12 sm:min-w-24" onClick={() => setSignModal(null)} disabled={signing}>
                 {isEn ? 'Cancel' : '取消'}
               </Button>
               <Button
-                size="sm"
-                className="bg-green-600 hover:bg-green-700"
+                className="min-h-12 bg-green-600 text-base font-semibold hover:bg-green-700 sm:min-w-36"
                 onClick={confirmDelivery}
                 disabled={signing || !signData || !signerName.trim()}
               >
@@ -802,15 +804,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         const rest = trip.restaurants.find(r => r.restaurantId === exceptionModal.restId)
         if (!rest) return null
         return (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="font-bold text-gray-900">{isEn ? `Report Exception — ${rest.restaurantName}` : `报告异常 — ${rest.restaurantName}`}</h3>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+            <div className="max-h-[90dvh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-xl bg-white p-4 sm:p-5">
+              <h3 className="break-words font-bold leading-snug text-gray-900">{isEn ? `Report Exception — ${rest.restaurantName}` : `报告异常 — ${rest.restaurantName}`}</h3>
 
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Select affected products (multiple allowed)' : '选择有异常的商品（可多选）'}</p>
                 <div className="space-y-2 border rounded-lg divide-y">
                   {exceptionProducts.map((p, i) => (
-                    <div key={`${p.productId}-${i}`} className="flex items-center gap-3 px-3 py-2.5">
+                    <div key={`${p.productId}-${i}`} className="flex items-start gap-3 px-3 py-3">
                       <input
                         type="checkbox"
                         id={`exc-${i}`}
@@ -818,12 +820,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         onChange={e => {
                           setExceptionProducts(prev => prev.map((x, j) => j === i ? { ...x, selected: e.target.checked } : x))
                         }}
-                        className="w-4 h-4 cursor-pointer"
+                        className="mt-1 h-5 w-5 shrink-0 cursor-pointer"
                         style={{ accentColor: PURPLE }}
                       />
-                      <label htmlFor={`exc-${i}`} className="flex-1 text-sm cursor-pointer">
-                        <span className="font-medium text-gray-800">{p.productName}</span>
-                        <span className="text-gray-400 ml-2">{isEn ? `Allocated ${p.allocatedQuantity}` : `已配 ${p.allocatedQuantity}`}</span>
+                      <label htmlFor={`exc-${i}`} className="min-w-0 flex-1 cursor-pointer text-sm leading-snug">
+                        <span className="break-words font-medium text-gray-800">{p.productName}</span>
+                        <span className="ml-2 break-words text-gray-500">{isEn ? `Allocated ${p.allocatedQuantity}` : `已配 ${p.allocatedQuantity}`}</span>
                       </label>
                       {p.selected && (
                         <div className="shrink-0">
@@ -838,7 +840,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                               const qty = Number(e.target.value) || 0
                               setExceptionProducts(prev => prev.map((x, j) => j === i ? { ...x, quantity: qty } : x))
                             }}
-                            className={`w-20 rounded-md border-2 bg-white px-2 py-2 text-right text-base font-semibold shadow-sm outline-none focus:ring-2 ${p.quantity <= 0 || p.quantity > p.allocatedQuantity ? 'border-red-500 text-red-700 focus:border-red-500 focus:ring-red-100' : 'border-purple-300 text-gray-900 focus:border-purple-500 focus:ring-purple-100'}`}
+                            className={`min-h-11 w-20 rounded-md border-2 bg-white px-2 py-2 text-right text-base font-semibold shadow-sm outline-none focus:ring-2 ${p.quantity <= 0 || p.quantity > p.allocatedQuantity ? 'border-red-500 text-red-700 focus:border-red-500 focus:ring-red-100' : 'border-purple-300 text-gray-900 focus:border-purple-500 focus:ring-purple-100'}`}
                           />
                           {(p.quantity <= 0 || p.quantity > p.allocatedQuantity) && (
                             <p className="mt-1 text-right text-[11px] text-red-600">
@@ -863,7 +865,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         onClick={() => setExceptionReasons(prev =>
                           active ? prev.filter(x => x !== r) : [...prev, r]
                         )}
-                        className="px-3 py-1 text-xs rounded-full border transition-colors"
+                        className="min-h-10 rounded-full border px-3 py-2 text-sm leading-tight transition-colors"
                         style={active
                           ? { background: PURPLE, borderColor: PURPLE, color: 'white' }
                           : { borderColor: '#d1d5db', color: '#6b7280' }}
@@ -884,15 +886,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       return custom.trim() ? [...presets, custom] : presets
                     })
                   }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                  className="min-h-12 w-full rounded-lg border-2 border-purple-300 px-3 py-2 text-base focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
                   style={{ focusRingColor: PURPLE } as React.CSSProperties}
                 />
               </div>
 
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Action' : '处理方式'}</p>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                <div className="flex flex-wrap gap-2">
+                  <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer">
                     <input
                       type="radio"
                       checked={exceptionAction === 'return'}
@@ -901,7 +903,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     />
                     <span className="text-sm text-gray-700">{isEn ? 'Return' : '退货'}</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer">
                     <input
                       type="radio"
                       checked={exceptionAction === 'exchange'}
@@ -918,12 +920,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 {exceptionPhoto ? (
                   <div className="flex items-center gap-3">
                     <img src={exceptionPhoto} alt="exception" className="w-16 h-16 rounded object-cover border" />
-                    <Button variant="outline" size="sm" onClick={() => exceptionPhotoInputRef.current?.click()}>
+                    <Button variant="outline" className="min-h-11" onClick={() => exceptionPhotoInputRef.current?.click()}>
                       {isEn ? 'Retake' : '重新拍照'}
                     </Button>
                   </div>
                 ) : (
-                  <Button variant="outline" size="sm" onClick={() => exceptionPhotoInputRef.current?.click()}>
+                  <Button variant="outline" className="min-h-11" onClick={() => exceptionPhotoInputRef.current?.click()}>
                     {isEn ? '📷 Take Photo' : '📷 拍照'}
                   </Button>
                 )}
@@ -949,7 +951,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     value={exceptionLateNote}
                     onChange={e => setExceptionLateNote(e.target.value)}
                     placeholder={isEn ? 'e.g. customer only reported this 3 days later' : '例如：客户 3 天后才反馈，今天补录'}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                    className="min-h-20 w-full rounded-lg border-2 border-purple-300 px-3 py-2 text-base focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
                     rows={2}
                     maxLength={500}
                   />
@@ -968,10 +970,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setExceptionModal(null)} disabled={submittingException}>{isEn ? 'Cancel' : '取消'}</Button>
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
+                <Button variant="outline" className="min-h-12 flex-1" onClick={() => setExceptionModal(null)} disabled={submittingException}>{isEn ? 'Cancel' : '取消'}</Button>
                 <Button
-                  className="flex-1 text-white"
+                  className="min-h-12 flex-1 text-base font-semibold text-white"
                   style={{ background: '#ea580c' }}
                   onClick={submitException}
                   disabled={

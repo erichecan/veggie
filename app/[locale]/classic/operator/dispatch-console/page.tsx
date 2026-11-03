@@ -1,14 +1,12 @@
 'use client'
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import DriversPage from '../drivers/page'
+import TripsPage from '../trips/page'
 import BatchTab from './_components/BatchTab'
 import DriverDispatchTab from './_components/DriverDispatchTab'
-
-const BatchAnalysis = dynamic(() => import('@/components/shared/BatchAnalysis'), { ssr: false })
 
 const PURPLE = '#875A7B'
 
@@ -80,7 +78,7 @@ function DispatchConsoleInner() {
       {/* Tab 内容 */}
       {tab === 'waves' && <BatchTab date={date} onPickDate={setDate} />}
       {tab === 'dispatch' && <DriverDispatchTab date={date} />}
-      {tab === 'trips' && <BatchAnalysis />}
+      {tab === 'trips' && <TripsPage />}
       {tab === 'config' && <DriversPage />}
     </div>
   )

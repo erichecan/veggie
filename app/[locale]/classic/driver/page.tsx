@@ -39,8 +39,8 @@ function TripCard({ trip, onClick }: { trip: Trip; onClick: () => void }) {
           [isEn ? 'Start Time' : '出发时间', trip.departTime ? formatDateTime(trip.departTime) : '—'],
         ].map(([label, value], index) => (
           <div key={label} className={`flex min-h-14 items-center justify-between gap-3 py-3 ${index < 3 ? 'border-b border-gray-100' : ''}`}>
-            <dt className="text-sm font-medium text-gray-500">{label}</dt>
-            <dd className="text-right text-sm font-semibold text-gray-900">{value}</dd>
+            <dt className="shrink-0 text-sm font-medium text-gray-500">{label}</dt>
+            <dd className="min-w-0 max-w-[65%] break-words text-right text-sm font-semibold text-gray-900">{value}</dd>
           </div>
         ))}
       </dl>
@@ -117,7 +117,7 @@ export default function ClassicDriverPage() {
         page={1}
         pageSize={filtered.length || 1}
       />
-      <div className="mx-auto max-w-4xl p-3 sm:p-5">
+      <div className="mx-auto max-w-3xl px-0 py-2 sm:px-2 sm:py-3">
         {loading && (
           <div className="bg-white border border-gray-200 py-16 text-center text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>
         )}

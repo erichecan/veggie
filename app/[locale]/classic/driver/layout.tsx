@@ -32,7 +32,7 @@ export default function ClassicDriverLayout({ children }: { children: React.Reac
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Delivery' : '配送'} menuItems={LINKS} session={session} />
-      <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-4xl px-3 py-3 sm:px-4 sm:py-5">{children}</main>
     </div>
   )
 }
