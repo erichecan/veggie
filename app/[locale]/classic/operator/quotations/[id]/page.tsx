@@ -685,11 +685,17 @@ export default function QuotationDetailPage() {
     const resolution = effectiveCustomer
       ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, 1, lastPriceHit?.price, target.uomId)
       : null
-    // 落到非基础单位(基础单位被关掉时的兜底)要按该单位换算系数放大成本/牌价，
-    // 否则 Cost/Price 还是按基础单位算的，分母对不上(同 switchLineUnit 的处理)。
-    const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
+    // 价格解析返回的是价格表/商品基础价；除非命中单位限定价格表规则，
+    // 否则必须按所选可售单位套用该单位自己的售价或公式，不能把 CASE 价直接放到 LOOSE 行。
+    const rows = saleUomOpts.map(o => ({
+      uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+      priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
+    }))
     const uomFactor = target.uomId ? factorOf(rows, target.uomId) : 1
-    const price = resolution ? resolution.price : Number(p.listPrice ?? 0) * uomFactor
+    const basePrice = resolution?.price ?? Number(p.listPrice ?? 0)
+    const price = resolution?.matchedUomId
+      ? resolution.price
+      : priceOf(rows, target.uomId, basePrice)
     const unitSpec = saleUomOpts.find(o => o.uomId === target.uomId)?.spec ?? null
     const newLine = {
       id: lineId,
