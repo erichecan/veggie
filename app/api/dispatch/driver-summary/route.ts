@@ -30,15 +30,14 @@ export async function GET(req: Request) {
       })
       if (waves.length === 0) return NextResponse.json({ from: fromStr, to: toStr, rows: [], totals: emptyTotals })
 
-      // legacy 兜底：极少数历史波次 driverName 快照字段为空，用 driverSlotId 反查补一次司机姓名——
-      // 仅用于司机姓名兜底，不再用于 batchNum/timeOfDay(那两个已经是 wave 自身的权威字段)。
+      // legacy 兜底：极少数早期波次的司机或时段快照字段为空，用 driverSlotId 补齐显示分组。
       const legacySlotIds = Array.from(
-        new Set(waves.filter(w => !w.driverName && w.driverSlotId).map(w => w.driverSlotId) as string[]),
+        new Set(waves.filter(w => (!w.driverName || !w.timeOfDay) && w.driverSlotId).map(w => w.driverSlotId) as string[]),
       )
       const legacySlots = legacySlotIds.length
         ? await prisma.driverSlot.findMany({
             where: { id: { in: legacySlotIds } },
-            select: { id: true, driverName: true },
+            select: { id: true, driverName: true, timeOfDay: true },
           })
         : []
       const legacySlotMap = new Map(legacySlots.map(s => [s.id, s]))
@@ -68,14 +67,16 @@ export async function GET(req: Request) {
         const batchNums = [...new Set(w.pallets.map(p => p.seq))].sort((a, b) => a - b)
         return {
           waveId: w.id,
-          driverName: w.driverName ?? (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.driverName : undefined) ?? '',
-          timeOfDay: w.timeOfDay ?? null,
+          driverName: w.driverName || (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.driverName : undefined) || '',
+          timeOfDay: w.timeOfDay || (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.timeOfDay : undefined) || null,
           batchNums,
           restaurantCount: restaurants.size,
           orderCount: ids.length,
           totalQty: Math.round(totalQty * 1000) / 1000,
           totalAmount: Math.round(totalAmount * 100) / 100,
-          status: w.status,
+          // PickingWave.status 只记录拣货/分货阶段，出发和完成分别存时间戳；汇总页展示
+          // 当前配送生命周期，不能让已出发/已完成的旧波次继续显示为初始 PENDING。
+          status: w.completedAt ? 'COMPLETED' : w.dispatchedAt ? 'IN_DELIVERY' : w.status,
           waveDate: wd ? wd.toISOString().slice(0, 10) : null,
           weekday: wd ? wd.getUTCDay() : null,
         }
@@ -84,7 +85,9 @@ export async function GET(req: Request) {
       rows.sort(
         (a, b) =>
           (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') ||
-          (a.batchNums[0] ?? 0) - (b.batchNums[0] ?? 0),
+          (a.batchNums[0] ?? 0) - (b.batchNums[0] ?? 0) ||
+          a.driverName.localeCompare(b.driverName) ||
+          a.waveId.localeCompare(b.waveId),
       )
 
       const totals = rows.reduce(

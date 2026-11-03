@@ -691,9 +691,9 @@ export default function SalesOrderDetailPage() {
   // 20261001 客户纠正 #19：Delivery 智能按钮该跳的不是"打印送货单"(那是上面 Delivery Note
   // 按钮 + handlePrintDelivery 的事)，而是这张订单接下来要走的配送/拣货流程本身——配送调度
   // 中心(dispatch-console)按"交付日期"分页展示，内部又按订单状态分三个 tab：
-  //   waves(批次管理)：拣货/分货阶段(待理货→理货中→已拣货→分货中→已就绪，见 BatchTab 的
-  //     WAVE_STATUS)，订单还没到"已就绪"之前都在这个 tab 里处理。
-  //   dispatch(司机调度)：波次已就绪、交给司机的调度总览(DriverDispatchTab)。
+  //   waves(批次管理)：拣货/分货阶段(待拣货→拣货中→拣货完成→分货中→已分货，见 BatchTab 的
+  //     WAVE_STATUS)，订单还没到"已分货"之前都在这个 tab 里处理。
+  //   dispatch(司机调度)：波次已分货、交给司机的调度总览(DriverDispatchTab)。
   //   trips(行程管理)：已完成的历史行程记录。
   // 订单自身的 status 字段已经反映了这个进度(PENDING/CONFIRMED/WAVE_ASSIGNED → 还在拣货分货；
   // IN_DELIVERY → 已出车；COMPLETED/LOCKED/CANCELLED → 已结束)，不用再去查具体波次状态。

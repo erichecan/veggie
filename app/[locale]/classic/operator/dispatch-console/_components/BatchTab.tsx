@@ -29,18 +29,18 @@ interface Pallet { id: string; seq: number; label: string | null; items: Array<{
 interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
   waveType: string | null; waveNumber: number | null; driverSlotId: string | null; driverName: string | null
-  timeOfDay: string | null
+  timeOfDay: string | null; createdAt?: string
   dispatchedAt: string | null; completedAt: string | null; assignmentDoneAt: string | null
   pickLockedAt: string | null; pickLockedBy: string | null
   pallets: Pallet[]
 }
 
 const WAVE_STATUS_ZH: Record<string, { text: string; cls: string; pct: number }> = {
-  PENDING: { text: '待理货', cls: 'bg-gray-100 text-gray-500', pct: 10 },
-  PICKING: { text: '理货中', cls: 'bg-blue-100 text-blue-700', pct: 50 },
-  PICKED: { text: '已拣货', cls: 'bg-blue-100 text-blue-700', pct: 70 },
+  PENDING: { text: '待拣货', cls: 'bg-gray-100 text-gray-500', pct: 10 },
+  PICKING: { text: '拣货中', cls: 'bg-blue-100 text-blue-700', pct: 50 },
+  PICKED: { text: '拣货完成', cls: 'bg-blue-100 text-blue-700', pct: 70 },
   SORTING: { text: '分货中', cls: 'bg-amber-100 text-amber-700', pct: 85 },
-  SORTED: { text: '已就绪', cls: 'bg-green-100 text-green-700', pct: 100 },
+  SORTED: { text: '已分货', cls: 'bg-green-100 text-green-700', pct: 100 },
 }
 const WAVE_STATUS_EN: Record<string, { text: string; cls: string; pct: number }> = {
   PENDING: { text: 'Pending', cls: 'bg-gray-100 text-gray-500', pct: 10 },
@@ -174,9 +174,27 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const assigned = new Set(waves.flatMap(w => w.orderIds))
   const unassigned = confirmedOrders.filter(o => !assigned.has(o.id))
 
-  // 一个司机一个时段一张卡片(=一趟车)，托盘(batchNum)是卡片内部的子分组，不再各建一张卡。
-  const waveForGroup = (driverName: string, timeOfDay: string) =>
-    waves.find(w => w.driverName === driverName && w.timeOfDay === timeOfDay)
+  // 司机+时段可以先后产生多条真实波次(旧波次出发后会创建新波次)。全部保留并独立显示，
+  // 活动波次排前面；已完成波次作为历史卡片保留，不能让第一条旧记录遮住新波次。
+  const wavesForGroup = (driverName: string, timeOfDay: string) =>
+    waves
+      .filter(w => w.driverName === driverName && w.timeOfDay === timeOfDay)
+      .sort((a, b) => {
+        const lifecycleOrder = (w: Wave) => w.completedAt ? 2 : w.dispatchedAt ? 1 : 0
+        const lifecycleDiff = lifecycleOrder(a) - lifecycleOrder(b)
+        if (lifecycleDiff) return lifecycleDiff
+        return (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id)
+      })
+  // 同一司机+时段正常只有一个未出发波次；移动端选托盘时只允许落到活动波次。
+  const activeWaveForGroup = (driverName: string, timeOfDay: string) =>
+    wavesForGroup(driverName, timeOfDay).find(w => !w.dispatchedAt && !w.completedAt)
+  const laneWavesForGroup = (driverName: string, timeOfDay: string): Array<Wave | null> => {
+    const groupWaves = wavesForGroup(driverName, timeOfDay)
+    // 真实波次各占一张卡；已完成旧波次保留为历史标记。若没有活动波次，额外留一个空卡作新单落点。
+    const visibleWaves: Array<Wave | null> = groupWaves.filter(w => w.orderIds.length > 0 || (!w.dispatchedAt && !w.completedAt))
+    if (!visibleWaves.some(w => w && !w.dispatchedAt && !w.completedAt)) visibleWaves.push(null)
+    return visibleWaves.length ? visibleWaves : [null]
+  }
   const groupsMap = new Map<string, DriverSlot[]>()
   for (const s of slots) {
     const key = groupKey(s.driverName, s.timeOfDay)
@@ -185,21 +203,33 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     groupsMap.set(key, list)
   }
   for (const list of groupsMap.values()) list.sort((a, b) => a.batchNum - b.batchNum)
+  // 即使司机托盘配置后来被归档，历史波次上的订单仍必须能从实际波次进入看板。
+  // 为缺失的司机/时段补只读展示槽位；没有有效 DriverSlot 时不允许拖拽改派。
+  for (const wave of waves) {
+    if (!wave.driverName || !wave.timeOfDay) continue
+    const key = groupKey(wave.driverName, wave.timeOfDay)
+    const list = groupsMap.get(key) ?? []
+    const seqs = wave.pallets.length ? wave.pallets.map(p => p.seq) : [1]
+    for (const batchNum of seqs) {
+      if (!list.some(slot => slot.batchNum === batchNum)) {
+        list.push({ id: `wave-only:${wave.id}:${batchNum}`, driverName: wave.driverName, timeOfDay: wave.timeOfDay, batchNum })
+      }
+    }
+    list.sort((a, b) => a.batchNum - b.batchNum)
+    groupsMap.set(key, list)
+  }
   const amGroups = [...groupsMap.entries()].filter(([, list]) => list[0].timeOfDay === 'am')
   const pmGroups = [...groupsMap.entries()].filter(([, list]) => list[0].timeOfDay === 'pm')
 
-  // 司机名去重(一个司机可有 am+pm 多个时段) + 今日已分配单数(其所有波次合计,按 wave.id 去重避免
-  // 同一波次因挂了多个托盘 slot 被重复计入)
-  const driverNames = [...new Set(slots.map(s => s.driverName))].sort((a, b) => a.localeCompare(b))
+  // 司机名去重(一个司机可有 am+pm 多个时段) + 当天订单数按订单 ID 去重，避免历史数据重复入波。
+  const driverNames = [...new Set([
+    ...slots.map(s => s.driverName),
+    ...waves.map(w => w.driverName).filter((name): name is string => !!name),
+  ])].sort((a, b) => a.localeCompare(b))
   const orderCountByDriver = new Map<string, number>()
-  const countedWaveIds = new Set<string>()
-  for (const s of slots) {
-    const w = waveForGroup(s.driverName, s.timeOfDay)
-    if (!w) continue
-    const dedupeKey = `${s.driverName}::${w.id}`
-    if (countedWaveIds.has(dedupeKey)) continue
-    countedWaveIds.add(dedupeKey)
-    orderCountByDriver.set(s.driverName, (orderCountByDriver.get(s.driverName) ?? 0) + w.orderIds.length)
+  for (const name of driverNames) {
+    const orderIds = new Set(waves.filter(w => w.driverName === name).flatMap(w => w.orderIds))
+    orderCountByDriver.set(name, orderIds.size)
   }
   const selAmGroups = amGroups.filter(([, list]) => selectedDrivers.has(list[0].driverName))
   const selPmGroups = pmGroups.filter(([, list]) => selectedDrivers.has(list[0].driverName))
@@ -210,12 +240,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   // 今天这个时段压根没排单也会枚举出一张空占位卡（见 Lane 里的注释）。客户反馈：
   // "PM 应该是 2 trip，显示是 7 trip"——多出来的 5 个正是这类今天没排单的空占位配置。
   // 空占位卡本身不能去掉（拖单要落点），只改这里显示的计数口径。
-  const hasRealOrders = (list: DriverSlot[]) => {
-    const w = waveForGroup(list[0].driverName, list[0].timeOfDay)
-    return !!w && w.orderIds.length > 0
-  }
-  const amTripCount = selAmGroups.filter(([, list]) => hasRealOrders(list)).length
-  const pmTripCount = selPmGroups.filter(([, list]) => hasRealOrders(list)).length
+  const realWaveCount = (groups: Array<[string, DriverSlot[]]>) => groups.reduce((total, [, list]) =>
+    total + wavesForGroup(list[0].driverName, list[0].timeOfDay).filter(w => w.orderIds.length > 0).length, 0)
+  const amTripCount = realWaveCount(selAmGroups)
+  const pmTripCount = realWaveCount(selPmGroups)
 
   function toggleDriver(name: string) {
     setSelectedDrivers(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
@@ -238,9 +266,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   // 已排完:选中「分配完成」车次对应的司机,右侧只留这些车次
   function showAssignmentDoneDrivers() {
     const names = new Set<string>()
-    for (const [, list] of groupsMap) {
-      const w = waveForGroup(list[0].driverName, list[0].timeOfDay)
-      if (w && waveStage(w) === 'assignment_done') names.add(list[0].driverName)
+    for (const w of waves) {
+      if (w.driverName && waveStage(w) === 'assignment_done') names.add(w.driverName)
     }
     if (names.size === 0) { toast.info(isEn ? 'No trips are "assignment done" yet' : '还没有「分配完成」的车次'); return }
     setSelectedDrivers(names)
@@ -255,16 +282,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 
   // 已入批(单):当天所有波次内订单去重数 = 下方各司机角标之和(assigned 与 orderCountByDriver 同源)
   const inBatchCount = assigned.size
-  const assignmentDoneCount = [...groupsMap.values()].filter(list => {
-    const w = waveForGroup(list[0].driverName, list[0].timeOfDay)
-    return w && waveStage(w) === 'assignment_done'
-  }).length
+  const assignmentDoneCount = waves.filter(w => waveStage(w) === 'assignment_done').length
   // 批量分配完成的候选:有单、没出发、还没标过"分配完成"——跟单个卡片上"✅ 分配完成"按钮
   // 出现的条件完全一致(见 Lane 内 `laneOrders.length > 0 && !reallyDispatched` 分支)，
   // 只是这里一次性收集全部司机的波次,不受当前 chip 选中筛选影响(调度员收工时要一键处理全天)。
-  const pendingDoneWaves = [...groupsMap.values()]
-    .map(list => waveForGroup(list[0].driverName, list[0].timeOfDay))
-    .filter((w): w is Wave => !!w && w.orderIds.length > 0 && !w.dispatchedAt && !w.assignmentDoneAt)
+  const pendingDoneWaves = waves.filter(w => w.orderIds.length > 0 && !w.dispatchedAt && !w.completedAt && !w.assignmentDoneAt)
 
   /* ── 乐观分配 / 移除（参考 waves 页，不整页 reload）──
    * 拖进具体某个托盘 = 带上 driverSlotId 调 assign；同波次内托盘间挪动也走这条(assign 内部
@@ -416,7 +438,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     if (src && wave.id && src === wave.id) {
       e.preventDefault(); e.stopPropagation(); setDragOverPallet(null); setDragging(false); return
     }
-    dropOrderIntoSlot(e, wave, groupSlots[0])
+    const targetSlot = groupSlots.find(slot => !slot.id.startsWith('wave-only:'))
+    if (!targetSlot) return
+    dropOrderIntoSlot(e, wave, targetSlot)
   }
   function dropToLeft(e: React.DragEvent) {
     e.preventDefault()
@@ -443,14 +467,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     return { orderCount: wave.orderIds.length }
   }
 
-  function Lane({ groupSlots, collapsed, onToggleCollapse }: { groupSlots: DriverSlot[]; collapsed: boolean; onToggleCollapse: () => void }) {
-    const driverName = groupSlots[0].driverName
-    const timeOfDay = groupSlots[0].timeOfDay
+  function Lane({ groupSlots, wave: waveForLane, collapsed, onToggleCollapse }: { groupSlots: DriverSlot[]; wave: Wave | null; collapsed: boolean; onToggleCollapse: () => void }) {
+    const driverName = groupSlots[0]?.driverName ?? waveForLane?.driverName ?? ''
+    const timeOfDay = groupSlots[0]?.timeOfDay ?? waveForLane?.timeOfDay ?? 'am'
     const scrollRef = useRef<HTMLDivElement>(null)
-    // 当天这个司机+时段还没有波次(generate-daily 没覆盖到，或从没排过)时用空占位波次渲染卡片，
+    // 当天这个司机+时段没有波次(generate-daily 没覆盖到，或从没排过)时用空占位波次渲染卡片，
     // 保证托盘落点始终存在——拖进去时才实际按 (driverName,timeOfDay,订单交货日) find-or-create
     // 真正的波次(见 assignToPalletNoWave)，不能因为"还没有 id 可用"就整卡不渲染、拖了没反应。
-    const wave: Wave = waveForGroup(driverName, timeOfDay) ?? {
+    const wave: Wave = waveForLane ?? {
       id: '', name: null, orderIds: [], status: 'PENDING',
       waveType: null, waveNumber: null, driverSlotId: null, driverName, timeOfDay,
       dispatchedAt: null, completedAt: null, assignmentDoneAt: null,
@@ -458,7 +482,15 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     }
     const timeCls = timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
     const timeText = timeOfDay === 'am' ? (isEn ? 'AM' : '上午') : (isEn ? 'PM' : '下午')
-    const key = groupKey(driverName, timeOfDay)
+    const key = wave.id || `${groupKey(driverName, timeOfDay)}::empty`
+    const assignableSlots = groupSlots.filter(slot => !slot.id.startsWith('wave-only:'))
+    const palletCount = wave.id ? wave.pallets.length : assignableSlots.length
+    // 每张真实波次卡只显示自己的托盘；若波次尚无托盘，给当前配置的可分配托盘作为落点。
+    // 其他历史波次补出的 wave-only 槽位不能串到这张卡上。
+    const renderSlots = wave.id && wave.pallets.length > 0
+      ? groupSlots.filter(slot => wave.pallets.some(p => p.seq === slot.batchNum))
+      : assignableSlots
+    const canAssign = assignableSlots.length > 0
     // 没手动切换过视图时：0 单默认订单视图(卡片显示"暂无订单"，整卡看起来是空的，
     // 避免每个托盘都画空框造成"明明没订单却有一堆批次"的错觉)；有单默认托盘视图(方便装车)。
     // 手动点过视图切换按钮后按用户选择走，不再跟着单量自动切换。
@@ -473,6 +505,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <div className="font-semibold text-gray-600 flex items-center gap-1.5">
             <Avatar name={driverName} /> {driverName}
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
+            {wave.pallets.map(p => <span key={p.id} className="px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">{isEn ? `Batch ${p.seq}` : `批次 ${p.seq}`}</span>)}
+            <span className="ml-auto">{isEn ? '✅ Completed' : '✅ 已完成'}</span>
           </div>
         </div>
       )
@@ -491,7 +525,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const reallyDispatched = !!wave.dispatchedAt
     // 状态徽章的真实兜底:关灯期 dispatched/assignmentDone 两个 gated 分支都不命中时,
     // 不能再落到 wave.status(建波次时的初始值,dispatch/complete 从不回写,永远是 PENDING)
-    // 撑出"待理货"这个假象——已出发/已完成的波次必须诚实标出来,不受开关影响。
+    // 显示成"待拣货"——已出发/已完成的波次必须诚实标出来,不受开关影响。
     const realLabel = wave.completedAt
       ? { text: isEn ? '✅ Completed' : '✅ 已完成', cls: 'bg-gray-200 text-gray-600' }
       : reallyDispatched
@@ -508,7 +542,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 
     // 订单视图/托盘视图的 OrderChip 拖拽起点共用同一份可拖拽判断(锁定/已出发不可拖)
     function chipDragProps(orderId: string, sourceWaveId: string) {
-      const disabled = reallyDispatched || locked
+      const disabled = reallyDispatched || locked || !canAssign
       return {
         onAssign: disabled ? undefined : () => { setMobileOrder({ orderId, sourceWaveId }); setMobileSlotId('') },
         draggable: !disabled,
@@ -533,7 +567,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <span className="flex-none"><Avatar name={driverName} /></span>
           <span className="font-bold text-[13px] truncate min-w-0" title={driverName}>{driverName}</span>
           <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${timeCls}`}>{timeText}</span>
-          <span className="text-xs text-gray-500 whitespace-nowrap flex-none">{isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets` : `${m.orderCount}单 · ${groupSlots.length}托盘`}</span>
+          <span className="text-xs text-gray-500 whitespace-nowrap flex-none">{isEn ? `${m.orderCount} orders · ${palletCount} pallets` : `${m.orderCount}单 · ${palletCount}托盘`}</span>
           {dispatched
             ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto whitespace-nowrap flex-none">{isEn ? '🚚 In transit' : '🚚 在途'}</span>
             : assignmentDone
@@ -592,8 +626,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               （20260907 客户反馈：标题栏改成只数真车次后，单张空卡还在各说各的）。 */}
           <div className="text-[11px] text-gray-500 mt-1">
             {m.orderCount > 0
-              ? (isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets (one trip)` : `${m.orderCount}单 · ${groupSlots.length}个托盘(一趟车)`)
-              : (isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets` : `${m.orderCount}单 · ${groupSlots.length}个托盘`)}
+              ? (isEn ? `${m.orderCount} orders · ${palletCount} pallets` : `${m.orderCount}单 · ${palletCount}个托盘`)
+              : (isEn ? `${m.orderCount} orders · ${palletCount} pallets` : `${m.orderCount}单 · ${palletCount}个托盘`)}
           </div>
           {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">{isEn ? `Departed at ${departTime}` : `已于 ${departTime} 出发`}</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${realLabel ? 100 : st.pct}%`, background: PURPLE }} /></div>
@@ -623,9 +657,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               <div
                 className="flex flex-col gap-1.5 rounded-lg"
                 style={{ boxShadow: over ? `0 0 0 2px ${PALLET_BLUE}33` : undefined }}
-                onDragOver={e => { e.preventDefault(); autoScrollContainer(scrollRef.current, e.clientY); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(laneDragKey) }}
+                onDragOver={e => { e.preventDefault(); autoScrollContainer(scrollRef.current, e.clientY); if (dispatched || locked || !canAssign) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(laneDragKey) }}
                 onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverPallet(p => p === laneDragKey ? null : p) }}
-                onDrop={e => dropToLane(e, wave, groupSlots)}
+                onDrop={e => { if (canAssign) dropToLane(e, wave, groupSlots) }}
               >
                 {laneOrders.length === 0 ? (
                   <div className="text-center text-[11px] text-gray-400 py-5 border border-dashed rounded-lg" style={{ borderColor: over ? PALLET_BLUE : '#e5e7eb' }}>
@@ -642,7 +676,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 
           {mode === 'pallet' && (
             <div className="flex flex-col gap-1.5">
-              {groupSlots.map(slot => {
+              {renderSlots.map(slot => {
                 const pallet = palletOf(slot)
                 const orderIds = pallet ? [...new Set(pallet.items.map(it => it.orderId))] : []
                 const palletOrders = orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
@@ -654,9 +688,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     key={slot.id}
                     className="border rounded-lg overflow-hidden"
                     style={{ borderColor: over ? PALLET_BLUE : '#e5e7eb', boxShadow: over ? `0 0 0 2px ${PALLET_BLUE}33` : undefined }}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); autoScrollContainer(scrollRef.current, e.clientY); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(dragKey) }}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); autoScrollContainer(scrollRef.current, e.clientY); if (dispatched || locked || slot.id.startsWith('wave-only:')) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(dragKey) }}
                     onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverPallet(p => p === dragKey ? null : p) }}
-                    onDrop={e => dropToPallet(e, wave, slot)}
+                    onDrop={e => { if (!slot.id.startsWith('wave-only:')) dropToPallet(e, wave, slot) }}
                   >
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-[11px] font-semibold">
                       <span className="w-[18px] h-[18px] rounded flex items-center justify-center text-white text-[10px] flex-none" style={{ background: PALLET_BLUE }}>{slot.batchNum}</span>
@@ -665,7 +699,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                       {palletOrders.length > 0 && (
                         <span className="flex-none text-gray-400 font-normal whitespace-nowrap">{pm.weight}kg · €{pm.amount.toLocaleString()}</span>
                       )}
-                      {!dispatched && !locked && (
+                      {!dispatched && !locked && !slot.id.startsWith('wave-only:') && (
                         <button
                           onClick={() => deletePallet(slot, palletOrders.length)}
                           className="flex-none text-gray-400 hover:text-red-600 hover:bg-red-50 rounded px-1"
@@ -856,28 +890,36 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 <GroupTitle time="am" count={amTripCount} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} isEn={isEn} />
                 {!amCollapsed && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
-                    {selAmGroups.map(([k, list]) => (
-                      <Lane
-                        key={k}
-                        groupSlots={list}
-                        collapsed={collapsedLanes.has(k)}
-                        onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })}
-                      />
-                    ))}
+                    {selAmGroups.flatMap(([k, list]) => laneWavesForGroup(list[0].driverName, list[0].timeOfDay).map(wave => {
+                      const laneKey = wave?.id ?? `${k}::placeholder`
+                      return (
+                        <Lane
+                          key={laneKey}
+                          groupSlots={list}
+                          wave={wave}
+                          collapsed={collapsedLanes.has(laneKey)}
+                          onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(laneKey) ? n.delete(laneKey) : n.add(laneKey); return n })}
+                        />
+                      )
+                    }))}
                     {selAmGroups.length === 0 && <Empty text={isEn ? 'No AM shift for selected drivers' : '选中司机无上午班'} />}
                   </div>
                 )}
                 <GroupTitle time="pm" count={pmTripCount} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} isEn={isEn} />
                 {!pmCollapsed && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
-                    {selPmGroups.map(([k, list]) => (
-                      <Lane
-                        key={k}
-                        groupSlots={list}
-                        collapsed={collapsedLanes.has(k)}
-                        onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })}
-                      />
-                    ))}
+                    {selPmGroups.flatMap(([k, list]) => laneWavesForGroup(list[0].driverName, list[0].timeOfDay).map(wave => {
+                      const laneKey = wave?.id ?? `${k}::placeholder`
+                      return (
+                        <Lane
+                          key={laneKey}
+                          groupSlots={list}
+                          wave={wave}
+                          collapsed={collapsedLanes.has(laneKey)}
+                          onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(laneKey) ? n.delete(laneKey) : n.add(laneKey); return n })}
+                        />
+                      )
+                    }))}
                     {selPmGroups.length === 0 && <Empty text={isEn ? 'No PM shift for selected drivers' : '选中司机无下午班'} />}
                   </div>
                 )}
@@ -893,7 +935,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <p className="text-sm break-words">{ordersById.get(mobileOrder?.orderId ?? '')?.restaurantName}</p>
           <select aria-label={isEn ? 'Target batch' : '目标波次'} value={mobileSlotId} onChange={event => setMobileSlotId(event.target.value)} disabled={mobileAssigning} className="w-full min-h-11 border rounded p-2">
             <option value="">{isEn ? 'Select driver / pallet' : '选择司机 / 托盘'}</option>
-            {slots.filter(slot => { const wave = waveForGroup(slot.driverName, slot.timeOfDay); return !wave?.dispatchedAt && !wave?.pickLockedAt && !wave?.completedAt }).map(slot => <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>)}
+            {slots.filter(slot => { const wave = activeWaveForGroup(slot.driverName, slot.timeOfDay); return !wave?.dispatchedAt && !wave?.pickLockedAt && !wave?.completedAt }).map(slot => <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>)}
           </select>
           <DialogFooter className="flex flex-col gap-2">
             {mobileOrder?.sourceWaveId && <button disabled={mobileAssigning} className="min-h-11 px-3 border rounded text-red-600" onClick={async () => {
@@ -905,7 +947,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             <button disabled={!mobileSlotId || mobileAssigning} className="min-h-11 px-3 rounded bg-[#875A7B] text-white disabled:opacity-40" onClick={async () => {
               const slot = slots.find(slot => slot.id === mobileSlotId)
               if (!slot || !mobileOrder) return
-              const wave = waveForGroup(slot.driverName, slot.timeOfDay) ?? { id: '', dispatchedAt: null, pickLockedAt: null } as Wave
+              const wave = activeWaveForGroup(slot.driverName, slot.timeOfDay) ?? { id: '', dispatchedAt: null, pickLockedAt: null } as Wave
               setMobileAssigning(true)
               try { if (await moveOrderIntoSlot(mobileOrder.orderId, mobileOrder.sourceWaveId, wave, slot)) setMobileOrder(null) } finally { setMobileAssigning(false) }
             }}>{mobileAssigning ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Assign to this batch' : '分配到此波次')}</button>

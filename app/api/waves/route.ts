@@ -13,11 +13,24 @@ export async function GET(req: Request) {
       const waveDate = new Date(dateStr + 'T00:00:00Z')
       const waves = await prisma.pickingWave.findMany({
         where: { waveDate },
-        orderBy: [{ driverName: 'asc' }, { timeOfDay: 'asc' }],
+        orderBy: [{ driverName: 'asc' }, { timeOfDay: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
         // 调度台需要按托盘(batchNum)子分组展示波次内部的订单，见 lib/wave-assign.ts
         include: { pallets: { orderBy: { seq: 'asc' } } },
       })
-      return NextResponse.json(serializeApi(waves))
+      // 兼容早期波次：当时只存 driverSlotId，没有写司机和时段快照。
+      // 不补齐会导致订单已经从待分配栏消失，却无法归入任何司机/时段卡片。
+      const legacySlotIds = [...new Set(waves
+        .filter(w => (!w.driverName || !w.timeOfDay) && w.driverSlotId)
+        .map(w => w.driverSlotId as string))]
+      const legacySlots = legacySlotIds.length
+        ? await prisma.driverSlot.findMany({ where: { id: { in: legacySlotIds } }, select: { id: true, driverName: true, timeOfDay: true } })
+        : []
+      const legacySlotMap = new Map(legacySlots.map(slot => [slot.id, slot]))
+      return NextResponse.json(serializeApi(waves.map(wave => ({
+        ...wave,
+        driverName: wave.driverName || legacySlotMap.get(wave.driverSlotId ?? '')?.driverName || null,
+        timeOfDay: wave.timeOfDay || legacySlotMap.get(wave.driverSlotId ?? '')?.timeOfDay || null,
+      }))))
     }
 
     const waves = await prisma.pickingWave.findMany({ orderBy: { createdAt: 'desc' } })

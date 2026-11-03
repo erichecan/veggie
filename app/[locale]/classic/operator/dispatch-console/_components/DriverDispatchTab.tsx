@@ -33,11 +33,13 @@ interface SummaryResp {
 }
 
 const WAVE_STATUS_LABEL_ZH: Record<string, { text: string; cls: string }> = {
-  PENDING: { text: '待理货', cls: 'bg-gray-100 text-gray-500' },
-  PICKING: { text: '理货中', cls: 'bg-blue-100 text-blue-700' },
-  PICKED: { text: '已拣货', cls: 'bg-blue-100 text-blue-700' },
+  PENDING: { text: '待拣货', cls: 'bg-gray-100 text-gray-500' },
+  PICKING: { text: '拣货中', cls: 'bg-blue-100 text-blue-700' },
+  PICKED: { text: '拣货完成', cls: 'bg-blue-100 text-blue-700' },
   SORTING: { text: '分货中', cls: 'bg-amber-100 text-amber-700' },
-  SORTED: { text: '已就绪', cls: 'bg-green-100 text-green-700' },
+  SORTED: { text: '已分货', cls: 'bg-green-100 text-green-700' },
+  IN_DELIVERY: { text: '已出发', cls: 'bg-blue-100 text-blue-700' },
+  COMPLETED: { text: '已完成', cls: 'bg-gray-200 text-gray-600' },
 }
 
 const WAVE_STATUS_LABEL_EN: Record<string, { text: string; cls: string }> = {
@@ -46,6 +48,8 @@ const WAVE_STATUS_LABEL_EN: Record<string, { text: string; cls: string }> = {
   PICKED: { text: 'Picked', cls: 'bg-blue-100 text-blue-700' },
   SORTING: { text: 'Sorting', cls: 'bg-amber-100 text-amber-700' },
   SORTED: { text: 'Ready', cls: 'bg-green-100 text-green-700' },
+  IN_DELIVERY: { text: 'Departed', cls: 'bg-blue-100 text-blue-700' },
+  COMPLETED: { text: 'Completed', cls: 'bg-gray-200 text-gray-600' },
 }
 
 function timePill(t: string | null, isEn: boolean) {
@@ -128,9 +132,9 @@ export default function DriverDispatchTab({ date }: { date: string }) {
   const sorted = [...filtered].sort((a, b) => {
     const aNum = a.batchNums[0] ?? 0
     const bNum = b.batchNums[0] ?? 0
-    if (sortBy === 'driver') return a.driverName.localeCompare(b.driverName) || aNum - bNum
-    if (sortBy === 'ampm') return (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') || aNum - bNum
-    return aNum - bNum || (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '')
+    if (sortBy === 'driver') return a.driverName.localeCompare(b.driverName) || (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') || aNum - bNum || a.waveId.localeCompare(b.waveId)
+    if (sortBy === 'ampm') return (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') || aNum - bNum || a.driverName.localeCompare(b.driverName) || a.waveId.localeCompare(b.waveId)
+    return aNum - bNum || (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') || a.driverName.localeCompare(b.driverName) || a.waveId.localeCompare(b.waveId)
   })
 
   const driverCount = new Set(filtered.map(r => r.driverName)).size
