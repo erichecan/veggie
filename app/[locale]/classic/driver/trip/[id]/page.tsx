@@ -19,10 +19,44 @@ const PURPLE = '#875A7B'
 const EXCEPTION_REASONS_ZH = ['品质问题', '数量错误', '客户拒收', '配送延误', '包装破损', '其他']
 const EXCEPTION_REASONS_EN = ['Quality issue', 'Wrong quantity', 'Customer refused', 'Delivery delay', 'Damaged packaging', 'Other']
 
+/** Calculate the collection amount after reported returns, using the sold unit price and tax. */
+function calculateReturnAdjustment(items: Trip['restaurants'][number]['items'], returns: ReturnItem[]) {
+  const remainingByProduct = new Map<string, number>()
+  for (const item of items) {
+    remainingByProduct.set(item.productId, (remainingByProduct.get(item.productId) ?? 0) + Math.max(0, Number(item.quantity) || 0))
+  }
+
+  let exTax = 0
+  let tax = 0
+  for (const ret of returns) {
+    if (ret.actionType === 'exchange' || ret.status === 'REJECTED') continue
+    let qtyLeft = Math.max(0, Number(ret.quantity) || 0)
+    const matchingItems = items.filter(item => item.productId === ret.productId)
+    for (const item of matchingItems) {
+      if (qtyLeft <= 0) break
+      const remaining = remainingByProduct.get(item.productId) ?? 0
+      const qty = Math.min(qtyLeft, remaining, Math.max(0, Number(item.quantity) || 0))
+      if (qty <= 0) continue
+      const unitPrice = Number.isFinite(Number(ret.unitPrice)) ? Number(ret.unitPrice) : Number(item.price) || 0
+      const rate = Number(item.taxRate) || 0
+      const taxFraction = rate > 1 ? rate / 100 : rate
+      exTax += unitPrice * qty
+      tax += unitPrice * qty * taxFraction
+      qtyLeft -= qty
+      remainingByProduct.set(item.productId, remaining - qty)
+    }
+  }
+
+  exTax = Math.round(exTax * 100) / 100
+  tax = Math.round(tax * 100) / 100
+  return { exTax, tax, incTax: Math.round((exTax + tax) * 100) / 100 }
+}
+
 interface ExceptionProduct {
   productId: string
   productName: string
   quantity: number
+  allocatedQuantity: number
   selected: boolean
 }
 
@@ -64,10 +98,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   // 否则 Prisma 会因 Trip.restaurants 里混入未知字段而报错）
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
 
-  function load() {
-    apiGet<Trip>(`/api/trips/${id}`)
-      .then(t => setTrip(t))
-      .catch(() => setTrip(null))
+  async function load() {
+    try {
+      const t = await apiGet<Trip>(`/api/trips/${id}`)
+      setTrip(t)
+      return t
+    } catch {
+      setTrip(null)
+      return null
+    }
   }
 
   useEffect(() => { load() }, [id])
@@ -157,6 +196,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       productId: item.productId,
       productName: item.productName,
       quantity: item.quantity,
+      allocatedQuantity: item.quantity,
       selected: false,
     })))
     setExceptionReasons([])
@@ -187,6 +227,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (!trip || !exceptionModal) return
     const selected = exceptionProducts.filter(p => p.selected)
     if (selected.length === 0) { toast.error(isEn ? 'Please select the affected products' : '请勾选有异常的商品'); return }
+    const invalidQuantity = selected.find(p => !Number.isFinite(p.quantity) || p.quantity <= 0 || p.quantity > p.allocatedQuantity)
+    if (invalidQuantity) {
+      toast.error(isEn
+        ? `Enter a quantity greater than 0 and no more than ${invalidQuantity.allocatedQuantity} for ${invalidQuantity.productName}`
+        : `${invalidQuantity.productName} 的数量必须大于 0，且不能超过已分配数量 ${invalidQuantity.allocatedQuantity}`)
+      return
+    }
     const reasonText = exceptionReasons.join(isEn ? ', ' : '、')
     if (!reasonText.trim()) { toast.error(isEn ? 'Please enter a reason' : '请填写异常原因'); return }
     if (!exceptionPhoto) { toast.error(isEn ? 'Please take a photo as evidence' : '请拍照留存现场证据'); return }
@@ -197,8 +244,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     }
 
     setSubmittingException(true)
+    let returnRecorded = false
     try {
-      await apiPost(`/api/trips/${trip.id}/returns`, {
+      await apiPost<{ returns: ReturnItem[] }>(`/api/trips/${trip.id}/returns`, {
         restaurantId: exceptionModal.restId,
         driverSignature: exceptionDriverSignature,
         returns: selected.map(p => ({
@@ -211,11 +259,33 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           lateReportNote: isLateReport ? exceptionLateNote.trim() : undefined,
         })),
       })
-      load()
+      returnRecorded = true
+      // Re-read after the dedicated return endpoint writes the return records. If a
+      // previous amount was already saved, replace it with the new recommended amount.
+      const latestTrip = await apiGet<Trip>(`/api/trips/${trip.id}`)
+      const updatedTrip = JSON.parse(JSON.stringify(latestTrip)) as Trip
+      const restaurant = updatedTrip.restaurants.find(r => r.restaurantId === exceptionModal.restId)
+      if (restaurant) {
+        const returnAdjustment = calculateReturnAdjustment(restaurant.items, restaurant.returns ?? [])
+        const grossDue = orderIncTaxTotal(restaurant.items)
+        restaurant.payment = Math.max(0, Math.round((grossDue - returnAdjustment.incTax) * 100) / 100)
+      }
+      updatedTrip.totalPayment = updatedTrip.restaurants.reduce((sum, r) => sum + (r.payment ?? 0), 0)
+      await apiPut(`/api/trips/${updatedTrip.id}`, updatedTrip)
+      setTrip(updatedTrip)
       setExceptionModal(null)
-      toast.success(isEn ? 'Exception recorded — pending warehouse check' : '异常已记录，待仓库核实')
+      toast.success(isEn
+        ? 'Exception recorded — collection amount recalculated'
+        : '异常已记录，实收金额已按退货重新计算')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Submit failed' : '提交失败'))
+      if (returnRecorded) {
+        await load()
+        toast.error(isEn
+          ? 'Return was recorded, but the collection amount could not be refreshed. Please check the amount before sign-off.'
+          : '退货已记录，但实收金额未能刷新；请签收前核对金额。')
+      } else {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Submit failed' : '提交失败'))
+      }
     } finally {
       setSubmittingException(false)
     }
@@ -414,9 +484,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           // 应收必须是**含税**金额：item.subtotal 是税前（SSOT），之前直接求和当「应收」，
           // 司机照着少收了税（20261028 客户反馈：司机端 €29.37、客户门户 €30.95）。
           // 与会计核销司机现金（lib/accounting/driver-cash.ts）、销售单打印同一个 orderIncTaxTotal
-          const dueExTax = Math.round(r.items.reduce((s, i) => s + i.subtotal, 0) * 100) / 100
-          const dueIncTax = orderIncTaxTotal(r.items)
-          const dueTax = Math.round((dueIncTax - dueExTax) * 100) / 100
+          const grossDueExTax = Math.round(r.items.reduce((s, i) => s + i.subtotal, 0) * 100) / 100
+          const grossDueIncTax = orderIncTaxTotal(r.items)
+          const returnAdjustment = calculateReturnAdjustment(r.items, r.returns ?? [])
+          const dueExTax = Math.max(0, Math.round((grossDueExTax - returnAdjustment.exTax) * 100) / 100)
+          const dueIncTax = Math.max(0, Math.round((grossDueIncTax - returnAdjustment.incTax) * 100) / 100)
+          const dueTax = Math.max(0, Math.round((dueIncTax - dueExTax) * 100) / 100)
           const isProcessed = r.delivered || hasException
           const borderColor = r.delivered ? 'border-green-300' : hasException ? 'border-orange-300' : 'border-gray-200'
           const headerBg = r.delivered ? 'bg-green-50' : hasException ? 'bg-orange-50' : 'bg-gray-50'
@@ -496,6 +569,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       ))}
                     </tbody>
                     <tfoot>
+                      {returnAdjustment.incTax > 0 && (
+                        <tr>
+                          <td colSpan={3} className="pt-2 text-right text-gray-500">{isEn ? 'Reported returns' : '已报退货抵扣'}</td>
+                          <td className="pt-2 text-right text-red-600">−€{returnAdjustment.incTax.toFixed(2)}</td>
+                        </tr>
+                      )}
                       {dueTax > 0 && (
                         <>
                           <tr className="border-t border-gray-200">
@@ -510,7 +589,11 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       )}
                       <tr className={dueTax > 0 ? '' : 'border-t border-gray-200'}>
                         <td colSpan={3} className="pt-2 text-right font-medium text-gray-700">
-                          {dueTax > 0 ? (isEn ? 'Total Due (incl. tax)' : '应收合计（含税）') : (isEn ? 'Total Due' : '应收合计')}
+                          {returnAdjustment.incTax > 0
+                            ? (isEn ? 'Amount to Collect After Returns' : '退货后应收合计')
+                            : dueTax > 0
+                              ? (isEn ? 'Total Due (incl. tax)' : '应收合计（含税）')
+                              : (isEn ? 'Total Due' : '应收合计')}
                         </td>
                         <td className="pt-2 text-right font-bold" style={{ color: PURPLE }}>
                           €{dueIncTax.toFixed(2)}
@@ -690,7 +773,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Select affected products (multiple allowed)' : '选择有异常的商品（可多选）'}</p>
                 <div className="space-y-2 border rounded-lg divide-y">
                   {exceptionProducts.map((p, i) => (
-                    <div key={p.productId} className="flex items-center gap-3 px-3 py-2.5">
+                    <div key={`${p.productId}-${i}`} className="flex items-center gap-3 px-3 py-2.5">
                       <input
                         type="checkbox"
                         id={`exc-${i}`}
@@ -703,19 +786,29 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       />
                       <label htmlFor={`exc-${i}`} className="flex-1 text-sm cursor-pointer">
                         <span className="font-medium text-gray-800">{p.productName}</span>
-                        <span className="text-gray-400 ml-2">{isEn ? `Allocated ${p.quantity}` : `已配 ${p.quantity}`}</span>
+                        <span className="text-gray-400 ml-2">{isEn ? `Allocated ${p.allocatedQuantity}` : `已配 ${p.allocatedQuantity}`}</span>
                       </label>
                       {p.selected && (
-                        <NumericInput
-                          min={0.001}
-                          step="0.001"
-                          value={p.quantity}
-                          onChange={e => {
-                            const qty = Number(e.target.value) || 0
-                            setExceptionProducts(prev => prev.map((x, j) => j === i ? { ...x, quantity: qty } : x))
-                          }}
-                          className="w-20 text-right"
-                        />
+                        <div className="shrink-0">
+                          <NumericInput
+                            min={0.001}
+                            max={p.allocatedQuantity}
+                            step="0.001"
+                            value={p.quantity}
+                            aria-label={isEn ? `Return quantity for ${p.productName}` : `${p.productName}退货数量`}
+                            aria-invalid={p.quantity <= 0 || p.quantity > p.allocatedQuantity}
+                            onChange={e => {
+                              const qty = Number(e.target.value) || 0
+                              setExceptionProducts(prev => prev.map((x, j) => j === i ? { ...x, quantity: qty } : x))
+                            }}
+                            className={`w-20 rounded-md border-2 bg-white px-2 py-2 text-right text-base font-semibold shadow-sm outline-none focus:ring-2 ${p.quantity <= 0 || p.quantity > p.allocatedQuantity ? 'border-red-500 text-red-700 focus:border-red-500 focus:ring-red-100' : 'border-purple-300 text-gray-900 focus:border-purple-500 focus:ring-purple-100'}`}
+                          />
+                          {(p.quantity <= 0 || p.quantity > p.allocatedQuantity) && (
+                            <p className="mt-1 text-right text-[11px] text-red-600">
+                              {isEn ? `Max ${p.allocatedQuantity}` : `最多 ${p.allocatedQuantity}`}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
