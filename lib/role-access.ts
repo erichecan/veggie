@@ -81,6 +81,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    *   GET  /api/trips?driverId=…      行程列表
    *   GET  /api/trips/[id]            行程详情
    *   PUT  /api/trips/[id]            签收/退货/完成站点（整包覆盖 restaurants JSON）
+   *   POST /api/trips/[id]/order-timing   单个订单开始/结束计时（路由内仍校验司机行级归属）
    *   GET/POST /api/trips/[id]/settlement   交账提交
    *   GET  /api/customers/coordinates 地图打点
    * ⛔ 不给 `/api/trips` 的 POST/DELETE —— 建行程和删行程是调度的事。
@@ -90,6 +91,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: ['GET', 'PUT'] },
+    { pattern: '/api/trips/*/order-timing', methods: ['POST'] },
     // 20260924：交账（/api/trips/*/settlement）、对账（/api/driver-reports/**）
     // 两个独立入口下线，司机不用再自己报数——钱由会计核销页按系统数据直接确认
     { pattern: '/api/customers/coordinates', methods: READ },
