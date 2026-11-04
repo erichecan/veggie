@@ -3877,6 +3877,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "POST /api/trips/[id]/order-timing": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "y",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "y",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/trips/[id]/picking-pdf": {
   "BOSS": "y",
   "OPERATOR": "y",
