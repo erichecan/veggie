@@ -16,6 +16,13 @@ const TRIP_TRACKED_FIELDS = [
 const DECIDED_RETURN_STATUSES = new Set(['APPROVED', 'REJECTED', 'SETTLED'])
 
 type RestaurantJson = { restaurantId: string; returns?: Array<{ productId: string; createdAt?: string; status?: string }> }
+type PaymentRestaurantJson = {
+  restaurantId: string
+  payment?: unknown
+  delivered?: boolean
+  orderIds?: string[]
+  orderTimings?: Record<string, { endedAt?: string }>
+}
 
 /**
  * 退货审核必须走专用的 PUT /api/trips/:id/returns（有状态机守卫 + 库存联动），
@@ -135,6 +142,38 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         })
       }
 
+      // Once a driver has completed/signature-confirmed a stop or ended one of its
+      // order timers, its collected amount is final. Enforce this server-side too:
+      // the trip detail page saves the whole trip JSON, so trusting the disabled
+      // input alone would still allow a stale or crafted PUT to rewrite the amount.
+      if (driverScope) {
+        const oldRestaurants = Array.isArray(before.restaurants)
+          ? before.restaurants as PaymentRestaurantJson[]
+          : []
+        const incomingRestaurants = Array.isArray(data.restaurants)
+          ? data.restaurants as PaymentRestaurantJson[]
+          : oldRestaurants
+        const oldById = new Map(oldRestaurants.map(r => [r.restaurantId, r]))
+        for (const restaurant of incomingRestaurants) {
+          const old = oldById.get(restaurant.restaurantId)
+          if (!old) continue
+          const completed = !!old.delivered || !!restaurant.delivered
+            || (old.orderIds ?? []).some(orderId => !!old.orderTimings?.[orderId]?.endedAt)
+          if (completed && restaurant.payment !== old.payment) {
+            return NextResponse.json(
+              { error: '订单完成后，实收金额不可修改' },
+              { status: 409 },
+            )
+          }
+        }
+
+        // Keep the trip summary consistent with the per-customer collected amounts.
+        data.totalPayment = incomingRestaurants.reduce((sum, restaurant) => {
+          const payment = restaurant.payment
+          return sum + (typeof payment === 'number' && Number.isFinite(payment) && payment >= 0 ? payment : 0)
+        }, 0)
+      }
+
       const newStatus = data.status?.toUpperCase()
       const beforeStatus = String(before.status).toUpperCase()
       if (driverScope && newStatus === 'COMPLETED') {
@@ -162,18 +201,67 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
       // departTime is server-owned. The transition caused by the driver's Confirm Departure
       // click is the only point that starts the trip clock.
+      let trip: NonNullable<typeof before>
       if (newStatus === 'IN_PROGRESS' && beforeStatus !== 'IN_PROGRESS') {
-        data.departTime = new Date().toISOString()
+        const targetDriverId = before.driverId ?? driverScope?.userId ?? data.driverId
+        if (targetDriverId) {
+          // Lock the driver's row so two departure requests for different trips cannot both
+          // pass the active-trip check concurrently.
+          const startResult = await prisma.$transaction(async tx => {
+            await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${targetDriverId} FOR UPDATE`
+            const current = await tx.trip.findUnique({ where: { id } })
+            if (!current) return { error: '行程不存在', status: 404 as const }
+            const currentStatus = String(current.status).toUpperCase()
+            if (currentStatus === 'IN_PROGRESS') return { trip: current }
+            if (currentStatus !== beforeStatus) {
+              return { error: '行程状态已变化，请刷新后重试', status: 409 as const }
+            }
+
+            const activeTrip = await tx.trip.findFirst({
+              where: { driverId: targetDriverId, status: 'IN_PROGRESS', id: { not: id } },
+              select: { id: true, name: true },
+            })
+            if (activeTrip) {
+              const activeName = activeTrip.name || '配送行程'
+              return {
+                error: 'ACTIVE_TRIP_EXISTS',
+                message: `您有尚未结束的配送行程「${activeName} · ${activeTrip.id.slice(-6).toUpperCase()}」，请先结束该行程后再确认出发`,
+                activeTripName: `${activeName} · ${activeTrip.id.slice(-6).toUpperCase()}`,
+                status: 409 as const,
+              }
+            }
+
+            data.departTime = new Date().toISOString()
+            const started = await tx.trip.update({
+              where: { id },
+              data: { ...data, status: newStatus },
+            })
+            return { trip: started }
+          })
+          if ('error' in startResult) {
+            const errorBody = 'message' in startResult
+              ? { error: startResult.error, message: startResult.message, activeTripName: startResult.activeTripName }
+              : { error: startResult.error }
+            return NextResponse.json(errorBody, { status: startResult.status })
+          }
+          trip = startResult.trip
+        } else {
+          data.departTime = new Date().toISOString()
+          trip = await prisma.trip.update({
+            where: { id },
+            data: { ...data, status: newStatus },
+          })
+        }
       } else {
         data.departTime = before.departTime
+        trip = await prisma.trip.update({
+          where: { id },
+          data: {
+            ...data,
+            status: newStatus ?? undefined,
+          },
+        })
       }
-      const trip = await prisma.trip.update({
-        where: { id },
-        data: {
-          ...data,
-          status: newStatus ?? undefined,
-        },
-      })
 
       // ─ Trip → Order 回写：状态变为 COMPLETED 时，自动把订单各 line 的 deliveredQty
       //   置为 orderedQty（方案 C 默认全送，可后续手动覆盖）。

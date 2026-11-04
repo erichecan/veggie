@@ -1822,15 +1822,15 @@ export default function ClassicPlaceOrderPage() {
                     <th className="w-16 min-w-16 px-1.5 py-2 text-left">NO</th>
                     <th className="w-[220px] px-1.5 py-2 text-left">Product</th>
                     <th className="px-1.5 py-2 text-left">Description</th>
-                    <th className="w-24 px-1.5 py-2 text-right">Ordered Qty</th>
                     <th className="px-1.5 py-2 text-left">UoM</th>
-                    <th className="px-1.5 py-2 text-left">Note</th>
-                    <th className="w-14 px-1.5 py-2 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
+                    <th className="w-24 px-1.5 py-2 text-right">Ordered Qty</th>
                     <th className="w-24 px-1.5 py-2 text-right">Unit Price</th>
                     <th className="hidden xl:table-cell px-1.5 py-2 text-right">Cost</th>
                     <th className="hidden xl:table-cell px-1.5 py-2 text-left">Price</th>
                     <th className="w-20 px-1.5 py-2 text-left">Taxes</th>
                     <th className="w-24 px-1.5 py-2 text-right">Total</th>
+                    <th className="px-1.5 py-2 text-left">Note</th>
+                    <th className="w-14 px-1.5 py-2 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
                     <th className="hidden 2xl:table-cell px-1.5 py-2 text-right">Forecast Qty</th>
                   </tr>
                 )}
@@ -1872,37 +1872,7 @@ export default function ClassicPlaceOrderPage() {
                         />
                       </td>
 
-                      {/* Ordered Qty */}
-                      <td className="px-1.5 py-1">
-                        <input
-                          data-qty-line={line.id}
-                          type="text"
-                          inputMode="decimal"
-                          value={qtyRawMap[line.id] ?? String(line.orderedQty)}
-                          onChange={e => {
-                            const raw = e.target.value
-                            setQtyRawMap(prev => ({ ...prev, [line.id]: raw }))
-                            const n = parseFloat(raw)
-                            if (!isNaN(n) && n >= 0) updateQty(line.id, n)
-                          }}
-                          onBlur={() => {
-                            const raw = qtyRawMap[line.id]
-                            // 未编辑过(仅 Tab 跳过)→ 保持原数量,不提交 0
-                            if (raw !== undefined) {
-                              const n = parseFloat(raw)
-                              // 空/非法/非正数 → 回退为 1(数量至少 1),不允许变成 0
-                              const committed = isNaN(n) || n <= 0 ? 1 : n
-                              updateQty(line.id, committed)
-                            }
-                            setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
-                          }}
-                          onFocus={e => e.target.select()}
-                          onKeyDown={e => handleFieldKey(e)}
-                          className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
-                        />
-                      </td>
-
-                      {/* UoM — placed directly after ordered quantity for faster entry */}
+                      {/* UoM — placed before quantity for faster entry */}
                       <td className="px-1.5 py-1 text-gray-500 truncate">
                         {line.productId && (saleUomOptions[line.productId] ?? []).some(o => o.active) ? (
                           (() => {
@@ -1930,27 +1900,33 @@ export default function ClassicPlaceOrderPage() {
                           })()
                         ) : (line.uom || '—')}
                       </td>
-
-                      {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
+                      {/* Ordered Qty */}
                       <td className="px-1.5 py-1">
                         <input
+                          data-qty-line={line.id}
                           type="text"
-                          data-note-line={line.id}
-                          value={line.note}
-                          onChange={e => patchLine(line.id, { note: e.target.value })}
+                          inputMode="decimal"
+                          value={qtyRawMap[line.id] ?? String(line.orderedQty)}
+                          onChange={e => {
+                            const raw = e.target.value
+                            setQtyRawMap(prev => ({ ...prev, [line.id]: raw }))
+                            const n = parseFloat(raw)
+                            if (!isNaN(n) && n >= 0) updateQty(line.id, n)
+                          }}
+                          onBlur={() => {
+                            const raw = qtyRawMap[line.id]
+                            // 未编辑过(仅 Tab 跳过)→ 保持原数量,不提交 0
+                            if (raw !== undefined) {
+                              const n = parseFloat(raw)
+                              // 空/非法/非正数 → 回退为 1(数量至少 1),不允许变成 0
+                              const committed = isNaN(n) || n <= 0 ? 1 : n
+                              updateQty(line.id, committed)
+                            }
+                            setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
+                          }}
+                          onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}
-                          placeholder={isEn ? 'Note…' : '备注…'}
-                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-amber-400 focus:outline-none bg-transparent placeholder:text-gray-300"
-                        />
-                      </td>
-
-                      {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
-                      <td className="w-14 px-1.5 py-1 text-center">
-                        <input
-                          type="checkbox"
-                          checked={!!line.isGift}
-                          onChange={e => patchLine(line.id, applyGiftToggle(line, e.target.checked, () => repriceGiftLine(line)))}
-                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
+                          className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                         />
                       </td>
 
@@ -2030,6 +2006,29 @@ export default function ClassicPlaceOrderPage() {
                         <span className="font-medium text-gray-700">
                           {lineTotal > 0 ? eur(lineTotal) : '—'}
                         </span>
+                      </td>
+
+                      {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
+                      <td className="px-1.5 py-1">
+                        <input
+                          type="text"
+                          data-note-line={line.id}
+                          value={line.note}
+                          onChange={e => patchLine(line.id, { note: e.target.value })}
+                          onKeyDown={e => handleFieldKey(e)}
+                          placeholder={isEn ? 'Note…' : '备注…'}
+                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-amber-400 focus:outline-none bg-transparent placeholder:text-gray-300"
+                        />
+                      </td>
+
+                      {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
+                      <td className="w-14 px-1.5 py-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!line.isGift}
+                          onChange={e => patchLine(line.id, applyGiftToggle(line, e.target.checked, () => repriceGiftLine(line)))}
+                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
+                        />
                       </td>
 
                       {/* Forecast Qty */}

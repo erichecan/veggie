@@ -6,7 +6,6 @@ import { writeLog } from '@/lib/action-log'
 import { driverRowScope } from '@/lib/row-scope'
 import { completeDeliveredOrders, describeFailures } from '@/lib/delivery-complete'
 import { decodedPngBytes, MAX_SIGNATURE_BYTES } from '@/lib/trip-signature'
-import { isSameMoneyAmount, tripRestaurantAmountDue } from '@/lib/trip-collection'
 import type { TripRestaurant } from '@/lib/types'
 
 type OrderTiming = { startedAt?: string; endedAt?: string }
@@ -67,10 +66,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           ) {
             return { error: '请先完成顾客签名，再结束订单', status: 409 as const }
           }
-          const expectedAmount = tripRestaurantAmountDue(owner.items, owner.returns ?? [])
-          if (!isSameMoneyAmount(owner.payment, expectedAmount)) {
+          if (typeof owner.payment !== 'number' || !Number.isFinite(owner.payment) || owner.payment < 0) {
             return {
-              error: `实收金额不正确，请填写 €${expectedAmount.toFixed(2)} 后再结束订单`,
+              error: '请先输入并保存实收金额（可以填写 0）再结束订单',
               status: 409 as const,
             }
           }

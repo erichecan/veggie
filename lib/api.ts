@@ -51,10 +51,17 @@ function isEnLocale(): boolean {
  * 各 API 路由自带的 raw message 大多仍是中文——覆盖到的路由已单独处理，
  * 未覆盖到的路由这里无法逐条翻译，属已知范围外）
  */
-function humanizeError(status: number, code: string | undefined, raw: string | undefined): string {
+function humanizeError(status: number, code: string | undefined, raw: string | undefined, details?: Record<string, unknown>): string {
   const isEn = isEnLocale()
   // 已知业务错误码
   switch (code) {
+    case 'ACTIVE_TRIP_EXISTS': {
+      const tripName = typeof details?.activeTripName === 'string' ? details.activeTripName : ''
+      const tripLabel = tripName ? `“${tripName}”` : 'Another trip'
+      return isEn
+        ? `${tripLabel} is still in delivery. Finish and close it before confirming departure.`
+        : `您有尚未结束的配送行程${tripName ? `「${tripName}」` : ''}，请先结束该行程后再确认出发`
+    }
     case 'INSUFFICIENT_STOCK':
       return raw || (isEn ? 'Insufficient stock, cannot place order' : '库存不足，无法下单')
     case 'RATE_LIMIT':
@@ -164,7 +171,7 @@ export async function api<T = unknown>(
       if (Object.keys(rest).length > 0) details = rest
     } catch { /* ignore */ }
 
-    throw new ApiError(humanizeError(res.status, code, rawMessage), res.status, code, rawMessage, details)
+    throw new ApiError(humanizeError(res.status, code, rawMessage, details), res.status, code, rawMessage, details)
   }
 
   // 204 No Content

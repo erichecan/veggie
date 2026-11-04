@@ -13,7 +13,7 @@ import { TripStatusBadge } from '@/components/shared/status-badge'
 import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
 import SignaturePad from '@/components/driver/SignaturePad'
 import { orderIncTaxTotal } from '@/lib/order-items'
-import { calculateReturnAdjustment, isSameMoneyAmount, tripRestaurantAmountDue } from '@/lib/trip-collection'
+import { calculateReturnAdjustment } from '@/lib/trip-collection'
 import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
@@ -39,6 +39,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [trip, setTrip] = useState<Trip | null>(null)
   const [orderTimingBusy, setOrderTimingBusy] = useState<string | null>(null)
   const [paymentSavingRestId, setPaymentSavingRestId] = useState<string | null>(null)
+  const [startingDelivery, setStartingDelivery] = useState(false)
   const [showEndTripConfirm, setShowEndTripConfirm] = useState(false)
   const [endingTrip, setEndingTrip] = useState(false)
 
@@ -151,11 +152,18 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   }
 
   async function startDelivery() {
-    if (!trip) return
-    const updated = cloneTrip()
-    updated.status = 'in_progress'
-    await saveTrip(updated)
-    toast.success(isEn ? 'Departure confirmed, delivery started' : '已确认出发，开始配送')
+    if (!trip || startingDelivery) return
+    setStartingDelivery(true)
+    try {
+      const updated = cloneTrip()
+      updated.status = 'in_progress'
+      await saveTrip(updated)
+      toast.success(isEn ? 'Departure confirmed, delivery started' : '已确认出发，开始配送')
+    } catch {
+      // saveTrip displays the server conflict, including the currently active trip name.
+    } finally {
+      setStartingDelivery(false)
+    }
   }
 
   async function changeOrderTiming(orderId: string, action: 'start' | 'end') {
@@ -176,13 +184,24 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   }
 
   /**
-   * 实收货款。必须规整到分——现场手滑输入 40.504050 这类值时，parseFloat 会原样落库，
-   * 之后一路带进累计实收、司机交账、发票核销，产生分以下的尾数对不平。
-   * 负数按 0 处理：收款不可能为负，输错了不如归零让人看出来。
+   * 实收金额允许为 0 或客户实际支付的任意金额，保存到分。
    */
   async function setPayment(restId: string, amount: number) {
     if (!trip) return
-    const clean = Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100) / 100) : 0
+    const currentRestaurant = trip.restaurants.find(r => r.restaurantId === restId)
+    const paymentLocked = !!currentRestaurant && (
+      currentRestaurant.delivered
+      || (currentRestaurant.orderIds ?? []).some(orderId => !!orderTimingById[orderId]?.endedAt)
+    )
+    if (paymentLocked) {
+      toast.error(isEn ? 'Collected amount cannot be changed after the order is completed' : '订单完成后，实收金额不可修改')
+      return
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast.error(isEn ? 'Enter an amount collected of €0 or more' : '请输入大于或等于 €0 的实收金额')
+      return
+    }
+    const clean = Math.round(amount * 100) / 100
     const updated = cloneTrip()
     const r = updated.restaurants.find(r => r.restaurantId === restId)
     if (r) r.payment = clean
@@ -368,11 +387,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (!trip) return
     const r = trip.restaurants.find(r => r.restaurantId === restId)
     if (!r) return
-    const expected = tripRestaurantAmountDue(r.items, r.returns ?? [])
-    if (!isSameMoneyAmount(r.payment, expected)) {
+    if (typeof r.payment !== 'number' || !Number.isFinite(r.payment) || r.payment < 0) {
       toast.error(isEn
-        ? `Enter the correct amount collected: €${expected.toFixed(2)}`
-        : `请先将实收金额填写正确（应收 €${expected.toFixed(2)}）`)
+        ? 'Enter and save the amount collected (0 is allowed) first'
+        : '请先输入并保存实收金额（可以填写 0）')
       return
     }
     setSignData(null)
@@ -514,9 +532,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               onClick={startDelivery}
               style={{ background: PURPLE, borderColor: PURPLE }}
               className="min-h-14 w-full text-base font-bold text-white hover:opacity-90 sm:flex-1"
-              disabled={!allVerified}
+              disabled={!allVerified || startingDelivery}
             >
-              {isEn ? 'Confirm Departure 🚛' : '确认出发 🚛'}
+              {startingDelivery ? (isEn ? 'Checking active trips…' : '正在检查进行中的行程…') : (isEn ? 'Confirm Departure 🚛' : '确认出发 🚛')}
             </Button>
           </div>
         </div>
@@ -528,9 +546,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           <Button
             onClick={startDelivery}
             style={{ background: PURPLE, borderColor: PURPLE }}
-            className="min-h-14 w-full text-base font-bold text-white hover:opacity-90"
+            className="min-h-14 w-full text-base font-bold text-white hover:opacity-90 disabled:opacity-60"
+            disabled={startingDelivery}
           >
-            {isEn ? 'Confirm Departure 🚛' : '确认出发 🚛'}
+            {startingDelivery ? (isEn ? 'Checking active trips…' : '正在检查进行中的行程…') : (isEn ? 'Confirm Departure 🚛' : '确认出发 🚛')}
           </Button>
         </div>
       )}
@@ -559,11 +578,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const dueExTax = Math.max(0, Math.round((grossDueExTax - returnAdjustment.exTax) * 100) / 100)
           const dueIncTax = Math.max(0, Math.round((grossDueIncTax - returnAdjustment.incTax) * 100) / 100)
           const dueTax = Math.max(0, Math.round((dueIncTax - dueExTax) * 100) / 100)
-          const paymentMatchesDue = isSameMoneyAmount(r.payment, dueIncTax)
+          const hasValidPayment = typeof r.payment === 'number' && Number.isFinite(r.payment) && r.payment >= 0
           const isProcessed = r.delivered || hasException
           const orderIds = r.orderIds ?? []
           const allRestOrderTimersEnded = orderIds.length > 0 && orderIds.every(orderId => !!orderTimingById[orderId]?.endedAt)
           const hasEndedOrderAtRest = orderIds.some(orderId => !!orderTimingById[orderId]?.endedAt)
+          const paymentLocked = r.delivered || hasEndedOrderAtRest
           const activeOrderAtRest = !!activeOrderId && orderIds.includes(activeOrderId)
           const canOperateRest = tripStatus === 'in_progress' && !isProcessed && (activeOrderAtRest || allRestOrderTimersEnded)
           const canContinueStopActions = tripStatus === 'in_progress'
@@ -571,7 +591,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const canEditPayment = canContinueStopActions
           const canReportException = canContinueStopActions && !hasException
           const canUploadPod = canContinueStopActions
-          const canSignOff = canEditPayment && !r.delivered && paymentMatchesDue && paymentSavingRestId !== r.restaurantId
+          const canSignOff = canEditPayment && !r.delivered && hasValidPayment && paymentSavingRestId !== r.restaurantId
           const navigationOrderId = (activeOrderAtRest ? activeOrderId : null)
             ?? orderIds.find(orderId => !orderTimingById[orderId]?.endedAt)
             ?? orderIds[0]
@@ -631,7 +651,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                           && !!r.signature
                           && !!r.signerName?.trim()
                           && !!r.signedAt
-                          && paymentMatchesDue
+                          && hasValidPayment
                           && paymentSavingRestId !== r.restaurantId
                         const orderLabel = r.orderCodes?.[orderIndex] ?? orderId.slice(-8).toUpperCase()
                         const buttonLabel = isCurrent
@@ -669,8 +689,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                               <p className="text-xs leading-relaxed text-amber-800">
                                 {paymentSavingRestId === r.restaurantId
                                   ? (isEn ? 'Saving collected amount…' : '正在保存实收金额…')
-                                  : !paymentMatchesDue
-                                    ? (isEn ? `Enter the exact amount due (€${dueIncTax.toFixed(2)}) and save it before ending.` : `请先填写并保存正确实收金额：€${dueIncTax.toFixed(2)}`)
+                                  : !hasValidPayment
+                                    ? (isEn ? 'Enter and save the amount collected (0 is allowed) before ending.' : '请先输入并保存实收金额（可以填写 0），再结束订单。')
                                     : (isEn ? 'Get the customer signature before ending this order.' : '请先完成顾客签名，才能结束订单。')}
                               </p>
                             )}
@@ -736,20 +756,23 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     <div className="rounded-xl border border-gray-200 bg-white p-3">
                       <label className="mb-2 block text-sm font-semibold text-gray-700">{isEn ? 'Amount Collected (€)' : '实收金额 (€)'}</label>
                       <NumericInput
+                        min="0"
                         step="0.01"
                         placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
-                        value={r.payment ?? dueIncTax}
-                        onBlur={e => { void setPayment(r.restaurantId, parseFloat(e.target.value) || 0) }}
+                        value={r.payment ?? ''}
+                        onBlur={e => {
+                          const value = e.target.value.trim()
+                          if (!value) {
+                            toast.error(isEn ? 'Enter an amount collected (0 is allowed)' : '请输入实收金额（可以填写 0）')
+                            return
+                          }
+                          void setPayment(r.restaurantId, Number(value))
+                        }}
                         disabled={tripStatus === 'in_progress'
-                          ? !canEditPayment || paymentSavingRestId === r.restaurantId
-                          : !canOperateRest || paymentSavingRestId === r.restaurantId}
+                          ? !canEditPayment || paymentLocked || paymentSavingRestId === r.restaurantId
+                          : !canOperateRest || paymentLocked || paymentSavingRestId === r.restaurantId}
                         className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                       />
-                      {activeOrderAtRest && !paymentMatchesDue && (
-                        <p className="mt-2 text-xs leading-relaxed text-amber-800">
-                          {isEn ? `Enter the exact amount due: €${dueIncTax.toFixed(2)}.` : `请输入正确应收金额 €${dueIncTax.toFixed(2)}，保存后才能完成签收。`}
-                        </p>
-                      )}
                     </div>
                   )}
 

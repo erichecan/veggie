@@ -103,6 +103,7 @@ export default function ClassicDriverPage() {
     ? trips.filter(t => t.id.toLowerCase().includes(searchInput.toLowerCase()) || (t.name ?? '').toLowerCase().includes(searchInput.toLowerCase()))
     : trips
   const filtered = filterByFacets(searched, facets, FACET_DEFS)
+  const activeTrips = trips.filter(t => String(t.status).toLowerCase() === 'in_progress')
 
   return (
     <div>
@@ -120,6 +121,32 @@ export default function ClassicDriverPage() {
         pageSize={filtered.length || 1}
       />
       <div className="mx-auto max-w-3xl px-0 py-2 sm:px-2 sm:py-3">
+        {!loading && activeTrips.length > 0 && (
+          <section role="status" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+            <h2 className="font-semibold">
+              {isEn
+                ? `${activeTrips.length} trip${activeTrips.length === 1 ? '' : 's'} currently in delivery`
+                : `当前有 ${activeTrips.length} 个行程正在配送`}
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed">
+              {isEn
+                ? 'Finish and close the active trip before confirming departure for another trip.'
+                : '请先完成并关闭正在配送的行程，再确认其他行程出发。'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {activeTrips.map(activeTrip => (
+                <button
+                  key={activeTrip.id}
+                  type="button"
+                  onClick={() => router.push(`${prefix}/classic/driver/trip/${activeTrip.id}`)}
+                  className="min-h-10 rounded-lg border border-amber-400 bg-white px-3 py-2 text-left text-sm font-semibold text-amber-950 hover:bg-amber-100"
+                >
+                  {activeTrip.name || activeTrip.id} · {activeTrip.id.slice(-6).toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
         {loading && (
           <div className="bg-white border border-gray-200 py-16 text-center text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>
         )}

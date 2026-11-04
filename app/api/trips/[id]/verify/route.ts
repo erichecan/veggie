@@ -143,11 +143,12 @@ export async function POST(
         cargoVerified: true,
       }
 
-      // 如果所有餐馆都已核货，自动推进行程状态到 VERIFYING → IN_PROGRESS
+      // 全部核货后只进入 VERIFYING（待司机确认出发），不能由核货接口自动启动行程。
       const allVerified = restaurants.every(r => r.cargoVerified)
-      const newStatus = allVerified && String(trip.status) !== 'IN_PROGRESS'
-        ? 'IN_PROGRESS'
-        : (String(trip.status) === 'PENDING' ? 'VERIFYING' : undefined)
+      const currentStatus = String(trip.status).toUpperCase()
+      const newStatus = allVerified && ['PENDING', 'PENDING_ASSIGNMENT'].includes(currentStatus)
+        ? 'VERIFYING'
+        : undefined
 
       const updated = await prisma.$transaction(async (tx) => {
         const trip = await tx.trip.update({

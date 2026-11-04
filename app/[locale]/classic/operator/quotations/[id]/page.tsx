@@ -1131,15 +1131,15 @@ export default function QuotationDetailPage() {
                   <th className="hidden 2xl:table-cell px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="w-[200px] px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
-                  <th className="px-2 py-3 text-left">Note</th>
-                  <th className="hidden 2xl:table-cell px-2 py-3 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-right">Cost</th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-center">Price</th>
                   <th className="px-2 py-3 text-center">Taxes</th>
                   <th className="px-2 py-3 text-right">Total</th>
+                  <th className="px-2 py-3 text-left">Note</th>
+                  <th className="hidden 2xl:table-cell px-2 py-3 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
                   <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
                   {!isQuotation && <th className="hidden 2xl:table-cell px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>}
@@ -1197,16 +1197,6 @@ export default function QuotationDetailPage() {
                         />
                       ) : (l.spec || '')}
                     </td>
-                    <td className="px-2 py-2 text-right">
-                      {editing ? (
-                        <input type="number" step="0.001" min="0" className={inputCls}
-                          ref={firstFieldRef as React.Ref<HTMLInputElement>}
-                          value={Number(l.orderedQty)}
-                          onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
-                          onFocus={e => e.target.select()}
-                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
-                      ) : Number(l.orderedQty).toFixed(2)}
-                    </td>
                     <td className="px-2 py-2 text-gray-600">
                       {editing && l.productId && (saleUomOptions[l.productId] ?? []).some(o => o.active) ? (
                         (() => {
@@ -1233,29 +1223,15 @@ export default function QuotationDetailPage() {
                         })()
                       ) : (l.uomName ?? UNSET_UOM_LABEL)}
                     </td>
-                    {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
-                    <td className="px-2 py-2 text-gray-600 text-base">
+                    <td className="px-2 py-2 text-right">
                       {editing ? (
-                        <input
-                          type="text"
-                          data-note-line={l.id}
-                          className="border border-amber-300 rounded px-1 py-0.5 text-base bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
-                          value={l.note ?? ''}
-                          onChange={e => updateLine(i, 'note', e.target.value)}
-                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
-                        />
-                      ) : (l.note || '')}
-                    </td>
-                    {/* 赠品(20260913)：勾选后单价/小计归零，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
-                    <td className="hidden 2xl:table-cell px-2 py-2 text-center">
-                      {editing ? (
-                        <input
-                          type="checkbox"
-                          checked={!!(l as unknown as { isGift?: boolean }).isGift}
-                          onChange={e => updateLine(i, 'isGift', e.target.checked)}
-                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
-                        />
-                      ) : ((l as unknown as { isGift?: boolean }).isGift ? '🎁' : '')}
+                        <input type="number" step="0.001" min="0" className={inputCls}
+                          ref={firstFieldRef as React.Ref<HTMLInputElement>}
+                          value={Number(l.orderedQty)}
+                          onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
+                          onFocus={e => e.target.select()}
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                      ) : Number(l.orderedQty).toFixed(2)}
                     </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
@@ -1308,6 +1284,30 @@ export default function QuotationDetailPage() {
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-base text-gray-600">{taxPct}</span>}
                     </td>
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
+                    {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
+                    <td className="px-2 py-2 text-gray-600 text-base">
+                      {editing ? (
+                        <input
+                          type="text"
+                          data-note-line={l.id}
+                          className="border border-amber-300 rounded px-1 py-0.5 text-base bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
+                          value={l.note ?? ''}
+                          onChange={e => updateLine(i, 'note', e.target.value)}
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
+                        />
+                      ) : (l.note || '')}
+                    </td>
+                    {/* 赠品(20260913)：勾选后单价/小计归零，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
+                    <td className="hidden 2xl:table-cell px-2 py-2 text-center">
+                      {editing ? (
+                        <input
+                          type="checkbox"
+                          checked={!!(l as unknown as { isGift?: boolean }).isGift}
+                          onChange={e => updateLine(i, 'isGift', e.target.checked)}
+                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
+                        />
+                      ) : ((l as unknown as { isGift?: boolean }).isGift ? '🎁' : '')}
+                    </td>
                     <td className="hidden 2xl:table-cell px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
                     <td className="hidden 2xl:table-cell px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
                     {!isQuotation && <td className="hidden 2xl:table-cell px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>}
