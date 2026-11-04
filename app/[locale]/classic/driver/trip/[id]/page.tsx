@@ -47,10 +47,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [exceptionProducts, setExceptionProducts] = useState<ExceptionProduct[]>([])
   const [exceptionReasons, setExceptionReasons] = useState<string[]>([])
   const [exceptionAction, setExceptionAction] = useState<'return' | 'exchange'>('return')
-  /** 现场照片（20260922）：证明退换货商品的实际状态，与司机签名一起随上报提交 */
+  /** 现场照片（20260922）：证明退换货商品的实际状态 */
   const [exceptionPhoto, setExceptionPhoto] = useState<string | null>(null)
-  /** 司机签名（20260922 拍板）：证明"这条异常是我本人记录的"，提交前必填 */
-  const [exceptionDriverSignature, setExceptionDriverSignature] = useState<string | null>(null)
   /** 补报备注（20261028，退换货补全 M3）：补报几天前的退换货时，说明"为什么现在才报"，
    * 跟 reasonText（退换货本身的原因）彻底分开，不混在一起 */
   const [exceptionLateNote, setExceptionLateNote] = useState('')
@@ -207,7 +205,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     setExceptionReasons([])
     setExceptionAction('return')
     setExceptionPhoto(null)
-    setExceptionDriverSignature(null)
     setExceptionLateNote('')
     setExceptionModal({ restId })
   }
@@ -242,7 +239,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     const reasonText = exceptionReasons.join(isEn ? ', ' : '、')
     if (!reasonText.trim()) { toast.error(isEn ? 'Please enter a reason' : '请填写异常原因'); return }
     if (!exceptionPhoto) { toast.error(isEn ? 'Please take a photo as evidence' : '请拍照留存现场证据'); return }
-    if (!exceptionDriverSignature) { toast.error(isEn ? 'Please sign to confirm this report' : '请签名确认本次上报'); return }
     const isLateReport = tripStatus === 'completed'
     if (isLateReport && !exceptionLateNote.trim()) {
       toast.error(isEn ? 'Please explain why this is being reported late' : '请填写为什么现在才补报'); return
@@ -253,7 +249,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     try {
       await apiPost<{ returns: ReturnItem[] }>(`/api/trips/${trip.id}/returns`, {
         restaurantId: exceptionModal.restId,
-        driverSignature: exceptionDriverSignature,
         returns: selected.map(p => ({
           productId: p.productId,
           productName: p.productName,
@@ -511,10 +506,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const isProcessed = r.delivered || hasException
           const orderIds = r.orderIds ?? []
           const allRestOrderTimersEnded = orderIds.length > 0 && orderIds.every(orderId => !!orderTimingById[orderId]?.endedAt)
+          const hasEndedOrderAtRest = orderIds.some(orderId => !!orderTimingById[orderId]?.endedAt)
           const activeOrderAtRest = !!activeOrderId && orderIds.includes(activeOrderId)
           const canOperateRest = tripStatus === 'in_progress' && !isProcessed && (activeOrderAtRest || allRestOrderTimersEnded)
-          const canEditPayment = tripStatus === 'in_progress' && !r.delivered && (activeOrderAtRest || allRestOrderTimersEnded)
-          const canSignOff = canEditPayment && paymentMatchesDue && paymentSavingRestId !== r.restaurantId
+          const canContinueStopActions = tripStatus === 'in_progress'
+            && (activeOrderAtRest || hasEndedOrderAtRest || allRestOrderTimersEnded || r.delivered)
+          const canEditPayment = canContinueStopActions
+          const canReportException = canContinueStopActions && !hasException
+          const canUploadPod = canContinueStopActions
+          const canSignOff = canEditPayment && !r.delivered && paymentMatchesDue && paymentSavingRestId !== r.restaurantId
           const navigationOrderId = (activeOrderAtRest ? activeOrderId : null)
             ?? orderIds.find(orderId => !orderTimingById[orderId]?.endedAt)
             ?? orderIds[0]
@@ -675,7 +675,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     </div>
                   </div>
 
-                  {!r.delivered && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
+                  {(tripStatus === 'in_progress' || tripStatus === 'verifying') && (
                     <div className="rounded-xl border border-gray-200 bg-white p-3">
                       <label className="mb-2 block text-sm font-semibold text-gray-700">{isEn ? 'Amount Collected (€)' : '实收金额 (€)'}</label>
                       <NumericInput
@@ -683,7 +683,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
                         value={r.payment ?? dueIncTax}
                         onBlur={e => { void setPayment(r.restaurantId, parseFloat(e.target.value) || 0) }}
-                        disabled={!canEditPayment || paymentSavingRestId === r.restaurantId}
+                        disabled={tripStatus === 'in_progress'
+                          ? !canEditPayment || paymentSavingRestId === r.restaurantId
+                          : !canOperateRest || paymentSavingRestId === r.restaurantId}
                         className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                       />
                       {activeOrderAtRest && !paymentMatchesDue && (
@@ -726,25 +728,27 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     </div>
                   )}
 
-                  {!r.delivered && tripStatus === 'in_progress' && (
+                  {tripStatus === 'in_progress' && (
                     <div className="grid grid-cols-2 gap-2 border-t pt-4 sm:grid-cols-3">
                       <Button
                         variant="outline"
-                        disabled={!canOperateRest}
+                        disabled={!canReportException}
                         className="min-h-12 min-w-0 whitespace-normal border-2 border-amber-300 bg-amber-50 px-2 text-center text-sm font-semibold leading-tight text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                         onClick={() => openExceptionModal(r.restaurantId)}
                       >{isEn ? 'Report Exception' : '报告异常'}</Button>
                       <Button
                         variant="outline"
-                        disabled={!canOperateRest}
+                        disabled={!canUploadPod}
                         className="min-h-12 min-w-0 whitespace-normal border-2 px-2 text-center text-sm font-semibold leading-tight disabled:bg-gray-100 disabled:text-gray-400"
                         onClick={() => { setPodRestId(r.restaurantId); podInputRef.current?.click() }}
                       >{isEn ? 'Upload POD' : '上传 POD'}</Button>
-                      <Button
-                        disabled={!canSignOff}
-                        className="col-span-2 min-h-14 min-w-0 whitespace-normal px-2 text-center text-base font-bold leading-tight text-white bg-green-700 hover:bg-green-800 disabled:bg-gray-300 disabled:text-gray-600 sm:col-span-1"
-                        onClick={() => openSignModal(r.restaurantId)}
-                      >{isEn ? 'Customer Sign-off' : '客户签收'}</Button>
+                      {!r.delivered && (
+                        <Button
+                          disabled={!canSignOff}
+                          className="col-span-2 min-h-14 min-w-0 whitespace-normal px-2 text-center text-base font-bold leading-tight text-white bg-green-700 hover:bg-green-800 disabled:bg-gray-300 disabled:text-gray-600 sm:col-span-1"
+                          onClick={() => openSignModal(r.restaurantId)}
+                        >{isEn ? 'Customer Sign-off' : '客户签收'}</Button>
+                      )}
                     </div>
                   )}
 
@@ -1010,18 +1014,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 </div>
               )}
 
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  {isEn ? 'Driver Signature' : '司机签名'} <span className="text-red-500">*</span>
-                </p>
-                <p className="text-xs text-gray-400 mb-2">{isEn ? 'Confirms this exception was reported by you' : '证明这条异常是你本人上报的'}</p>
-                <SignaturePad
-                  onChange={setExceptionDriverSignature}
-                  disabled={submittingException}
-                  placeholder={isEn ? 'Sign here to confirm' : '请司机在此签名确认'}
-                />
-              </div>
-
               <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
                 <Button variant="outline" className="min-h-12 flex-1" onClick={() => setExceptionModal(null)} disabled={submittingException}>{isEn ? 'Cancel' : '取消'}</Button>
                 <Button
@@ -1030,7 +1022,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   onClick={submitException}
                   disabled={
                     submittingException ||
-                    !exceptionDriverSignature ||
                     !exceptionPhoto ||
                     (tripStatus === 'completed' && !exceptionLateNote.trim())
                   }

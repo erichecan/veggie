@@ -80,7 +80,6 @@ export async function GET(
  * 请求体:
  *   {
  *     restaurantId: string,
- *     driverSignature?: string,   // 司机手写签名（20260922），整批一次签，覆盖本次提交的所有条目
  *     returns: [{
  *       productId: string,
  *       productName: string,
@@ -99,9 +98,8 @@ export async function POST(
     try {
       const { id } = await params
       const body = await req.json()
-      const { restaurantId, returns: returnItems, driverSignature } = body as {
+      const { restaurantId, returns: returnItems } = body as {
         restaurantId: string
-        driverSignature?: string
         returns: Array<{
           productId: string
           productName: string
@@ -120,11 +118,6 @@ export async function POST(
           { status: 400 },
         )
       }
-      // 司机手写签名确认已上报（20260922 拍板）：证明"这条异常是我本人记录的"，不是可选项
-      if (!driverSignature || !driverSignature.trim()) {
-        return NextResponse.json({ error: '请先完成司机签名确认' }, { status: 400 })
-      }
-
       const trip = await prisma.trip.findUnique({ where: { id } })
       if (!trip) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
@@ -197,8 +190,6 @@ export async function POST(
         restaurantName: restaurant.restaurantName,
         tripId: id,
         createdAt: now,
-        driverSignature,
-        driverSignedAt: now,
       }))
 
       // 追加到 restaurant.returns

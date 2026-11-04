@@ -95,7 +95,7 @@ def main():
         status, _ = call("POST", f"/api/trips/{TRIP_ID}/returns", token="garbage")
         ok("错 token 提交退货 → 401") if status == 401 else bad(f"错 token 提交退货应为 401，实得 {status}")
 
-        return_body = {"restaurantId": "verify-cust", "driverSignature": "data:x",
+        return_body = {"restaurantId": "verify-cust",
                        "returns": [{"productId": "verify-prod", "productName": "Verify Product", "quantity": 1, "reason": "test"}]}
         status, _ = call("POST", f"/api/trips/{TRIP_ID}/returns", token=warehouse_token, body=return_body)
         ok("WAREHOUSE 提交退货 → 403") if status == 403 else bad(f"WAREHOUSE 提交退货应为 403，实得 {status}")
@@ -103,21 +103,16 @@ def main():
         # 回归检查：出发前核货阶段（VERIFYING）司机端本来就有"报告异常"按钮，
         # 这次改走专用接口时曾漏了这个状态，导致点了按钮却提交 400——已修复
         psql(f"UPDATE \"Trip\" SET status='VERIFYING' WHERE id='{TRIP_ID}'")
-        verifying_body = {"restaurantId": "verify-cust", "driverSignature": "data:x",
+        verifying_body = {"restaurantId": "verify-cust",
                           "returns": [{"productId": "verify-prod", "productName": "Verify Product", "quantity": 1, "reason": "核货阶段发现异常"}]}
         status, _ = call("POST", f"/api/trips/{TRIP_ID}/returns", token=driver_token, body=verifying_body)
         ok("VERIFYING 状态下司机可提交退货（回归修复）") if status == 200 else bad(f"VERIFYING 状态提交应为 200，实得 {status}")
         psql(f"UPDATE \"Trip\" SET status='IN_PROGRESS', restaurants = jsonb_set(restaurants, '{{0,returns}}', '[]'::jsonb) WHERE id='{TRIP_ID}'")
 
-        nosign_body = {"restaurantId": "verify-cust",
-                       "returns": [{"productId": "verify-prod", "productName": "Verify Product", "quantity": 1, "reason": "test"}]}
-        status, _ = call("POST", f"/api/trips/{TRIP_ID}/returns", token=driver_token, body=nosign_body)
-        ok("司机缺签名提交 → 400") if status == 400 else bad(f"司机缺签名提交应为 400，实得 {status}")
-
         status, resp = call("POST", f"/api/trips/{TRIP_ID}/returns", token=driver_token, body=return_body)
         item = (resp.get("returns") or [{}])[0]
         if status == 200 and item.get("unitPrice") == 9.9:
-            ok("司机提交 unitPrice 快照正确(9.9)")
+            ok("司机无需签名即可提交退货，unitPrice 快照正确(9.9)")
         else:
             bad(f"司机提交 unitPrice 快照错误：{status} {item}")
         if item.get("status") == "WAREHOUSE_PENDING":
@@ -159,7 +154,7 @@ def main():
             bad(f"SALES 审核应拒绝 1 条：{status} {resp}")
 
         psql(f"UPDATE \"Trip\" SET status='COMPLETED' WHERE id='{TRIP_ID}'")
-        hist_body = {"restaurantId": "verify-cust", "driverSignature": "data:x",
+        hist_body = {"restaurantId": "verify-cust",
                     "returns": [{"productId": "verify-prod", "productName": "Verify Product", "quantity": 1, "reason": "历史补报"}]}
         status, resp = call("POST", f"/api/trips/{TRIP_ID}/returns", token=driver_token, body=hist_body)
         ok("COMPLETED 历史行程仍可补报退货") if status == 200 else bad(f"COMPLETED 历史行程补报应为 200，实得 {status}")
