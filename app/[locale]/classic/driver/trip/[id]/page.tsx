@@ -70,6 +70,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [trip, setTrip] = useState<Trip | null>(null)
   const [orderTimingBusy, setOrderTimingBusy] = useState<string | null>(null)
+  const [showEndTripConfirm, setShowEndTripConfirm] = useState(false)
+  const [endingTrip, setEndingTrip] = useState(false)
 
   // 报告异常 modal
   const [exceptionModal, setExceptionModal] = useState<{ restId: string } | null>(null)
@@ -369,7 +371,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     }
   }
 
-  async function endTrip() {
+  function requestEndTrip() {
     if (!trip) return
     const unprocessed = trip.restaurants.filter(r => !r.delivered && r.returns.length === 0)
     if (unprocessed.length > 0) {
@@ -377,12 +379,25 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       toast.error(isEn ? `Please complete these stops first (deliver or report exception): ${names}` : `请先完成以下站点（送达或报告异常）：${names}`)
       return
     }
-    const updated = cloneTrip()
-    updated.status = 'completed'
-    updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
-    await saveTrip(updated)
-    toast.success(isEn ? 'Trip ended, orders updated to completed' : '行程已结束，订单已更新为完成')
-    router.push(`${prefix}/classic/driver`)
+    setShowEndTripConfirm(true)
+  }
+
+  async function endTrip() {
+    if (!trip || endingTrip) return
+    setEndingTrip(true)
+    try {
+      const updated = cloneTrip()
+      updated.status = 'completed'
+      updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
+      await saveTrip(updated)
+      toast.success(isEn ? 'Trip ended, orders updated to completed' : '行程已结束，订单已更新为完成')
+      setShowEndTripConfirm(false)
+      router.push(`${prefix}/classic/driver`)
+    } catch {
+      // saveTrip already displays the server error.
+    } finally {
+      setEndingTrip(false)
+    }
   }
 
   if (!trip) return <div className="text-center py-16 text-gray-400">{isEn ? 'Trip not found' : '行程不存在'}</div>
@@ -425,17 +440,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
             <TripStatusBadge status={trip.status} />
           </div>
         </div>
-        {tripStatus !== 'completed' && (
-          <Button
-            onClick={endTrip}
-            style={allProcessed ? { background: PURPLE, borderColor: PURPLE } : {}}
-            className={`min-h-12 w-full text-base font-semibold sm:w-auto ${allProcessed ? 'text-white hover:opacity-90' : ''}`}
-            variant={allProcessed ? 'default' : 'outline'}
-            disabled={tripStatus === 'pending' || tripStatus === 'verifying' || !allProcessed || !allOrderTimersEnded}
-          >
-            {isEn ? `End Trip (${processedCount}/${trip.restaurants.length})` : `结束行程 (${processedCount}/${trip.restaurants.length})`}
-          </Button>
-        )}
       </div>
 
       {/* 路线总览图 */}
@@ -751,6 +755,20 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         })}
       </div>
 
+      {tripStatus !== 'completed' && (
+        <div className="border-t border-gray-200 pt-4">
+          <Button
+            onClick={requestEndTrip}
+            style={allProcessed ? { background: PURPLE, borderColor: PURPLE } : {}}
+            className={`min-h-14 w-full whitespace-normal px-3 text-base font-semibold leading-tight sm:w-full ${allProcessed ? 'text-white hover:opacity-90' : ''}`}
+            variant={allProcessed ? 'default' : 'outline'}
+            disabled={tripStatus === 'pending' || tripStatus === 'verifying' || !allProcessed || !allOrderTimersEnded}
+          >
+            {isEn ? `End Trip (${processedCount}/${trip.restaurants.length})` : `结束行程 (${processedCount}/${trip.restaurants.length})`}
+          </Button>
+        </div>
+      )}
+
       <input
         ref={podInputRef}
         type="file"
@@ -758,6 +776,34 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         className="hidden"
         onChange={e => { if (podRestId) handlePodUpload(e, podRestId) }}
       />
+
+      {showEndTripConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+          <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-4 shadow-xl sm:p-5">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">{isEn ? 'End this trip?' : '确认结束行程？'}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                {isEn
+                  ? 'All stops are complete. Ending the trip will mark this trip and its orders as completed.'
+                  : '所有站点已完成。确认后，本行程及相关订单将更新为已完成。'}
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                className="min-h-12 sm:min-w-24"
+                onClick={() => setShowEndTripConfirm(false)}
+                disabled={endingTrip}
+              >{isEn ? 'Cancel' : '取消'}</Button>
+              <Button
+                className="min-h-12 bg-green-700 text-base font-semibold text-white hover:bg-green-800 sm:min-w-36"
+                onClick={endTrip}
+                disabled={endingTrip}
+              >{endingTrip ? (isEn ? 'Ending…' : '正在结束…') : (isEn ? 'Confirm End Trip' : '确认结束行程')}</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 报告异常 Modal */}
       {/* Sign on Glass —— 客户手写签收。合同第四条把「司机电子签收」写进验收闭环 */}
