@@ -142,8 +142,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           return NextResponse.json({ error: '请先确认出发，再结束行程' }, { status: 409 })
         }
         const restaurants = Array.isArray(before.restaurants)
-          ? before.restaurants as Array<{ orderIds?: string[]; orderTimings?: Record<string, { endedAt?: string }> }>
+          ? before.restaurants as Array<{
+              delivered?: boolean
+              returns?: unknown[]
+              orderIds?: string[]
+              orderTimings?: Record<string, { endedAt?: string }>
+            }>
           : []
+        const unprocessedStops = restaurants.filter(r => !r.delivered && (r.returns?.length ?? 0) === 0)
+        if (unprocessedStops.length > 0) {
+          return NextResponse.json({ error: '请先完成每个站点：送达或报告异常后，再结束行程' }, { status: 409 })
+        }
         const unfinished = restaurants.flatMap(r => r.orderIds ?? []).filter(orderId =>
           !restaurants.some(r => !!r.orderTimings?.[orderId]?.endedAt),
         )

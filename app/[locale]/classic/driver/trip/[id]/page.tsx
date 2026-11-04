@@ -63,6 +63,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
   const podInputRef = useRef<HTMLInputElement>(null)
   const [podRestId, setPodRestId] = useState<string | null>(null)
+  const [uploadingPodRestId, setUploadingPodRestId] = useState<string | null>(null)
 
   // 站点坐标（只读，独立于 trip state：绝不随 saveTrip 原样 PUT 回去，
   // 否则 Prisma 会因 Trip.restaurants 里混入未知字段而报错）
@@ -71,8 +72,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   async function load() {
     try {
       const t = await apiGet<Trip>(`/api/trips/${id}`)
-      setTrip(t)
-      return t
+      const normalized = {
+        ...t,
+        restaurants: (t.restaurants ?? []).map(r => ({ ...r, pods: Array.isArray(r.pods) ? r.pods : [] })),
+      }
+      setTrip(normalized)
+      return normalized
     } catch {
       setTrip(null)
       return null
@@ -291,19 +296,71 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     }
   }
 
-  function handlePodUpload(e: React.ChangeEvent<HTMLInputElement>, restId: string) {
+  async function compressPodPhoto(file: File): Promise<string> {
+    const objectUrl = URL.createObjectURL(file)
+    try {
+      const image = new Image()
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve()
+        image.onerror = () => reject(new Error(isEn ? 'Could not read this image' : '无法读取这张图片'))
+        image.src = objectUrl
+      })
+
+      const maxEdge = 1800
+      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error(isEn ? 'Image processing is unavailable' : '当前浏览器无法处理图片')
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+      // iPhone 原图可能很大。压缩为 JPEG，避免把数 MB 的原图塞进整条行程 JSON。
+      let quality = 0.78
+      let blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+      while (blob && blob.size > 900 * 1024 && quality > 0.48) {
+        quality -= 0.1
+        blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+      }
+      if (!blob) throw new Error(isEn ? 'Could not prepare this image' : '图片处理失败')
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Image conversion failed'))
+        reader.onerror = () => reject(new Error(isEn ? 'Could not read this image' : '无法读取这张图片'))
+        reader.readAsDataURL(blob)
+      })
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+
+  async function handlePodUpload(e: React.ChangeEvent<HTMLInputElement>, restId: string) {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = async () => {
+    if (!file.type.startsWith('image/')) {
+      toast.error(isEn ? 'Please select an image' : '请选择图片文件')
+      e.target.value = ''
+      return
+    }
+    setUploadingPodRestId(restId)
+    let saveStarted = false
+    try {
+      const photo = await compressPodPhoto(file)
       const updated = cloneTrip()
       const r = updated.restaurants.find(r => r.restaurantId === restId)
-      if (r) r.pods.push(reader.result as string)
+      if (!r) throw new Error(isEn ? 'Customer stop was not found' : '找不到对应的配送客户')
+      r.pods = Array.isArray(r.pods) ? r.pods : []
+      r.pods.push(photo)
+      saveStarted = true
       await saveTrip(updated)
       toast.success(isEn ? 'POD photo uploaded' : 'POD 图片已上传')
+    } catch (error) {
+      // saveTrip 已经会显示 API 错误；图片处理阶段的异常在这里提示。
+      if (!saveStarted) toast.error(error instanceof Error ? error.message : (isEn ? 'POD upload failed. Please try again.' : 'POD 上传失败，请重试'))
+    } finally {
+      setUploadingPodRestId(null)
+      e.target.value = ''
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
   /** 打开电子签收面板。签收是送达的唯一入口——合同要求客户电子签名 */
@@ -721,10 +778,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     </div>
                   )}
 
-                  {r.pods.length > 0 && (
+                  {(r.pods ?? []).length > 0 && (
                     <div className="border-t pt-4">
                       <p className="mb-2 text-sm font-medium text-gray-700">{isEn ? '📷 POD Photos' : '📷 POD 签收照片'}</p>
-                      <div className="flex flex-wrap gap-2">{r.pods.map((pod, podIndex) => <img key={podIndex} src={pod} alt={`POD ${podIndex + 1}`} className="h-20 w-20 rounded border object-cover" />)}</div>
+                      <div className="flex flex-wrap gap-2">{(r.pods ?? []).map((pod, podIndex) => <img key={podIndex} src={pod} alt={`POD ${podIndex + 1}`} className="h-20 w-20 rounded border object-cover" />)}</div>
                     </div>
                   )}
 
@@ -738,10 +795,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       >{isEn ? 'Report Exception' : '报告异常'}</Button>
                       <Button
                         variant="outline"
-                        disabled={!canUploadPod}
+                        disabled={!canUploadPod || uploadingPodRestId === r.restaurantId}
                         className="min-h-12 min-w-0 whitespace-normal border-2 px-2 text-center text-sm font-semibold leading-tight disabled:bg-gray-100 disabled:text-gray-400"
                         onClick={() => { setPodRestId(r.restaurantId); podInputRef.current?.click() }}
-                      >{isEn ? 'Upload POD' : '上传 POD'}</Button>
+                      >{uploadingPodRestId === r.restaurantId ? (isEn ? 'Uploading…' : '上传中…') : (isEn ? 'Upload POD' : '上传 POD')}</Button>
                       {!r.delivered && (
                         <Button
                           disabled={!canSignOff}

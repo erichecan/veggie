@@ -62,10 +62,11 @@ const STATUS_COLOR: Record<TripStatus, string> = {
 }
 
 function normalizeTrip(t: Record<string, unknown>): Trip {
+  const restaurants = Array.isArray(t.restaurants) ? t.restaurants as Trip['restaurants'] : []
   return {
     ...(t as unknown as Trip),
     status: ((t.status as string) ?? 'pending').toLowerCase() as TripStatus,
-    restaurants: (t.restaurants as Trip['restaurants']) ?? [],
+    restaurants: restaurants.map(r => ({ ...r, pods: Array.isArray(r.pods) ? r.pods : [] })),
     totalPayment: Number(t.totalPayment ?? 0),
   }
 }
@@ -106,6 +107,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [saving, setSaving] = useState(false)
   const [expandedStops, setExpandedStops] = useState<Set<number>>(new Set())
   const [timingNow, setTimingNow] = useState<number | null>(null)
+  const [selectedPod, setSelectedPod] = useState<{ photo: string; restaurantName: string; index: number } | null>(null)
 
   useEffect(() => {
     setTimingNow(Date.now())
@@ -709,6 +711,27 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                       </div>
                     )}
 
+                    {(r.pods ?? []).length > 0 && (
+                      <div className="border-t border-gray-100 pt-3">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {isEn ? `POD Photos (${(r.pods ?? []).length})` : `POD 送货照片（${(r.pods ?? []).length} 张）`}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {(r.pods ?? []).map((photo, photoIndex) => (
+                            <button
+                              key={photoIndex}
+                              type="button"
+                              onClick={() => setSelectedPod({ photo, restaurantName: r.restaurantName, index: photoIndex + 1 })}
+                              className="overflow-hidden rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
+                              aria-label={isEn ? `View POD photo ${photoIndex + 1} for ${r.restaurantName}` : `查看${r.restaurantName}的第${photoIndex + 1}张POD照片`}
+                            >
+                              <img src={photo} alt={`POD ${photoIndex + 1}`} className="h-24 w-24 object-cover" loading="lazy" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* 操作区：完成此站 / 报告异常 */}
                     {!r.delivered && trip.status === 'in_progress' && (
                       <div className="border-t border-gray-100 pt-3 space-y-3">
@@ -1184,6 +1207,26 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             >
               {saving ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Submit' : '确认提交')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedPod} onOpenChange={open => { if (!open) setSelectedPod(null) }}>
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle style={{ color: PURPLE }}>
+              {selectedPod && (isEn
+                ? `POD Photo ${selectedPod.index} · ${selectedPod.restaurantName}`
+                : `POD 照片 ${selectedPod.index} · ${selectedPod.restaurantName}`)}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedPod && (
+            <div className="flex max-h-[72vh] justify-center overflow-auto rounded-lg bg-gray-50 p-2">
+              <img src={selectedPod.photo} alt={`${selectedPod.restaurantName} POD ${selectedPod.index}`} className="max-h-[68vh] max-w-full object-contain" />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedPod(null)}>{isEn ? 'Close' : '关闭'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

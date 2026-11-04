@@ -18,7 +18,9 @@ function TripCard({ trip, onClick }: { trip: Trip; onClick: () => void }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const restCount = trip.restaurants.length
-  const deliveredCount = trip.restaurants.filter(r => r.delivered).length
+  // 行程的完成条件与司机端结束按钮一致：站点已送达，或已报告异常。
+  // 仅统计 delivered 会让已完成行程（含异常站点）显示为未完成，例如 1/3。
+  const processedCount = trip.restaurants.filter(r => r.delivered || (r.returns ?? []).length > 0).length
   const amountCollected = trip.restaurants.reduce((sum, restaurant) => sum + (restaurant.payment ?? 0), 0)
   return (
     <article className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -34,7 +36,7 @@ function TripCard({ trip, onClick }: { trip: Trip; onClick: () => void }) {
       <dl className="px-4 sm:px-5">
         {[
           [isEn ? 'Restaurants' : '餐馆数', String(restCount)],
-          [isEn ? 'Progress' : '完成进度', `${deliveredCount} / ${restCount}`],
+          [isEn ? 'Progress' : '完成进度', `${processedCount} / ${restCount}`],
           [isEn ? 'Amount Collected' : '实收金额', `€${amountCollected.toFixed(2)}`],
           [isEn ? 'Start Time' : '出发时间', trip.departTime ? formatDateTime(trip.departTime) : '—'],
         ].map(([label, value], index) => (

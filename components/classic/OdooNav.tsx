@@ -41,6 +41,8 @@ interface OdooNavProps {
   session: RoleSession | null
   appName: string
   menuItems: MenuItem[]
+  /** Hide cross-app shortcuts in focused experiences such as the driver app. */
+  showAppSwitcher?: boolean
 }
 
 // 20260927：九宫格定位收窄为"切换到另一个独立 app"的粗粒度入口，
@@ -61,7 +63,7 @@ const APPS_EN = [
   { label: 'Manager', icon: '📊', href: '/classic/boss' },
 ]
 
-export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
+export default function OdooNav({ session, appName, menuItems, showAppSwitcher = true }: OdooNavProps) {
   const router = useRouter()
   const pathname = usePathname()
   const locale = useLocale()
@@ -238,7 +240,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
       <div className="flex items-center h-11 px-2 md:px-4 gap-0">
         <button type="button" aria-label={isEn ? 'Open navigation' : '打开导航'} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)} className="md:hidden w-11 h-11 shrink-0 text-white text-xl">☰</button>
         {/* 应用切换器 */}
-        <div className="relative mr-1" ref={appSwitcherRef}>
+        {showAppSwitcher && <div className="relative mr-1" ref={appSwitcherRef}>
           <button
             onClick={() => setAppSwitcherOpen(v => !v)}
             className="flex items-center justify-center w-9 h-9 rounded hover:bg-white/10 transition-colors"
@@ -273,7 +275,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* 应用名 */}
         <span className="text-white font-semibold text-sm mr-auto md:mr-6 whitespace-nowrap">{appName}</span>
