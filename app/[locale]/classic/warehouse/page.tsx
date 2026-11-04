@@ -66,6 +66,14 @@ interface AdjustForm {
   note: string
 }
 
+interface ProductForecast {
+  productId: string
+  forecast: number
+  availableQty: number
+  safetyStockMin: number
+  belowSafetyStock: boolean
+}
+
 export default function ClassicWarehousePage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -73,6 +81,7 @@ export default function ClassicWarehousePage() {
   const [tab, setTab] = useState<Tab>('incoming')
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
   const [products, setProducts] = useState<Product[]>([])
+  const [stockForecasts, setStockForecasts] = useState<Record<string, ProductForecast>>({})
   const [orders, setOrders] = useState<Order[]>([])
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([])
 
@@ -95,6 +104,25 @@ export default function ClassicWarehousePage() {
 
   useEffect(() => { load() }, [])
 
+  // Use the shared forecast calculation and each product's own alert threshold.
+  useEffect(() => {
+    const ids = Array.from(new Set(products.map(p => p.id).filter(Boolean)))
+    if (ids.length === 0) {
+      setStockForecasts({})
+      return
+    }
+    const chunks: string[][] = []
+    for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200))
+    let cancelled = false
+    Promise.all(chunks.map(chunk => apiGet<ProductForecast[]>(`/api/products/forecast?ids=${chunk.join(',')}`)))
+      .then(rows => {
+        if (cancelled) return
+        setStockForecasts(Object.fromEntries(rows.flat().map(row => [row.productId, row])))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [products])
+
   // 仓库数据在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
   // 不接 M2——采购/调整都是弹窗提交即落库，load() 不碰 purchaseForm/adjustForm
   useRefetchOnFocus([load])
@@ -113,7 +141,6 @@ export default function ClassicWarehousePage() {
         return acc
       }, {})
 
-  const LOW_STOCK_THRESHOLD = 20
   const SLOW_MOVING_DAYS = 3
   const threeDaysAgo = new Date(Date.now() - SLOW_MOVING_DAYS * 86400000).toISOString()
   const recentSoldIds = new Set(
@@ -126,6 +153,7 @@ export default function ClassicWarehousePage() {
   // 入库选品是空列表、低库存/滞销从不标记、状态一律显示「下架」。统一走这个判定。
   const isActive = (p: Product) => p.status?.toLowerCase() === 'active'
   const activeProducts = products.filter(isActive)
+  const lowStockProducts = activeProducts.filter(p => stockForecasts[p.id]?.belowSafetyStock)
   // 入库下拉沿用原来的「名称 (规格)」展示，把规格并进 name，选中回填时才对得上
   const purchaseOptions = useMemo(
     () => activeProducts.map(p => ({ ...p, name: p.spec ? `${p.name} (${p.spec})` : p.name })),
@@ -247,8 +275,8 @@ export default function ClassicWarehousePage() {
         <MiniCard
           label={isEn ? 'Low Stock Alerts' : '低库存预警'}
           value={isEn
-            ? `${activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length} SKUs`
-            : `${activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length} 种`}
+            ? `${lowStockProducts.length} SKUs`
+            : `${lowStockProducts.length} 种`}
           icon="⚠️"
           color="text-amber-700"
           active={activeCard === 'lowStock'}
@@ -278,7 +306,7 @@ export default function ClassicWarehousePage() {
         close={() => setActiveCard(null)}
         todayIncoming={todayIncoming}
         todayOutgoing={todayOutgoing}
-        lowStockProducts={activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD)}
+        lowStockProducts={lowStockProducts}
         activeProducts={activeProducts}
         expiringLots={expiringLots}
         switchTab={setTab}
@@ -382,19 +410,18 @@ export default function ClassicWarehousePage() {
 
       {tab === 'inventory' && (
         <div className="space-y-3">
-          {activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length > 0 && (
+          {lowStockProducts.length > 0 && (
             <div className="rounded-xl p-4" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
-              <h3 className="font-semibold mb-3" style={{ color: PURPLE }}>{isEn ? `⚠️ Low Stock Alert (≤${LOW_STOCK_THRESHOLD} units)` : `⚠️ 低库存预警（≤${LOW_STOCK_THRESHOLD}件）`}</h3>
+              <h3 className="font-semibold mb-3" style={{ color: PURPLE }}>{isEn ? '⚠️ Forecast below product alert threshold' : '⚠️ 预测库存达到商品预警值'}</h3>
               <div className="space-y-2">
-                {activeProducts
-                  .filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD)
+                {lowStockProducts
                   .map(p => (
                     <div key={p.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-200">
                       <span className="font-medium text-gray-900">{p.name}</span>
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-gray-500">{p.spec}</span>
                         <span className="text-sm font-bold px-2 py-0.5 rounded-full" style={{ background: '#f3eff5', color: PURPLE }}>
-                          {isEn ? `${(p.qtyOnHand ?? 0)} left` : `剩余 ${(p.qtyOnHand ?? 0)} 件`}
+                          {isEn ? `Forecast ${stockForecasts[p.id]?.forecast ?? '—'} / Min ${stockForecasts[p.id]?.safetyStockMin ?? '—'}` : `预测 ${stockForecasts[p.id]?.forecast ?? '—'} / 预警值 ${stockForecasts[p.id]?.safetyStockMin ?? '—'}`}
                         </span>
                         <button
                           onClick={() => { setAdjustForm({ productId: p.id, qty: '', note: isEn ? 'Restock' : '补货入库' }); setAdjustOpen(true) }}
@@ -431,7 +458,7 @@ export default function ClassicWarehousePage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {products.map(p => {
-                  const isLow = (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD && isActive(p)
+                  const isLow = !!stockForecasts[p.id]?.belowSafetyStock && isActive(p)
                   const isSlow = !recentSoldIds.has(p.id) && isActive(p)
                   return (
                     <tr key={p.id} className="hover:bg-gray-50" style={isLow ? { background: '#fdf8ff' } : {}}>

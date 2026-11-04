@@ -34,7 +34,7 @@ import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const LOW_STOCK_THRESHOLD = 20
+type ProductForecast = { productId: string; forecast: number; availableQty: number; safetyStockMin: number }
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -325,6 +325,7 @@ export default function ClassicPlaceOrderPage() {
 
   // ── Order lines ───────────────────────────────────────────────────────────
   const [lines, setLines] = useState<QuotationLine[]>([])
+  const [stockForecasts, setStockForecasts] = useState<Record<string, ProductForecast>>({})
 
   // ── 复制历史订单 ──────────────────────────────────────────────────────────
   type HistoryLine = { productId: string; productName: string; orderedQty: number | string; note?: string | null }
@@ -332,10 +333,6 @@ export default function ClassicPlaceOrderPage() {
   const [showHistory, setShowHistory] = useState(false)
   const [historyOrders, setHistoryOrders] = useState<HistoryOrder[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-
-  // ── Pending demand (for ATP) ────────────────────────────────────────────────────
-  // key = productId, value = 所有未出库订单已占用量
-  const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
 
   // 重复商品检测：同一 productId **且同一可售单位** 在订单行中出现多次才算重复
   // （判重/合并逻辑收口在 lib/sale-uom.ts，三个订单页共用，见 20260904 改动说明）——
@@ -479,14 +476,12 @@ export default function ClassicPlaceOrderPage() {
       apiGet<OdooPricelist[]>('/api/pricelists').catch(() => []),
       // role=SALES: 服务端过滤，只拉销售人员
       apiGet<(PickerUser & { role: string; roles?: string[] })[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').catch(() => []),
-      apiGet<Record<string, number>>('/api/products/pending-demand').catch(() => ({})),
     ])
-      .then(([cs, ps, pls, us, pd]) => {
+      .then(([cs, ps, pls, us]) => {
         setCustomers(cs.filter(c => c.isActive !== false))
         setProducts(ps)
         setPricelists(pls)
         setSalesUsers(us)
-        setPendingDemand(pd)
       })
       .catch(() => toast.error(isEn ? 'Failed to load data' : '加载数据失败'))
       .finally(() => setLoading(false))
@@ -502,14 +497,10 @@ export default function ClassicPlaceOrderPage() {
     return apiGet<OdooPricelist[]>('/api/pricelists').then(setPricelists).catch(() => {})
   }
 
-  function fetchLatestPendingDemand() {
-    return apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
-  }
-
   // 商品/价格表管理侧在别的 tab 改了数据后，希望回到这个已经打开的页面时能看到最新数据，
   // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案
   // （共享 hook，见 lib/hooks/use-refetch-on-focus.ts，原三个订单页各自一份重复代码收口于此）。
-  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestPendingDemand])
+  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists])
 
   // 新建页防抖存草稿：切去别的 tab 改引用数据被上面的 hook 自动刷新回来时，不至于把
   // 正在填的新单内容冲掉；提交成功/主动放弃后清掉，不是永久草稿。
@@ -782,11 +773,11 @@ export default function ClassicPlaceOrderPage() {
 
     const { unitPrice, priceLabel, priceLabelDetail } = computeLine(lastPrices)
 
-    // ATP 警告：库存不足时提示但不阻止添加
-    const onHand = p.qtyOnHand ?? 0
-    const demand = pendingDemand[p.id] ?? 0
-    const atp = onHand - demand
-    if (atp <= 0) {
+    // Warn on immediate availability from the shared forecast endpoint; selecting is still allowed.
+    const stockRows = await apiGet<ProductForecast[]>(`/api/products/forecast?ids=${p.id}`).catch(() => [])
+    const stock = stockRows.find(row => row.productId === p.id)
+    if (stock) setStockForecasts(prev => ({ ...prev, [p.id]: stock }))
+    if (stock && stock.availableQty <= 0) {
       toast.warning(isEn ? '⚠ This product is out of stock. Added to order — please arrange stock.' : `⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
     }
 
@@ -1063,11 +1054,12 @@ export default function ClassicPlaceOrderPage() {
   useEffect(() => {
     const ids = Array.from(new Set(lineProductIds ? lineProductIds.split(',') : []))
     if (ids.length === 0) return
-    apiGet<{ productId: string; forecast: number }[]>(`/api/products/forecast?ids=${ids.join(',')}`)
+    apiGet<ProductForecast[]>(`/api/products/forecast?ids=${ids.join(',')}`)
       .then(rows => {
-        const m = new Map(rows.map(r => [r.productId, r.forecast]))
-        setLines(prev => prev.map(l => (l.productId && m.has(l.productId) && m.get(l.productId) !== l.forecastQty)
-          ? { ...l, forecastQty: m.get(l.productId)! }
+        const m = new Map(rows.map(r => [r.productId, r]))
+        setStockForecasts(prev => ({ ...prev, ...Object.fromEntries(rows.map(r => [r.productId, r])) }))
+        setLines(prev => prev.map(l => (l.productId && m.has(l.productId) && m.get(l.productId)!.forecast !== l.forecastQty)
+          ? { ...l, forecastQty: m.get(l.productId)!.forecast }
           : l))
       })
       .catch(() => {})
@@ -1769,25 +1761,25 @@ export default function ClassicPlaceOrderPage() {
                 document.body,
               )}
 
-              {/* Low stock alert banner (based on ATP) */}
+              {/* Forecast is used for low-stock alerts; Available Quantity is used for immediate availability. */}
               {(() => {
-                const linesWithAtp = lines.filter(l => l.productId).map(l => ({
+                const linesWithStock = lines.filter(l => l.productId).map(l => ({
                   ...l,
-                  atp: l.qtyOnHand - (pendingDemand[l.productId] ?? 0),
+                  stock: stockForecasts[l.productId],
                 }))
-                const outOfStockLines = linesWithAtp.filter(l => l.atp <= 0)
-                const lowStockLines = linesWithAtp.filter(l => l.atp > 0 && l.atp < LOW_STOCK_THRESHOLD)
+                const outOfStockLines = linesWithStock.filter(l => l.stock && l.stock.availableQty <= 0)
+                const lowStockLines = linesWithStock.filter(l => l.stock && l.stock.availableQty > 0 && l.stock.safetyStockMin > 0 && l.stock.forecast <= l.stock.safetyStockMin)
                 if (outOfStockLines.length === 0 && lowStockLines.length === 0) return null
                 return (
                   <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">🚨</span>
                     <div className="text-sm">
-                      <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于 ATP）：'}</span>
+                      <span className="font-semibold text-red-700">{isEn ? 'Stock Warning: ' : '库存警告：'}</span>
                       {outOfStockLines.length > 0 && (
                         <span className="text-red-600">
-                          {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
+                          {isEn ? `${outOfStockLines.length} product(s) unavailable` : `${outOfStockLines.length} 个商品无可用库存`}
                           <span className="text-xs text-red-500 ml-1">
-                            ({outOfStockLines.map(l => l.productName).join(isEn ? ', ' : '、')})
+                            ({outOfStockLines.map(l => `${l.productName} (${isEn ? 'Available' : '可用'}: ${l.stock!.availableQty.toFixed(1)})`).join(isEn ? ', ' : '、')})
                           </span>
                         </span>
                       )}
@@ -1798,7 +1790,7 @@ export default function ClassicPlaceOrderPage() {
                         <span className="text-amber-700">
                           {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
                           <span className="text-xs text-amber-600 ml-1">
-                            ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp.toFixed(1)})`).join(isEn ? ', ' : '、')})
+                            ({lowStockLines.map(l => `${l.productName}(${isEn ? 'Forecast' : '预测'}: ${l.stock!.forecast.toFixed(1)} / ${isEn ? 'Min' : '预警值'}: ${l.stock!.safetyStockMin.toFixed(1)})`).join(isEn ? ', ' : '、')})
                           </span>
                         </span>
                       )}
@@ -1844,9 +1836,9 @@ export default function ClassicPlaceOrderPage() {
                 )}
                 renderRow={(line, idx, opts) => {
                   const lineTotal = line.isGift ? 0 : line.unitPrice * line.orderedQty
-                  const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
-                  const isOutOfStock = line.productId && lineAtp <= 0
-                  const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
+                  const stock = line.productId ? stockForecasts[line.productId] : undefined
+                  const isOutOfStock = !!stock && stock.availableQty <= 0
+                  const isLowStock = !!stock && stock.safetyStockMin > 0 && stock.forecast <= stock.safetyStockMin
                   const isDuplicate  = !!line.productId && (duplicateCounts.get(dupKey(line)) ?? 0) > 1
                   return (
                     <>
@@ -2049,8 +2041,8 @@ export default function ClassicPlaceOrderPage() {
                   )
                 }}
                 rowStyle={(line) => ({
-                  background: (line.productId && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) <= 0) ? '#fee2e2'
-                    : (line.productId && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) > 0 && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) < LOW_STOCK_THRESHOLD) ? '#fffbeb'
+                  background: (line.productId && stockForecasts[line.productId]?.availableQty <= 0) ? '#fee2e2'
+                    : (line.productId && stockForecasts[line.productId]?.safetyStockMin > 0 && stockForecasts[line.productId]!.forecast <= stockForecasts[line.productId]!.safetyStockMin) ? '#fffbeb'
                     : undefined,
                   boxShadow: (!!line.productId && (duplicateCounts.get(dupKey(line)) ?? 0) > 1) ? 'inset 3px 0 0 0 #875A7B' : undefined,
                 })}

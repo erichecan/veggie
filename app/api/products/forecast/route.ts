@@ -93,7 +93,7 @@ export async function GET(req: Request) {
           inboundPending: inbound,
           outboundReserved: outbound,
           forecast,
-          belowSafetyStock: forecast < safetyMin && safetyMin > 0,
+          belowSafetyStock: safetyMin > 0 && forecast <= safetyMin,
         }
       })
 

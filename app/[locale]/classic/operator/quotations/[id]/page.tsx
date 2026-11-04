@@ -39,7 +39,6 @@ import RecordPager from '@/components/shared/RecordPager'
 import { useRecordNav } from '@/lib/hooks/use-record-nav'
 
 const PURPLE = '#875A7B'
-const LOW_STOCK_THRESHOLD = 20
 
 interface AllProduct {
   id: string
@@ -65,7 +64,7 @@ interface CreditInfo {
   termExtendedUntil?: string | null
 }
 
-interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
+interface ForecastRow { productId: string; forecast: number; qtyOnHand: number; availableQty: number; safetyStockMin: number }
 
 export default function QuotationDetailPage() {
   const router = useRouter()
@@ -195,13 +194,10 @@ export default function QuotationDetailPage() {
 
   useEffect(() => { load() }, [id])
 
-  const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
-
   useEffect(() => {
     // status=ACTIVE: 服务端过滤，不传输已归档商品——与 place-order 创建页保持一致，
     // 否则归档商品在这里(编辑态)拉取的候选列表里漏了这个参数又冒出来(20260901 客户反馈)
     apiGet<AllProduct[]>('/api/products?status=ACTIVE&sellable=1&slim=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
-    apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
   }, [])
 
   function fetchLatestProducts() {
@@ -219,14 +215,10 @@ export default function QuotationDetailPage() {
       }).catch(() => {})
   }
 
-  function fetchLatestPendingDemand() {
-    return apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
-  }
-
   // 商品/价格表管理侧在别的 tab 改了数据后，希望回到这个已经打开的页面时能看到最新数据，
   // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案
   // （共享 hook，见 lib/hooks/use-refetch-on-focus.ts，原三个订单页各自一份重复代码收口于此）。
-  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestPendingDemand, fetchLatestDriverSlots])
+  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestDriverSlots])
 
   // 编辑态内容防抖存本地：切去别的 tab 改引用数据被这个 hook 自动刷新回来时，
   // 不至于把正在填的内容也一起冲掉——保存成功/退出编辑后清掉，不是永久草稿。
@@ -652,11 +644,6 @@ export default function QuotationDetailPage() {
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing ? editLines : lines
-  // 缺货提醒(20260729)：pending-demand 是全库存量按 PENDING/CONFIRMED/WAVE_ASSIGNED 全部订单聚合的，
-  // 本单自己也在这些状态里，若不减掉会把"这单自己占的量"算成"跟自己抢库存"，出现假缺货
-  const ownDemandMap = new Map<string, number>()
-  for (const l of lines) if (l.productId) ownDemandMap.set(l.productId, (ownDemandMap.get(l.productId) ?? 0) + Number(l.orderedQty))
-  const atpDemand = (productId: string) => Math.max(0, (pendingDemand[productId] ?? 0) - (ownDemandMap.get(productId) ?? 0))
   const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
@@ -1064,26 +1051,25 @@ export default function QuotationDetailPage() {
           {/* Region 5: order lines table */}
           <>
             {editing && (() => {
-              const withAtp = editLines
+              const withStock = editLines
                 .filter(l => l.productId)
                 .map(l => {
                   const fc = forecastMap.get(l.productId)
-                  const atp = fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
-                  return { ...l, atp }
+                  return { ...l, stock: fc }
                 })
-              const outOfStockLines = withAtp.filter(l => l.atp != null && l.atp <= 0)
-              const lowStockLines = withAtp.filter(l => l.atp != null && l.atp > 0 && l.atp < LOW_STOCK_THRESHOLD)
+              const outOfStockLines = withStock.filter(l => l.stock && Number(l.stock.availableQty) <= 0)
+              const lowStockLines = withStock.filter(l => l.stock && Number(l.stock.availableQty) > 0 && Number(l.stock.safetyStockMin) > 0 && Number(l.stock.forecast) <= Number(l.stock.safetyStockMin))
               if (outOfStockLines.length === 0 && lowStockLines.length === 0) return null
               return (
                 <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
                   <span className="text-lg leading-none mt-0.5">🚨</span>
                   <div className="text-base">
-                    <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于 ATP）：'}</span>
+                    <span className="font-semibold text-red-700">{isEn ? 'Stock Warning: ' : '库存警告：'}</span>
                     {outOfStockLines.length > 0 && (
                       <span className="text-red-600">
-                        {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
+                        {isEn ? `${outOfStockLines.length} product(s) unavailable` : `${outOfStockLines.length} 个商品无可用库存`}
                         <span className="text-base text-red-500 ml-1">
-                          ({outOfStockLines.map(l => l.productName).join(isEn ? ', ' : '、')})
+                          ({outOfStockLines.map(l => `${l.productName} (${isEn ? 'Available' : '可用'}: ${Number(l.stock!.availableQty).toFixed(1)})`).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
                     )}
@@ -1094,7 +1080,7 @@ export default function QuotationDetailPage() {
                       <span className="text-amber-700">
                         {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
                         <span className="text-base text-amber-600 ml-1">
-                          ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp!.toFixed(1)})`).join(isEn ? ', ' : '、')})
+                          ({lowStockLines.map(l => `${l.productName}(${isEn ? 'Forecast' : '预测'}: ${Number(l.stock!.forecast).toFixed(1)} / ${isEn ? 'Min' : '预警值'}: ${Number(l.stock!.safetyStockMin).toFixed(1)})`).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
                     )}
@@ -1134,9 +1120,8 @@ export default function QuotationDetailPage() {
                 if (!editing || !l.productId) return undefined
                 const fc = forecastMap.get(l.productId)
                 if (!fc) return undefined
-                const atp = Number(fc.qtyOnHand) - atpDemand(l.productId)
-                if (atp <= 0) return { background: '#fee2e2' }
-                if (atp < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
+                if (Number(fc.availableQty) <= 0) return { background: '#fee2e2' }
+                if (Number(fc.safetyStockMin) > 0 && Number(fc.forecast) <= Number(fc.safetyStockMin)) return { background: '#fffbeb' }
                 return undefined
               }}
               renderHeaders={() => (
@@ -1168,9 +1153,9 @@ export default function QuotationDetailPage() {
                 const cost = Number(costRaw ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                 const isDuplicate = !!l.productId && (duplicateCounts.get(dupKey(l)) ?? 0) > 1
-                const atp = editing && fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
-                const isOutOfStock = atp != null && atp <= 0
-                const isLowStock = atp != null && atp > 0 && atp < LOW_STOCK_THRESHOLD
+                const availableQty = editing && fc ? Number(fc.availableQty) : null
+                const isOutOfStock = availableQty != null && availableQty <= 0
+                const isLowStock = editing && fc != null && Number(fc.safetyStockMin) > 0 && Number(fc.forecast) <= Number(fc.safetyStockMin)
                 return (
                   <>
                     <td className="w-12 min-w-12 px-2 py-2">
