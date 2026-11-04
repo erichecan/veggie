@@ -270,6 +270,7 @@ export async function POST(req: Request) {
                   selectable: row.selectable ?? true,
                   sequence: row.pricelistSequence ?? 10,
                   items: [],
+                  createdBy: user.name || user.email,
                   updatedBy,
                 },
               })

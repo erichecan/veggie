@@ -644,6 +644,11 @@ export default function QuotationDetailPage() {
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing ? editLines : lines
+  const orderQtyByUnit = displayLines.reduce((totals, line) => {
+    const unit = line.uomName || UNSET_UOM_LABEL
+    totals.set(unit, (totals.get(unit) ?? 0) + (Number(line.orderedQty) || 0))
+    return totals
+  }, new Map<string, number>())
   const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
@@ -1357,6 +1362,7 @@ export default function QuotationDetailPage() {
           {/* Region 6: totals */}
           <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">
             <div className="w-full max-w-md min-w-0 text-base text-right space-y-1">
+              <div className="flex justify-between gap-4"><span className="text-gray-600 shrink-0">{isEn ? 'Order Qty:' : '订购数量:'}</span><span className="text-gray-800">{Array.from(orderQtyByUnit, ([unit, qty]) => `${qty.toFixed(2)} ${unit}`).join(' · ') || '0.00'}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>
               <div className="border-t border-gray-200 my-1" />

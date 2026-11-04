@@ -775,6 +775,8 @@ model OdooPricelist {
   selectable      Boolean  @default(true)
   active          Boolean  @default(true)
   updatedAt       DateTime @updatedAt
+  /// 创建者用户名/邮箱快照；由服务端从登录身份写入，不关联可变的用户资料
+  createdBy       String?
   /// 20261023 新增：最后改动这个价格表的用户名/邮箱（自由文本，同 Product.updatedBy 的模式，
   /// 不关联 User 表），配合价格表列表页的 Last Updated by 列。历史行只回填能从 ActionLog
   /// 确认的（见迁移 20261023000001），对不上的留空，不编造身份

@@ -33,7 +33,7 @@ interface SavedListState {
   searchInput: string
   facets: Facet[]
   columnFilters: Record<string, string>
-  /** 列头多选筛选（Last Updated by / Selectable），老版本存的状态里没有这个字段 */
+  /** 列头多选筛选（创建者 / 更新者 / Selectable），老版本存的状态里没有这个字段 */
   columnMultiFilters?: Record<string, string[]>
   selectableFilter: boolean
   tab: 'active' | 'archived'
@@ -53,8 +53,9 @@ function readSavedListState(): SavedListState | null {
   }
 }
 
-/** 列头多选筛选用的取值：updatedBy 为空记作 ''，selectable 记作 'true'/'false' */
+/** 列头多选筛选用的取值：人员字段为空记作 ''，selectable 记作 'true'/'false' */
 function multiFilterValue(pl: OdooPricelist, key: string): string {
+  if (key === 'createdBy') return pl.createdBy ?? ''
   if (key === 'updatedBy') return pl.updatedBy ?? ''
   if (key === 'selectable') return String(!!pl.selectable)
   return String((pl as unknown as Record<string, unknown>)[key] ?? '')
@@ -138,6 +139,7 @@ export default function ClassicPricelistsPage() {
   const facetDefs = useMemo<ClientFacetDef<OdooPricelist>[]>(() => [
     { key: 'name',     label: '名称', labelEn: 'Name',     values: r => [r.name] },
     { key: 'currency', label: '货币', labelEn: 'Currency', values: r => [r.currency] },
+    { key: 'createdBy', label: '创建者', labelEn: 'Created by', values: r => r.createdBy ? [r.createdBy] : [] },
     { key: 'updatedBy', label: '最后更新人', labelEn: 'Last Updated by', values: r => r.updatedBy ? [r.updatedBy] : [] },
     {
       key: 'product', label: '产品', labelEn: 'Product',
@@ -163,7 +165,10 @@ export default function ClassicPricelistsPage() {
     let rows = filterByFacets(lists, facets, facetDefs)
     rows = rows.filter(pl => pl.active === (tab === 'active'))
     if (searchInput) {
-      rows = rows.filter(pl => pl.name.toLowerCase().includes(searchInput.toLowerCase()))
+      const query = searchInput.toLowerCase()
+      rows = rows.filter(pl => pl.name.toLowerCase().includes(query)
+        || (pl.createdBy ?? '').toLowerCase().includes(query)
+        || (pl.updatedBy ?? '').toLowerCase().includes(query))
     }
     if (selectableFilter) rows = rows.filter(pl => pl.selectable)
     for (const [key, val] of Object.entries(columnFilters)) {
@@ -211,11 +216,25 @@ export default function ClassicPricelistsPage() {
     ]
   }, [lists, tab, isEn])
 
+  const createdByOptions = useMemo(() => {
+    const names = new Set<string>()
+    let hasEmpty = false
+    for (const pl of lists) {
+      if (pl.active !== (tab === 'active')) continue
+      if (pl.createdBy) names.add(pl.createdBy)
+      else hasEmpty = true
+    }
+    return [
+      ...[...names].map(n => ({ value: n, label: n })),
+      ...(hasEmpty ? [{ value: '', label: isEn ? '(Empty)' : '（空）' }] : []),
+    ]
+  }, [lists, tab, isEn])
+
   // 点列头排序前，列表恒按 sequence（后端存的任意顺序）展示——名称一栏看着大小写
   // 随机混排、Last Updated on 一栏也不按时间先后，就是因为从没真正排过序
   // （20261002 客户反馈截图）。name 用 localeCompare + sensitivity:'base' 做大小写
   // 不敏感比较，updatedAt 按真实时间戳比较，不是字符串字典序。
-  // 20261023 起每一列都可排序；updatedBy 为空（历史数据无记录）的不论升降序都排在最后。
+  // 每一列都可排序；创建者/更新者为空（历史数据无可靠记录）的不论升降序都排在最后。
   const sortedLists = useMemo(() => {
     if (!sortKey) return filteredLists
     const dir = sortDir === 'asc' ? 1 : -1
@@ -224,6 +243,10 @@ export default function ClassicPricelistsPage() {
     rows.sort((a, b) => {
       if (sortKey === 'name') return text(a.name, b.name)
       if (sortKey === 'updatedAt') return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir
+      if (sortKey === 'createdBy') {
+        if (!a.createdBy || !b.createdBy) return (a.createdBy ? 0 : 1) - (b.createdBy ? 0 : 1)
+        return text(a.createdBy, b.createdBy)
+      }
       if (sortKey === 'updatedBy') {
         if (!a.updatedBy || !b.updatedBy) return (a.updatedBy ? 0 : 1) - (b.updatedBy ? 0 : 1)
         return text(a.updatedBy, b.updatedBy)
@@ -344,6 +367,16 @@ export default function ClassicPricelistsPage() {
       },
     },
     {
+      key: 'createdBy',
+      label: 'Created by',
+      filterType: 'multi-select',
+      filterOptions: createdByOptions,
+      sortable: true,
+      render: (v) => v
+        ? <span className="text-xs text-gray-500">{String(v)}</span>
+        : <span className="text-xs text-gray-300">—</span>,
+    },
+    {
       key: 'updatedAt',
       label: 'Last Updated on',
       filterType: 'date-range',
@@ -451,6 +484,7 @@ export default function ClassicPricelistsPage() {
         }}
         groupByOptions={[
           { label: isEn ? 'Currency' : '货币', value: 'currency' },
+          { label: isEn ? 'Created by' : '创建者', value: 'createdBy' },
           { label: isEn ? 'Last Updated by' : '最后更新人', value: 'updatedBy' },
         ]}
         groupByValue={groupBy}
@@ -499,7 +533,7 @@ export default function ClassicPricelistsPage() {
           inlineEditEnabled={editMode}
           onCellEdit={handleCellEdit}
           emptyText={isEn ? 'No pricelist data' : '暂无价格表数据'}
-          groupByField={groupBy === 'currency' || groupBy === 'updatedBy' ? groupBy : ''}
+          groupByField={groupBy === 'currency' || groupBy === 'createdBy' || groupBy === 'updatedBy' ? groupBy : ''}
           groupByFormatter={(key, count) => (
             <>{key || (isEn ? '(Empty)' : '（空）')} <span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({count})</span></>
           )}

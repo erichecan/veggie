@@ -18,8 +18,8 @@ export async function GET() {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
-      // updatedBy 只认登录身份，不信客户端传来的(列表页「复制」会把整行带过来)
-      const { id: _ignoredId, updatedBy: _ignoredUpdatedBy, ...data } = await req.json()
+      // 创建/更新人只认登录身份，不信客户端传来的（复制列表会把整行带过来）
+      const { id: _ignoredId, createdBy: _ignoredCreatedBy, updatedBy: _ignoredUpdatedBy, ...data } = await req.json()
       if (!data.name || !String(data.name).trim()) {
         return NextResponse.json({ error: '价格表名称不能为空' }, { status: 400 })
       }
@@ -29,6 +29,7 @@ export async function POST(req: Request) {
           ...data,
           externalId: data.externalId || null,
           items: normalizeItems(data.items ?? []) as unknown as object[],
+          createdBy: user.name || user.email,
           updatedBy: user.name || user.email,
         },
       })

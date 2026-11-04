@@ -615,29 +615,26 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       {r.delivered && <span className="text-xs font-medium text-green-700">{isEn ? '✓ Delivered' : '✓ 已送达'}</span>}
                       {!r.delivered && hasException && <span className="text-xs font-medium text-orange-700">{isEn ? '⚠ Exception' : '⚠ 有异常'}</span>}
                     </div>
-                    {r.orderCodes?.length ? <p className="mt-1 break-words text-xs font-medium leading-relaxed text-purple-700">{isEn ? 'SO' : 'SO单号'}: {r.orderCodes.join(', ')}</p> : null}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-4 p-3 sm:p-4">
-                  <div className={`grid ${orderIds.length === 0 && navUrl ? 'grid-cols-2' : 'grid-cols-1'} items-stretch gap-2`}>
-                    <div className="flex min-h-14 flex-col justify-center rounded-xl border border-gray-200 bg-gray-50 px-3">
-                      <span className="text-xs font-medium text-gray-500">{isEn ? 'Due' : '应收'}</span>
-                      <span className="text-lg font-bold text-gray-900">€{dueIncTax.toFixed(2)}</span>
+                  {orderIds.length === 0 && (
+                    <div className="grid grid-cols-1 items-stretch gap-2">
+                      {navUrl ? (
+                        <button
+                          type="button"
+                          className="min-h-14 rounded-xl border border-blue-700 bg-blue-700 px-3 text-base font-bold leading-tight text-white shadow-sm hover:bg-blue-800"
+                          onClick={() => window.open(navUrl, '_blank')}
+                        >{isEn ? '🧭 Navigate' : '🧭 导航'}</button>
+                      ) : (
+                        <button type="button" disabled className="min-h-14 rounded-xl border border-gray-200 bg-gray-100 px-3 text-base font-semibold text-gray-400">
+                          {isEn ? 'No location' : '无导航地址'}
+                        </button>
+                      )}
                     </div>
-                    {orderIds.length === 0 && navUrl ? (
-                      <button
-                        type="button"
-                        className="min-h-14 rounded-xl border border-blue-700 bg-blue-700 px-3 text-base font-bold leading-tight text-white shadow-sm hover:bg-blue-800"
-                        onClick={() => window.open(navUrl, '_blank')}
-                      >{isEn ? '🧭 Navigate' : '🧭 导航'}</button>
-                    ) : orderIds.length === 0 ? (
-                      <button type="button" disabled className="min-h-14 rounded-xl border border-gray-200 bg-gray-100 px-3 text-base font-semibold text-gray-400">
-                        {isEn ? 'No location' : '无导航地址'}
-                      </button>
-                    ) : null}
-                  </div>
+                  )}
 
                   {orderIds.length > 0 && (
                     <div className="space-y-2" aria-label={isEn ? 'Order timers' : '订单计时'}>
