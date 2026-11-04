@@ -4,6 +4,9 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
 import { driverRowScope } from '@/lib/row-scope'
+import { completeDeliveredOrders, describeFailures } from '@/lib/delivery-complete'
+import { decodedPngBytes, MAX_SIGNATURE_BYTES } from '@/lib/trip-signature'
+import { isSameMoneyAmount, tripRestaurantAmountDue } from '@/lib/trip-collection'
 import type { TripRestaurant } from '@/lib/types'
 
 type OrderTiming = { startedAt?: string; endedAt?: string }
@@ -54,6 +57,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           if (!current.startedAt || current.endedAt) {
             return { error: '该订单尚未开始，或已经结束', status: 409 as const }
           }
+          const signatureBytes = owner.signature ? decodedPngBytes(owner.signature) : null
+          if (
+            !owner.delivered ||
+            signatureBytes === null ||
+            signatureBytes > MAX_SIGNATURE_BYTES ||
+            !owner.signerName?.trim() ||
+            !owner.signedAt
+          ) {
+            return { error: '请先完成顾客签名，再结束订单', status: 409 as const }
+          }
+          const expectedAmount = tripRestaurantAmountDue(owner.items, owner.returns ?? [])
+          if (!isSameMoneyAmount(owner.payment, expectedAmount)) {
+            return {
+              error: `实收金额不正确，请填写 €${expectedAmount.toFixed(2)} 后再结束订单`,
+              status: 409 as const,
+            }
+          }
           timings[orderId] = { ...current, endedAt: new Date().toISOString() }
         }
 
@@ -68,6 +88,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status })
       const restaurants = result.trip.restaurants as unknown as RestaurantWithOrderTiming[]
       const orderIds = [...new Set(restaurants.flatMap(r => r.orderIds ?? []))]
+      let completionDetail = ''
+      if (action === 'end') {
+        const completion = await completeDeliveredOrders([orderId], {
+          reason: '司机完成单个订单配送',
+          userId: user.userId,
+          createdBy: user.name ?? user.email,
+        })
+        if (completion.completedIds.includes(orderId)) {
+          completionDetail = '；销售订单状态已更新为配送完成'
+        }
+        if (completion.failures.length > 0) {
+          console.error('[order timing: delivery complete]', orderId, describeFailures(completion.failures))
+        }
+      }
       const orders = orderIds.length > 0
         ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, code: true } })
         : []
@@ -75,7 +109,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'trip', resourceId: id,
-        detail: `${action === 'start' ? '开始' : '结束'}订单计时: ${orderId}`,
+        detail: `${action === 'start' ? '开始' : '结束'}订单计时: ${orderId}${completionDetail}`,
       })
       return NextResponse.json(serializeApi({
         ...result.trip,

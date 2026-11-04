@@ -13,45 +13,13 @@ import { TripStatusBadge } from '@/components/shared/status-badge'
 import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
 import SignaturePad from '@/components/driver/SignaturePad'
 import { orderIncTaxTotal } from '@/lib/order-items'
+import { calculateReturnAdjustment, isSameMoneyAmount, tripRestaurantAmountDue } from '@/lib/trip-collection'
 import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
 const EXCEPTION_REASONS_ZH = ['品质问题', '数量错误', '客户拒收', '配送延误', '包装破损', '其他']
 const EXCEPTION_REASONS_EN = ['Quality issue', 'Wrong quantity', 'Customer refused', 'Delivery delay', 'Damaged packaging', 'Other']
-
-/** Calculate the collection amount after reported returns, using the sold unit price and tax. */
-function calculateReturnAdjustment(items: Trip['restaurants'][number]['items'], returns: ReturnItem[]) {
-  const remainingByProduct = new Map<string, number>()
-  for (const item of items) {
-    remainingByProduct.set(item.productId, (remainingByProduct.get(item.productId) ?? 0) + Math.max(0, Number(item.quantity) || 0))
-  }
-
-  let exTax = 0
-  let tax = 0
-  for (const ret of returns) {
-    if (ret.actionType === 'exchange' || ret.status === 'REJECTED') continue
-    let qtyLeft = Math.max(0, Number(ret.quantity) || 0)
-    const matchingItems = items.filter(item => item.productId === ret.productId)
-    for (const item of matchingItems) {
-      if (qtyLeft <= 0) break
-      const remaining = remainingByProduct.get(item.productId) ?? 0
-      const qty = Math.min(qtyLeft, remaining, Math.max(0, Number(item.quantity) || 0))
-      if (qty <= 0) continue
-      const unitPrice = Number.isFinite(Number(ret.unitPrice)) ? Number(ret.unitPrice) : Number(item.price) || 0
-      const rate = Number(item.taxRate) || 0
-      const taxFraction = rate > 1 ? rate / 100 : rate
-      exTax += unitPrice * qty
-      tax += unitPrice * qty * taxFraction
-      qtyLeft -= qty
-      remainingByProduct.set(item.productId, remaining - qty)
-    }
-  }
-
-  exTax = Math.round(exTax * 100) / 100
-  tax = Math.round(tax * 100) / 100
-  return { exTax, tax, incTax: Math.round((exTax + tax) * 100) / 100 }
-}
 
 interface ExceptionProduct {
   productId: string
@@ -70,6 +38,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [trip, setTrip] = useState<Trip | null>(null)
   const [orderTimingBusy, setOrderTimingBusy] = useState<string | null>(null)
+  const [paymentSavingRestId, setPaymentSavingRestId] = useState<string | null>(null)
   const [showEndTripConfirm, setShowEndTripConfirm] = useState(false)
   const [endingTrip, setEndingTrip] = useState(false)
 
@@ -214,7 +183,14 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     const updated = cloneTrip()
     const r = updated.restaurants.find(r => r.restaurantId === restId)
     if (r) r.payment = clean
-    await saveTrip(updated)
+    setPaymentSavingRestId(restId)
+    try {
+      await saveTrip(updated)
+    } catch {
+      // saveTrip already reports the error; keep sign-off and order end disabled until retry.
+    } finally {
+      setPaymentSavingRestId(null)
+    }
   }
 
   function openExceptionModal(restId: string) {
@@ -340,7 +316,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (!trip) return
     const r = trip.restaurants.find(r => r.restaurantId === restId)
     if (!r) return
-    if (r.payment === undefined) { toast.error(isEn ? 'Please enter the amount collected first' : '请先填写实收货款'); return }
+    const expected = tripRestaurantAmountDue(r.items, r.returns ?? [])
+    if (!isSameMoneyAmount(r.payment, expected)) {
+      toast.error(isEn
+        ? `Enter the correct amount collected: €${expected.toFixed(2)}`
+        : `请先将实收金额填写正确（应收 €${expected.toFixed(2)}）`)
+      return
+    }
     setSignData(null)
     setSignerName('')
     setSignModal({ restId, restName: r.restaurantName })
@@ -525,11 +507,14 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const dueExTax = Math.max(0, Math.round((grossDueExTax - returnAdjustment.exTax) * 100) / 100)
           const dueIncTax = Math.max(0, Math.round((grossDueIncTax - returnAdjustment.incTax) * 100) / 100)
           const dueTax = Math.max(0, Math.round((dueIncTax - dueExTax) * 100) / 100)
+          const paymentMatchesDue = isSameMoneyAmount(r.payment, dueIncTax)
           const isProcessed = r.delivered || hasException
           const orderIds = r.orderIds ?? []
           const allRestOrderTimersEnded = orderIds.length > 0 && orderIds.every(orderId => !!orderTimingById[orderId]?.endedAt)
           const activeOrderAtRest = !!activeOrderId && orderIds.includes(activeOrderId)
           const canOperateRest = tripStatus === 'in_progress' && !isProcessed && (activeOrderAtRest || allRestOrderTimersEnded)
+          const canEditPayment = tripStatus === 'in_progress' && !r.delivered && (activeOrderAtRest || allRestOrderTimersEnded)
+          const canSignOff = canEditPayment && paymentMatchesDue && paymentSavingRestId !== r.restaurantId
           const navigationOrderId = (activeOrderAtRest ? activeOrderId : null)
             ?? orderIds.find(orderId => !orderTimingById[orderId]?.endedAt)
             ?? orderIds[0]
@@ -583,9 +568,16 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         const timing = r.orderTimings?.[orderId] ?? {}
                         const isCurrent = activeOrderId === orderId
                         const canStart = tripStatus === 'in_progress' && !activeOrderId && !timing.startedAt && !timing.endedAt
-                        const canEnd = tripStatus === 'in_progress' && isCurrent
+                        const canEnd = tripStatus === 'in_progress'
+                          && isCurrent
+                          && !!r.delivered
+                          && !!r.signature
+                          && !!r.signerName?.trim()
+                          && !!r.signedAt
+                          && paymentMatchesDue
+                          && paymentSavingRestId !== r.restaurantId
                         const orderLabel = r.orderCodes?.[orderIndex] ?? orderId.slice(-8).toUpperCase()
-                        const buttonLabel = canEnd
+                        const buttonLabel = isCurrent
                           ? (isEn ? 'End Order' : '结束订单')
                           : timing.endedAt
                             ? (isEn ? 'Completed' : '已结束')
@@ -604,8 +596,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                               <button
                                 type="button"
                                 disabled={(!canStart && !canEnd) || orderTimingBusy !== null}
-                                onClick={() => changeOrderTiming(orderId, canEnd ? 'end' : 'start')}
-                                className={`min-h-14 min-w-0 rounded-lg px-2 text-sm font-bold leading-tight text-white shadow-sm disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600 disabled:shadow-none ${canEnd ? 'bg-red-600 hover:bg-red-700' : 'bg-green-700 hover:bg-green-800'}`}
+                                onClick={() => changeOrderTiming(orderId, isCurrent ? 'end' : 'start')}
+                                className={`min-h-14 min-w-0 rounded-lg px-2 text-sm font-bold leading-tight text-white shadow-sm disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600 disabled:shadow-none ${isCurrent ? 'bg-red-600 hover:bg-red-700' : 'bg-green-700 hover:bg-green-800'}`}
                               >{orderTimingBusy === orderId ? '…' : buttonLabel}</button>
                               {navigationOrderId === orderId && (
                                 <button
@@ -616,6 +608,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                                 >{navUrl ? (isEn ? '🧭 Navigate' : '🧭 导航') : (isEn ? 'No location' : '无导航地址')}</button>
                               )}
                             </div>
+                            {isCurrent && !canEnd && (
+                              <p className="text-xs leading-relaxed text-amber-800">
+                                {paymentSavingRestId === r.restaurantId
+                                  ? (isEn ? 'Saving collected amount…' : '正在保存实收金额…')
+                                  : !paymentMatchesDue
+                                    ? (isEn ? `Enter the exact amount due (€${dueIncTax.toFixed(2)}) and save it before ending.` : `请先填写并保存正确实收金额：€${dueIncTax.toFixed(2)}`)
+                                    : (isEn ? 'Get the customer signature before ending this order.' : '请先完成顾客签名，才能结束订单。')}
+                              </p>
+                            )}
                           </div>
                         )
                       })}
@@ -681,10 +682,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         step="0.01"
                         placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
                         value={r.payment ?? dueIncTax}
-                        onBlur={e => setPayment(r.restaurantId, parseFloat(e.target.value) || 0)}
-                        disabled={!canOperateRest}
+                        onBlur={e => { void setPayment(r.restaurantId, parseFloat(e.target.value) || 0) }}
+                        disabled={!canEditPayment || paymentSavingRestId === r.restaurantId}
                         className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                       />
+                      {activeOrderAtRest && !paymentMatchesDue && (
+                        <p className="mt-2 text-xs leading-relaxed text-amber-800">
+                          {isEn ? `Enter the exact amount due: €${dueIncTax.toFixed(2)}.` : `请输入正确应收金额 €${dueIncTax.toFixed(2)}，保存后才能完成签收。`}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -735,7 +741,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         onClick={() => { setPodRestId(r.restaurantId); podInputRef.current?.click() }}
                       >{isEn ? 'Upload POD' : '上传 POD'}</Button>
                       <Button
-                        disabled={!canOperateRest}
+                        disabled={!canSignOff}
                         className="col-span-2 min-h-14 min-w-0 whitespace-normal px-2 text-center text-base font-bold leading-tight text-white bg-green-700 hover:bg-green-800 disabled:bg-gray-300 disabled:text-gray-600 sm:col-span-1"
                         onClick={() => openSignModal(r.restaurantId)}
                       >{isEn ? 'Customer Sign-off' : '客户签收'}</Button>
