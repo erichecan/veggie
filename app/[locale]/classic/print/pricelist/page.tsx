@@ -51,6 +51,7 @@ const T = {
 interface EnrichedItem {
   id: string
   applyOn: string
+  uomId?: string
   productTemplateId?: string
   productName?: string | null
   productRef?: string | null
@@ -70,6 +71,8 @@ interface EnrichedItem {
   saleDescription?: string | null
   /** ProductSaleUom.spec（按 item.uomId 限定的单位取那个单位的规格，没限定就落回默认单位） */
   packSpec?: string | null
+  /** 价格表规则绑定的单位；未绑定单位时使用商品默认销售单位 */
+  packUnit?: string | null
 }
 
 interface EnrichedPricelist {
@@ -135,7 +138,9 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = '
             ${item.productRef ? `<span class="product-ref">[${item.productRef}]</span> ` : ''}${item.productName ?? '—'}
           </td>
           <td class="col-desc">${item.saleDescription ?? '—'}</td>
-          <td class="col-desc">${item.packSpec ?? '—'}</td>
+          <td class="col-desc">${item.uomId
+            ? [item.packUnit, item.packSpec].filter(Boolean).join(' · ') || item.packUnit || '—'
+            : `All Units${item.packUnit || item.packSpec ? ` (default: ${[item.packUnit, item.packSpec].filter(Boolean).join(' · ')})` : ''}`}</td>
           <td class="col-minqty">${item.minQty ?? 1}</td>
           <td class="col-date">${formatDateOnly(item.dateStart)}</td>
           <td class="col-date">${formatDateOnly(item.dateEnd)}</td>

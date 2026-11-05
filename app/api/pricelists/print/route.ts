@@ -60,11 +60,13 @@ export async function GET(req: NextRequest) {
           select: {
             id: true, name: true, internalRef: true, saleDescription: true,
             listPrice: true, price: true, standardPrice: true, commissionPrice: true, categoryId: true,
+            uom: { select: { name: true } },
             category: { select: { name: true, nameZh: true } },
             saleUoms: {
               select: {
                 uomId: true, isDefault: true, factor: true, priceOverride: true,
                 priceMode: true, priceDiscountPct: true, priceSurcharge: true, spec: true,
+                uom: { select: { name: true } },
               },
             },
           },
@@ -79,10 +81,16 @@ export async function GET(req: NextRequest) {
     // 未限定单位时才使用默认可售单位的 spec。
     const saleUomByExact = new Map<string, string | null>()
     const saleUomByDefault = new Map<string, string | null>()
+    const saleUnitByExact = new Map<string, string>()
+    const saleUnitByDefault = new Map<string, string>()
     for (const product of products) {
       for (const saleUom of product.saleUoms) {
         saleUomByExact.set(`${product.id}:${saleUom.uomId}`, saleUom.spec)
-        if (saleUom.isDefault) saleUomByDefault.set(product.id, saleUom.spec)
+        saleUnitByExact.set(`${product.id}:${saleUom.uomId}`, saleUom.uom.name)
+        if (saleUom.isDefault) {
+          saleUomByDefault.set(product.id, saleUom.spec)
+          saleUnitByDefault.set(product.id, saleUom.uom.name)
+        }
       }
     }
 
@@ -126,6 +134,11 @@ export async function GET(req: NextRequest) {
             ? saleUomByExact.get(`${pid}:${item.uomId}`) ?? null
             : saleUomByDefault.get(pid) ?? null
           : null
+        const packUnit = pid
+          ? item.uomId
+            ? saleUnitByExact.get(`${pid}:${item.uomId}`) ?? null
+            : saleUnitByDefault.get(pid) ?? product?.uom?.name ?? null
+          : null
 
         return {
           ...item,
@@ -140,6 +153,7 @@ export async function GET(req: NextRequest) {
           productCategoryZh: product?.category?.nameZh ?? null,
           computedPrice,
           saleDescription: product?.saleDescription ?? null,
+          packUnit: packUnit ?? null,
           packSpec: packSpec ?? null,
         }
       })

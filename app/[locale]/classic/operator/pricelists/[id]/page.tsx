@@ -127,21 +127,33 @@ function uomScopeLabel(item: OdooPricelistItem, uoms: Uom[], isEn: boolean): str
   return isEn ? u.name : (u.nameZh ?? u.name)
 }
 
-function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: ProductCategory[], isEn: boolean): string {
+/** 取指定可售单位的名称与单位规格。 */
+function saleUnitAndSpec(uomId: string | undefined, product: Product, uoms: Uom[]): string {
+  if (!uomId) return ''
+  const unit = uoms.find(u => u.id === uomId)?.name
+    ?? (uomId === product.uomId ? product.uomName : uomId)
+  const spec = product.saleUoms?.find(su => su.uomId === uomId)?.spec
+  return [unit, spec].filter((v): v is string => Boolean(v?.trim())).join(' · ')
+}
+
+function defaultSaleUomId(product: Product | undefined): string | undefined {
+  return product?.saleUoms?.find(su => su.isDefault)?.uomId ?? product?.uomId
+}
+
+function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: ProductCategory[], uoms: Uom[], isEn: boolean): string {
   if (item.applyOn === 'global') return 'All Products'
   if (item.applyOn === 'product' || item.applyOn === 'variant') {
     // products 传的是全部商品(含已归档)：归档商品以前也显示成「-」，看起来像无效规则(20261008)
     const p = products.find(p => p.id === scopedProductId(item))
     if (!p) return '-'
-    // 20261014：很多商品同名，名字后面带规格(如 "10KG"/"20KG")才分得清是哪一款。
-    // 20261025 改正：规格必须按这条规则自己限定的单位(item.uomId)取，不能恒用 purchaseUomSpec
-    // (采购/箱规那个单位的规格)——否则规则选了 can，名字后面却接着写箱规"6*2950g"，
-    // 看着像这一行卖的是一箱而不是一罐。没限定单位时也只使用默认可售单位的规格，
-    // 不回退到采购单位规格。
-    const scopedSpec = item.uomId
-      ? p.saleUoms?.find(su => su.uomId === item.uomId)?.spec ?? null
-      : p.saleUoms?.find(su => su.isDefault)?.spec ?? null
-    const name = scopedSpec ? `${p.name} (${scopedSpec})` : p.name
+    // 规则没有 uomId 就适用于所有可售单位，不能把商品默认单位显示成规则限定单位。
+    // 默认单位/规格只作为参考，明确加上 default 标签。
+    const unitAndSpec = saleUnitAndSpec(item.uomId, p, uoms)
+    const defaultUnitAndSpec = saleUnitAndSpec(defaultSaleUomId(p), p, uoms)
+    const scopeLabel = item.uomId
+      ? unitAndSpec
+      : `${isEn ? 'All Units' : '所有可售单位'}${defaultUnitAndSpec ? `${isEn ? ' · default ' : ' · 默认 '}${defaultUnitAndSpec}` : ''}`
+    const name = `${p.name} (${scopeLabel})`
     const archived = p.status?.toLowerCase() !== 'active' || p.active === false
     return archived ? `${name} ${isEn ? '(archived)' : '(已归档)'}` : name
   }
@@ -624,7 +636,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       cost,
       publicPrice,
       estimatedPrice,
-      applyLabel: applyOnLabel(item, allProductsForLabels, categories, isEn),
+      applyLabel: applyOnLabel(item, allProductsForLabels, categories, uoms, isEn),
       categoryLabel: productCategoryLabel(item, scopedProduct, categories, isEn),
       priceValue: estimatedPrice ?? item.fixedPrice ?? 0,
     }
@@ -1213,7 +1225,6 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
   isEn: boolean
 }) {
   const [hover, setHover] = useState(false)
-  const scopedUom = uomScopeLabel(item, uoms, isEn)
   // Edit 模式下固定价/百分比折扣可以直接在表格里改(20261008)，不用每条都点开弹窗
   const inlineField: 'fixedPrice' | 'percentDiscount' | null = inlineEdit
     ? (item.computeType === 'fixed' ? 'fixedPrice' : item.computeType === 'percentage' ? 'percentDiscount' : null)
@@ -1270,16 +1281,7 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
       )}
       <td className="px-2 py-1.5 text-center text-gray-500 tabular-nums">{productNo ?? ''}</td>
       <td className="px-2 py-1.5 text-center text-gray-800">
-        {applyOnLabel(item, products, categories, isEn)}
-        {scopedUom && (
-          <span
-            className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium"
-            style={{ background: PURPLE_LIGHT, color: PURPLE }}
-            title={isEn ? `Only applies to unit: ${scopedUom}` : `仅对可售单位「${scopedUom}」生效`}
-          >
-            {scopedUom}
-          </span>
-        )}
+        {applyOnLabel(item, products, categories, uoms, isEn)}
       </td>
       <td className="px-2 py-1.5 text-center text-gray-600">{item.minQty}</td>
       <td className="px-2 py-1.5 text-center text-gray-500">{item.dateStart ?? ''}</td>
@@ -1409,7 +1411,14 @@ function ItemDialog({
   // 20260825 合表重构：选品只有一个入口了，新建/改选一律写 applyOn:'variant'（历史 'product'
   // 数据只读兼容，见 scopedProductId；一旦在这个弹窗里改过选品，就顺势升级成 'variant'）。
   function setScopedProductId(next: string | undefined) {
-    onChange({ ...item, applyOn: 'variant', productVariantId: next, productTemplateId: undefined, uomId: undefined })
+    const product = products.find(p => p.id === next)
+    onChange({
+      ...item,
+      applyOn: 'variant',
+      productVariantId: next,
+      productTemplateId: undefined,
+      uomId: defaultSaleUomId(product),
+    })
   }
 
   const saleUomProductId = scopedProductId(item)
@@ -1628,7 +1637,7 @@ function ItemDialog({
               {(item.applyOn === 'product' || item.applyOn === 'variant') && (
                 <div className="mt-4">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    {isEn ? 'Sellable Unit (optional)' : '限定可售单位（可选）'}
+                    {isEn ? 'Sellable Unit' : '可售单位'}
                   </label>
                   <select
                     value={item.uomId ?? ''}
@@ -1636,7 +1645,7 @@ function ItemDialog({
                     disabled={!saleUomProductId}
                     className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B] disabled:bg-gray-50 disabled:text-gray-400"
                   >
-                    <option value="">{isEn ? '(all units — follows the base unit price)' : '（不限定 — 所有可售单位跟随基准价联动）'}</option>
+                    <option value="">{isEn ? '(all sellable units)' : '（所有可售单位）'}</option>
                     {saleUomOptions.map(o => (
                       <option key={o.uomId} value={o.uomId}>
                         {o.uomName}{o.isDefault ? (isEn ? ' (base unit)' : '（基准单位）') : ''}
@@ -1645,8 +1654,8 @@ function ItemDialog({
                   </select>
                   <p className="text-[11px] text-gray-400 mt-1">
                     {isEn
-                      ? 'Pick a unit only if this product/variant needs a different price than its base-unit price × conversion factor.'
-                      : '只有当这个商品/变体需要"这个单位单独定价"而不是"基准价 × 换算系数"时才需要选。'}
+                      ? 'New product rules default to the base sellable unit. Choose another unit to scope this rule there, or select All Units to apply it to every sellable unit.'
+                      : '新建商品规则默认限定在商品的基准可售单位。可改选其他单位，或选择“所有可售单位”让规则适用于该商品的全部可售单位。'}
                   </p>
 
                   <div className="mt-3">
@@ -2202,7 +2211,7 @@ function TierPriceDialog({ seedItems, onSave, onDiscard, products, isEn }: {
                 setProductQuery(v)
                 if (!v.trim()) { setProductId(undefined); setUomId(undefined) }
               }}
-              onSelect={p => { setProductQuery(p.name); setProductId(p.id); setUomId(undefined) }}
+              onSelect={p => { setProductQuery(p.name); setProductId(p.id); setUomId(defaultSaleUomId(p)) }}
               products={products}
               placeholder={isEn ? 'Type to search a product…' : '输入关键词搜索商品…'}
               inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
