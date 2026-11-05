@@ -372,6 +372,12 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
             onMouseDown={e => e.preventDefault()}  // 别让 mousedown 抢走输入框的焦点
           >
             <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl overflow-y-auto" style={{ maxHeight: dropRect.maxHeight }}>
+              {search.trim() !== '' && items.length === 1 && (
+                <div className="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-purple-100 bg-purple-50 text-[11px]">
+                  <span className="font-semibold text-purple-800">{isEn ? '1 matching product found' : '找到 1 个匹配商品'}</span>
+                  <span className="shrink-0 text-purple-700">{isEn ? 'Press Enter to select' : '按 Enter 选择'}</span>
+                </div>
+              )}
               {items.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-400 text-center">{resolvedEmptyText}</div>
               ) : (
@@ -379,12 +385,15 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
                   <div
                     key={p.id}
                     data-idx={idx}
+                    role="option"
+                    aria-selected={idx === highlight}
                     onMouseEnter={() => setHighlight(idx)}
                     onMouseDown={e => { e.preventDefault(); pick(activeLineId, p) }}
                     className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#875A7B]/20 flex items-center gap-2 ${
-                      idx === highlight ? 'bg-[#875A7B]/20' : ''
+                      idx === highlight ? 'bg-[#875A7B]/15 ring-1 ring-inset ring-[#875A7B]/50' : ''
                     }`}
                   >
+                    <span className={`w-3 shrink-0 font-bold ${idx === highlight ? 'text-[#875A7B]' : 'text-transparent'}`} aria-hidden="true">✓</span>
                     <span className="font-medium text-gray-800 truncate flex-1">{p.name}</span>
                     {p.purchaseUomSpec && (
                       <span className="text-gray-500 text-[10px] shrink-0">({p.purchaseUomSpec})</span>

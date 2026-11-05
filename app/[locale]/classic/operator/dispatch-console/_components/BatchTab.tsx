@@ -480,10 +480,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const key = wave.id || `${groupKey(driverName, timeOfDay)}::empty`
     const assignableSlots = groupSlots.filter(slot => !slot.id.startsWith('wave-only:'))
     const palletCount = wave.id ? wave.pallets.length : assignableSlots.length
-    // 每张真实波次卡只显示自己的托盘；若波次尚无托盘，给当前配置的可分配托盘作为落点。
-    // 其他历史波次补出的 wave-only 槽位不能串到这张卡上。
+    // 活动波次显示该司机/时段全部有效配置托盘，保证已有托盘后仍能投放到尚未使用的托盘；
+    // 已出发/历史波次只显示本波次已有托盘。归档配置补出的 wave-only 槽位只跟随本波次已有托盘，不能串到其他波次。
     const renderSlots = wave.id && wave.pallets.length > 0
-      ? groupSlots.filter(slot => wave.pallets.some(p => p.seq === slot.batchNum))
+      ? groupSlots.filter(slot => wave.pallets.some(p => p.seq === slot.batchNum)
+        || (!wave.dispatchedAt && !wave.completedAt && !slot.id.startsWith('wave-only:')))
       : assignableSlots
     const canAssign = assignableSlots.length > 0
     // 没手动切换过视图时：0 单默认订单视图(卡片显示"暂无订单"，整卡看起来是空的，
