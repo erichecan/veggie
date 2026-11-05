@@ -6,6 +6,8 @@ import { writeLog } from '@/lib/action-log'
 import { driverRowScope } from '@/lib/row-scope'
 import { completeDeliveredOrders, describeFailures } from '@/lib/delivery-complete'
 import { decodedPngBytes, MAX_SIGNATURE_BYTES } from '@/lib/trip-signature'
+import { orderIncTaxTotal } from '@/lib/order-items'
+import { calculateReturnAdjustment } from '@/lib/trip-collection'
 import type { TripRestaurant } from '@/lib/types'
 
 type OrderTiming = { startedAt?: string; endedAt?: string }
@@ -51,6 +53,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return { error: '该订单已经开始或结束，不能重复计时', status: 409 as const }
           }
           if (activeOrderId) return { error: '请先结束当前订单，再开始下一个订单', status: 409 as const }
+          // Start Order 时自动带出应收金额。只填尚未设置的金额，保留司机已录入的值（包括 0），
+          // 并按司机端展示口径扣除已申报退货，避免开始计时后仍需要手动补填。
+          if (typeof owner.payment !== 'number' || !Number.isFinite(owner.payment) || owner.payment < 0) {
+            const grossDueIncTax = orderIncTaxTotal(owner.items)
+            const returnAdjustment = calculateReturnAdjustment(owner.items, owner.returns ?? [])
+            owner.payment = Math.max(0, Math.round((grossDueIncTax - returnAdjustment.incTax) * 100) / 100)
+          }
           timings[orderId] = { startedAt: new Date().toISOString() }
         } else {
           if (!current.startedAt || current.endedAt) {
