@@ -389,6 +389,14 @@ export interface OrderLine {
   spec?: string | null
   uomId?: string | null
   uomName?: string | null
+  /** 当前商品配置下，所选销售单位折算到商品基础单位的系数（用于只读数量汇总，不是订单行快照） */
+  uomConversion?: {
+    factor: number
+    thisUomName: string
+    baseUomName: string
+    netWeight: number | null
+    grossWeight: number | null
+  } | null
   /** 行级备注（商品级 note，如"free"赠品/注意事项），客户可见，打印在明细行下 */
   note?: string | null
   unitPrice: number

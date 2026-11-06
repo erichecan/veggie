@@ -2,7 +2,7 @@
  * Trip Sales Order Print — per-order invoice pages (delivery 模板的姊妹版,带价格)
  *
  * 与送货单(trip-delivery-template.ts)共用同一套页面结构/CSS,区别只在于:
- *   Line items table: QTY | UNIT | DESCRIPTION | PRICE | VAT | INCL VAT
+ *   Line items table: QTY | SALES UNIT | PRODUCT / UNIT SPEC | PRICE | VAT | INCL VAT
  *   多一个 Totals: Subtotal + VAT breakdown + Total
  * 每单一页(pageBreakAfter),有几个客户就打几页,与送货单一一对应。
  *
@@ -32,7 +32,7 @@ import {
   renderTripNoticeHtml,
   PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
-import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { groupOrderLines } from '@/lib/order-quantity-summary'
 import { giftMoneyCell } from './gift-mark'
 import { DOCUMENT_HEADER_CSS, documentHeader, documentHeaderOverheadMm, paymentDetails } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
@@ -47,9 +47,9 @@ function buildSalesOrderHtml(
   lang: PrintLang,
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
-  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
-  // 与拣货单堆叠顺序一致，客户拿着单子跟仓库出货顺序对得上。见 lib/print/line-sort.ts
-  const lines = sortLinesByUomSequence<TripLine>(order.lines ?? [])
+  // 销售单按商品首次出现顺序分组，组内保留订单行原顺序。
+  const productGroups = groupOrderLines<TripLine>(order.lines ?? [])
+  const lines = productGroups.flatMap(group => group.lines)
 
   // 20261008 客户要求（推翻 20260920 的"印 invoiceNo"口径）：标签继续叫 "Invoice No."，
   // 但印出来的号码改回订单自己的业务编号（Order.code，报价单/销售订单同一个号，D-YYMMDD-NNN），
@@ -81,7 +81,15 @@ function buildSalesOrderHtml(
   const total = subtotal + totalVat
 
 
-  // 20260914 客户要求：可售单位与基础单位的换算关系提示、毛重都不再打印在这类客户单据上
+  // 每个商品组尾部用一行汇总销售单位数量与基础单位折算量；行内仍保留原销售单位、规格和价格。
+  type SalesTableRow =
+    | { kind: 'line'; line: TripLine; spec: string | null; note: string | null }
+    | { kind: 'summary'; group: (typeof productGroups)[number]; spec: string; note: string | null }
+  const tableRows: SalesTableRow[] = productGroups.flatMap(group => [
+    ...group.lines.map(line => ({ kind: 'line' as const, line, spec: line.spec, note: line.note })),
+    { kind: 'summary' as const, group, spec: group.salesUnitQuantity, note: group.baseUnitQuantity },
+  ])
+
   function renderLineRow(l: TripLine, i: number): string {
     const rate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + rate / 100)
@@ -97,6 +105,18 @@ function buildSalesOrderHtml(
       <td class="col-price">${giftMoneyCell(l.isGift, fmtMoney(Number(l.unitPrice)))}</td>
       <td class="col-vat">${rate > 0 ? rate.toFixed(0) + '%' : '0%'}</td>
       <td class="col-incl">${giftMoneyCell(l.isGift, `€ ${fmtMoney(inclVat)}`)}</td>
+    </tr>`
+  }
+
+  function renderSummaryRow(group: (typeof productGroups)[number]): string {
+    const salesLabel = lang === 'en' ? 'Product total' : '商品合计'
+    const baseLabel = lang === 'en' ? 'Base unit equivalent' : '基础单位折算'
+    const baseValue = group.baseUnitQuantity && group.baseUomName
+      ? `${group.baseUnitQuantity} ${group.baseUomName}`
+      : (lang === 'en' ? 'Unavailable' : '暂无法折算')
+    return `<tr class="product-quantity-summary">
+      <td colspan="3"><strong>${salesLabel} · ${escapeHtml(group.productName)}:</strong> ${escapeHtml(group.salesUnitQuantity)}</td>
+      <td colspan="3"><strong>${baseLabel}:</strong> ${escapeHtml(baseValue)}</td>
     </tr>`
   }
 
@@ -162,12 +182,14 @@ function buildSalesOrderHtml(
   // 只有最后一页放合计，按税率档数给 VAT 小计留空间。
   const LAST_CHUNK_EXTRA_MM = 35 + Object.keys(vatGroups).length * 5
   // LAST_CHUNK_EXTRA_MM 只压最后一页，不该让每一页都为它让地方（见 chunkOrderLinesForPrint）
-  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
+  const chunks = chunkOrderLinesForPrint(tableRows, undefined, LAST_CHUNK_EXTRA_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
     const pageBreak = (!isLastChunk || opts.pageBreakAfter) ? 'page-break-after: always;' : ''
-    const linesHtml = chunk.map(renderLineRow).join('')
+    const linesHtml = chunk.map((row, rowIdx) => row.kind === 'line'
+      ? renderLineRow(row.line, rowIdx)
+      : renderSummaryRow(row.group)).join('')
     return `
 <div class="page" style="${pageBreak}">
   ${headerBlockHtml}
@@ -176,8 +198,8 @@ function buildSalesOrderHtml(
     <thead>
       <tr>
         <th class="col-qty">QTY</th>
-        <th class="col-unit">UNIT</th>
-        <th class="col-desc">DESCRIPTION</th>
+        <th class="col-unit">SALES UNIT</th>
+        <th class="col-desc">PRODUCT / UNIT SPEC</th>
         <th class="col-price">PRICE</th>
         <th class="col-vat">VAT</th>
         <th class="col-incl">INCL VAT</th>
@@ -218,6 +240,8 @@ body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-s
 .lines-table thead th { padding: 1.6mm 2.5mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
 .lines-table tbody tr.row-even { background: #fff; }
 .lines-table tbody tr.row-odd  { background: #f7f7f7; }
+.lines-table tbody tr.product-quantity-summary { background: #f1f4f7; border-top: 1.2px solid #9aa7b5; border-bottom: 2px solid #9aa7b5; break-inside: avoid; page-break-inside: avoid; }
+.lines-table tbody tr.product-quantity-summary td { padding: 1.3mm 2.5mm; font-size: 8pt; color: #344256; }
 /* 行高与 lib/order-pdf.ts、print/[id] 同一口径（客户要求一页至少 20 行，2026-08-18）。
    ⚠️ 这个模板是手工预估分页的，改行高必须同步 lib/print/trip-common.ts 的
    PRINT_ROW_BASE_MM，预估小于实际会真的溢出物理页。改完跑

@@ -241,7 +241,7 @@ export async function loadDispatchPrintData(
     orders = ids.length > 0
       ? await prisma.order.findMany({
           where: { id: { in: ids }, status: { in: statusFilter } },
-          include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
+          include: { lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }, salesUser: { select: { name: true } } },
           orderBy: { restaurantName: 'asc' },
         })
       : []
@@ -260,7 +260,7 @@ export async function loadDispatchPrintData(
           { deliveryDate: { gte: rangeStart, lte: dayEnd } },
         ],
       },
-      include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
+      include: { lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }, salesUser: { select: { name: true } } },
       orderBy: { restaurantName: 'asc' },
     })
   } else if (slot) {
@@ -278,7 +278,7 @@ export async function loadDispatchPrintData(
       if (palletOrderIds.length > 0) {
         orders = await prisma.order.findMany({
           where: { id: { in: palletOrderIds }, status: { in: statusFilter } },
-          include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
+          include: { lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }, salesUser: { select: { name: true } } },
           orderBy: { restaurantName: 'asc' },
         })
       }
@@ -305,7 +305,7 @@ export async function loadDispatchPrintData(
           { OR: batchMatch },
         ],
       },
-      include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
+      include: { lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }, salesUser: { select: { name: true } } },
       orderBy: { restaurantName: 'asc' },
     })
 
@@ -316,7 +316,7 @@ export async function loadDispatchPrintData(
           status: { in: statusFilter },
           OR: batchMatch,
         },
-        include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
+        include: { lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }, salesUser: { select: { name: true } } },
         orderBy: { restaurantName: 'asc' },
       })
     }

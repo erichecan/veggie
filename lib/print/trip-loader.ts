@@ -182,7 +182,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const orders = orderIds.length > 0
     ? await prisma.order.findMany({
         where: { id: { in: orderIds } },
-        include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
+        include: { lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }, salesUser: { select: { name: true } } },
         orderBy: { restaurantName: 'asc' },
       })
     : []
