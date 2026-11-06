@@ -20,10 +20,16 @@ export interface MatrixSourceLine {
   date: string
   productId: string
   productName: string
+  /** 订单行实际使用的销售单位 ID；不同单位必须分开展示 */
+  uomId?: string
   /** 订单行 Description 快照（OrderLine.spec），可缺省 */
   spec?: string
   uomName: string
+  /** 商品基础单位名称，库存与预测数量使用此单位 */
+  stockUomName?: string
   qty: number
+  /** 按单位换算后的基础单位数量，用于扣减基础单位库存 */
+  baseQty?: number
   amount: number
   /** 该商品当前库存（每行都带同一个值，按商品归并时取其一） */
   qtyOnHand: number
@@ -41,10 +47,11 @@ export interface MatrixColumn {
 export interface MatrixRow {
   productId: string
   productName: string
-  /** 该商品在区间内出现过的全部规格（去重，按首次出现顺序，' / ' 分隔）——
-   *  同一商品按不同可售单位下单时规格不同，只取一条会误导采购 */
+  uomId: string
+  /** 订单行规格快照；不同规格单独聚合，避免不同包装数量合并 */
   spec: string
   uomName: string
+  stockUomName: string
   sequence: number
   /** 与 columns 同序的数量 */
   qty: number[]
@@ -52,6 +59,8 @@ export interface MatrixRow {
   amount: number[]
   totalQty: number
   totalAmount: number
+  /** 本行单位销量换算成基础单位后的数量 */
+  totalBaseQty: number
   qtyOnHand: number
   /** 预测数量 = 当前库存 − 本区间已订量 */
   forecastQuantity: number
@@ -94,38 +103,42 @@ export function buildSalesMatrix(
 
   const colIndex = new Map(columns.map((c, i) => [c.key, i]))
   const rowMap = new Map<string, MatrixRow>()
-  const specsByKey = new Map<string, Set<string>>()
+  const baseQtyByProduct = new Map<string, number>()
 
   for (const l of lines) {
-    const key = l.productId || l.productName
+    const productKey = l.productId || l.productName
+    const uomKey = l.uomId || l.uomName
+    const spec = l.spec?.trim() ?? ''
+    const key = `${productKey}::${uomKey}::${spec}`
     let row = rowMap.get(key)
     if (!row) {
       row = {
         productId: l.productId,
         productName: l.productName,
-        spec: '',
+        uomId: l.uomId || '',
+        spec,
         uomName: l.uomName,
+        stockUomName: l.stockUomName || '',
         sequence: l.sequence,
         qty: new Array(columns.length).fill(0),
         amount: new Array(columns.length).fill(0),
         totalQty: 0,
         totalAmount: 0,
+        totalBaseQty: 0,
         qtyOnHand: l.qtyOnHand,
         forecastQuantity: 0,
       }
       rowMap.set(key, row)
-      specsByKey.set(key, new Set())
     }
-    if (l.spec) specsByKey.get(key)!.add(l.spec)
     const ci = colIndex.get(granularity === 'week' ? String(weekdayIndex(l.date)) : l.date)
     if (ci === undefined) continue
     row.qty[ci] += l.qty
     row.amount[ci] += l.amount
     row.totalQty += l.qty
     row.totalAmount += l.amount
+    row.totalBaseQty += l.baseQty ?? l.qty
+    baseQtyByProduct.set(productKey, (baseQtyByProduct.get(productKey) ?? 0) + (l.baseQty ?? l.qty))
   }
-
-  for (const [key, row] of rowMap) row.spec = [...specsByKey.get(key)!].join(' / ')
 
   const rows = [...rowMap.values()]
   for (const r of rows) {
@@ -133,7 +146,9 @@ export function buildSalesMatrix(
     r.amount = r.amount.map(round2)
     r.totalQty = round2(r.totalQty)
     r.totalAmount = round2(r.totalAmount)
-    r.forecastQuantity = round2(r.qtyOnHand - r.totalQty)
+    r.totalBaseQty = round2(r.totalBaseQty)
+    const productKey = r.productId || r.productName
+    r.forecastQuantity = round2(r.qtyOnHand - (baseQtyByProduct.get(productKey) ?? r.totalBaseQty))
   }
 
   const grand = {
@@ -184,8 +199,8 @@ export function matrixToCsvRows(
     ...r.qty,
     r.totalQty,
     r.totalAmount,
-    r.qtyOnHand,
-    r.forecastQuantity,
+    r.stockUomName ? `${r.qtyOnHand} ${r.stockUomName}` : r.qtyOnHand,
+    r.stockUomName ? `${r.forecastQuantity} ${r.stockUomName}` : r.forecastQuantity,
   ])
   rows.push([
     labels.grand,

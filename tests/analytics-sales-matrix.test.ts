@@ -181,16 +181,30 @@ describe('CSV 行', () => {
   })
 })
 
-describe('规格（spec）', () => {
-  test('同一商品多个规格去重后按首次出现顺序拼接，空规格不计', () => {
+describe('销售单位与规格分组', () => {
+  test('同一商品相同销售单位、相同规格跨订单汇总，不同规格分开展示', () => {
     const m = buildSalesMatrix([
       line({ date: '2026-08-10', qty: 1, spec: 'CASE 10*500g' }),
-      line({ date: '2026-08-11', qty: 1, spec: '' }),
-      line({ date: '2026-08-12', qty: 1, spec: '500g/bunch' }),
-      line({ date: '2026-08-13', qty: 1, spec: 'CASE 10*500g' }),
+      line({ date: '2026-08-11', qty: 2, spec: 'CASE 10*500g' }),
+      line({ date: '2026-08-12', qty: 3, spec: '500g/bunch' }),
+      line({ date: '2026-08-13', qty: 4, spec: '' }),
     ], 'week', DOW)
-    assert.equal(m.rows.length, 1)
-    assert.equal(m.rows[0].spec, 'CASE 10*500g / 500g/bunch')
+    assert.equal(m.rows.length, 3)
+    assert.deepEqual(m.rows.map(r => r.spec).sort(), ['', '500g/bunch', 'CASE 10*500g'])
+    assert.equal(m.rows.find(r => r.spec === 'CASE 10*500g')?.totalQty, 3)
+  })
+
+  test('同一商品不同销售单位分行，单位内的数量分别汇总', () => {
+    const m = buildSalesMatrix([
+      line({ date: '2026-08-10', qty: 2, uomId: 'case', uomName: 'CASE', spec: '6KG' }),
+      line({ date: '2026-08-11', qty: 3, uomId: 'case', uomName: 'CASE', spec: '6KG' }),
+      line({ date: '2026-08-10', qty: 4, uomId: 'kg3', uomName: '3KG', spec: '3KG' }),
+      line({ date: '2026-08-10', qty: 5, uomId: 'kg1', uomName: '1KG', spec: '1KG' }),
+    ], 'week', DOW)
+    assert.equal(m.rows.length, 3)
+    assert.deepEqual(m.rows.map(r => [r.uomName, r.totalQty]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))), [
+      ['1KG', 5], ['3KG', 4], ['CASE', 5],
+    ])
   })
 
   test('没有规格的商品是空串，CSV 里该列为空而不是 undefined', () => {

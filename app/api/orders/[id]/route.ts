@@ -587,18 +587,35 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         },
       })
 
-      // SSOT(P0-1): 销售单改批次同步到 wave.orderIds(与调度台拖拽同一写入逻辑,双向一致)
-      // wave 同步失败(如目标波次已锁定/出发)不再静默吞掉:回滚刚写入的 order.driverSlotId
-      // 避免与 wave 分叉,并让保存整体失败(前端收到 409,不再误报"已保存")。
-      if (driverSlotId !== undefined) {
+      // SSOT(P0-1): 销售单改批次同步到 wave.orderIds(与调度台拖拽同一写入逻辑,双向一致)。
+      // 报价阶段只把司机批次存到 Order.driverSlotId；确认报价时即使请求只带 status，
+      // 也必须把预安排司机同步进 wave，否则配送中心只读 wave 会把它显示成待分配。
+      // wave 同步失败不静默吞掉，避免前端显示确认成功、司机归属却不一致。
+      const driverSlotToSync = driverSlotId !== undefined
+        ? (driverSlotId ? String(driverSlotId) : null)
+        : newStatus === 'CONFIRMED'
+          ? orderBefore.driverSlotId
+          : undefined
+      const shouldSyncWave = driverSlotId !== undefined || (newStatus === 'CONFIRMED' && !!driverSlotToSync)
+      if (shouldSyncWave) {
         try {
-          if (driverSlotId) await assignOrderToWave(id, String(driverSlotId))
+          if (driverSlotToSync) {
+            await assignOrderToWave(id, String(driverSlotToSync))
+            // assignOrderToWave 将确认单提升为 WAVE_ASSIGNED；同步响应状态，避免返回旧的 CONFIRMED。
+            if (newStatus === 'CONFIRMED') order.status = 'WAVE_ASSIGNED'
+          }
           else await removeOrderFromAllWaves(id)
         } catch (e) {
           console.error('[wave sync failed → rollback driverSlotId]', e)
-          await prisma.order.update({ where: { id }, data: { driverSlotId: orderBefore.driverSlotId } }).catch(() => {})
+          const rollbackData: Record<string, unknown> = { driverSlotId: orderBefore.driverSlotId }
+          // 单单确认遇到锁定/出发波次时撤回本次确认，防止出现已确认但无司机归属的半完成状态。
+          if (newStatus === 'CONFIRMED' && String(orderBefore.status).toUpperCase() === 'PENDING') {
+            rollbackData.status = orderBefore.status
+            rollbackData.confirmationDate = orderBefore.confirmationDate
+          }
+          await prisma.order.update({ where: { id }, data: rollbackData }).catch(() => {})
           return NextResponse.json(
-            { error: '司机分配失败：目标波次可能已锁定或出发，请到调度台调整' },
+            { error: newStatus === 'CONFIRMED' ? '确认订单失败：预安排的司机批次可能已锁定或出发，请先到调度台处理后重试' : '司机分配失败：目标波次可能已锁定或出发，请到调度台调整' },
             { status: 409 },
           )
         }

@@ -4,7 +4,7 @@ import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { syncOrderStock } from '@/lib/order-stock'
 import { toNum, round2 } from '@/lib/decimal-helpers'
-import { removeOrderFromAllWaves } from '@/lib/wave-assign'
+import { assignOrderToWave, removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
       const before = await prisma.order.findMany({
         where: { id: { in: ids } },
-        select: { id: true, status: true, restaurantName: true, deliveryDate: true, returnStatus: true },
+        select: { id: true, status: true, restaurantName: true, deliveryDate: true, returnStatus: true, driverSlotId: true },
       })
       if (before.length === 0) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
@@ -271,6 +271,17 @@ export async function POST(req: Request) {
           await prisma.$transaction(tx => syncOrderStock(tx, ordId, {
             reason: '批量确认占用库存', userId: user.userId, createdBy: user.name ?? user.email,
           }), { maxWait: 10000, timeout: 60000 })
+          // 报价阶段选的 DriverSlot 是预安排意向；批量确认时同步到配送中心真实读取的 wave。
+          const preassignedSlotId = pendingOrders.find(o => o.id === ordId)?.driverSlotId
+          if (preassignedSlotId) {
+            try {
+              await assignOrderToWave(ordId, preassignedSlotId)
+            } catch (error) {
+              // 目标司机波次已锁定/出发时，不留下“确认成功但没有派车”的半完成状态。
+              await prisma.order.update({ where: { id: ordId }, data: { status: 'PENDING', confirmationDate: null } }).catch(() => {})
+              throw error
+            }
+          }
         }
         detail = `批量确认 ${pendingIds.length} 张报价单`
         affectedOrders = pendingOrders.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
