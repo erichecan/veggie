@@ -343,12 +343,14 @@ export async function postCollections(
   const historicalDebtInvoices: SettlementPostingResult['historicalDebtInvoices'] = []
   for (const p of plan.payments) {
     await prisma.$transaction(async (tx: any) => {
+      const cashJournal = await tx.paymentJournal.findUnique({ where: { code: 'CASH' }, select: { id: true } })
       const created = await tx.payment.create({
         data: {
           invoiceId: p.invoiceId,
           customerId: p.customerId,
           amount: p.amount,
           method: 'cash',
+          paymentJournalId: cashJournal?.id ?? null,
           // ⛔ 历史欠款回收要**在备注里写明**：对账单明细的「经手/摘要」列直接显示这一行，
           // 财务翻账时必须一眼看出这笔钱不是今天送的货收的
           note: p.isHistoricalDebt
@@ -367,7 +369,7 @@ export async function postCollections(
       // 总账：Dr Bank / Cr AR。此前司机收款核销只写 Payment、不出凭证，总账应收一直虚高（20261014 L2 补）
       await postPaymentToJournal(
         tx,
-        { id: created.id, invoiceName: p.invoiceName, customerId: p.customerId, amount: p.amount },
+        { id: created.id, invoiceName: p.invoiceName, customerId: p.customerId, amount: p.amount, paymentJournalId: cashJournal?.id ?? null, method: 'cash' },
         actorUserId ?? 'system',
         { narration: `Driver cash collected for ${p.invoiceName}` },
       )

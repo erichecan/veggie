@@ -23,6 +23,7 @@
  */
 
 import type { PrismaClient } from './generated/prisma/client'
+import { paymentJournalByMethod } from './finance/payment-journals'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TxClient = any
@@ -213,11 +214,17 @@ export async function openGrniForPurchaseOrder(tx: TxClient, purchaseOrderId: st
  */
 export async function postPaymentToJournal(
   tx: TxClient,
-  payment: { id: string; invoiceName: string; customerId: string; amount: unknown },
+  payment: { id: string; invoiceName: string; customerId: string; amount: unknown; paymentJournalId?: string | null; method?: string },
   userId: string,
   opts?: { creditAccountCode?: string; narration?: string },
 ): Promise<{ id: string; name: string } | null> {
-  const bank = await findAccountByCode(tx, '1200')
+  const methodJournal = payment.method ? paymentJournalByMethod(payment.method) : null
+  const paymentJournal = payment.paymentJournalId
+    ? await tx.paymentJournal.findUnique({ where: { id: payment.paymentJournalId }, select: { id: true, name: true, accountId: true } })
+    : methodJournal
+      ? await tx.paymentJournal.findUnique({ where: { code: methodJournal.code }, select: { id: true, name: true, accountId: true } })
+      : null
+  const bank = paymentJournal ? { id: paymentJournal.accountId } : await findAccountByCode(tx, '1200')
   const creditCode = opts?.creditAccountCode ?? '1100'
   const creditAccount = await findAccountByCode(tx, creditCode)
   if (!bank || !creditAccount) return null
@@ -236,10 +243,11 @@ export async function postPaymentToJournal(
       totalDebit: amt,
       totalCredit: amt,
       createdBy: userId,
+      paymentJournalId: paymentJournal?.id ?? null,
       postedAt: new Date(),
       lines: {
         create: [
-          { accountId: bank.id, description: `Bank - ${payment.invoiceName}`, debit: amt, credit: 0, sequence: 10 },
+          { accountId: bank.id, description: `${paymentJournal?.name ?? 'Bank'} - ${payment.invoiceName}`, debit: amt, credit: 0, sequence: 10 },
           { accountId: creditAccount.id, description: `${creditLabel} - ${payment.invoiceName}`, debit: 0, credit: amt, partnerId: payment.customerId, sequence: 20 },
         ],
       },
@@ -473,6 +481,10 @@ export const STANDARD_ACCOUNTS: Array<{ code: string; name: string; nameZh: stri
   { code: '1100', name: 'Accounts Receivable', nameZh: '应收账款', type: 'RECEIVABLE' },
   { code: '1110', name: 'VAT Receivable',      nameZh: 'VAT 进项', type: 'ASSET' },
   { code: '1200', name: 'Bank',                nameZh: '银行',    type: 'ASSET', allowManual: true },
+  { code: '1205', name: 'Cash on Hand',         nameZh: '库存现金', type: 'ASSET' },
+  { code: '1210', name: 'Outstanding Cheques',  nameZh: '待兑现支票', type: 'ASSET' },
+  { code: '1220', name: 'Card Clearing',        nameZh: '银行卡待结算', type: 'ASSET' },
+  { code: '1230', name: 'Direct Debit Clearing', nameZh: '直接借记待结算', type: 'ASSET' },
   { code: '2100', name: 'Accounts Payable',    nameZh: '应付账款', type: 'PAYABLE' },
   { code: '2200', name: 'VAT Payable',         nameZh: 'VAT 销项', type: 'LIABILITY' },
   { code: '3000', name: 'Retained Earnings',   nameZh: '未分配利润', type: 'EQUITY' },

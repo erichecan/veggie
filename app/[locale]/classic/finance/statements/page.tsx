@@ -45,6 +45,7 @@ interface StatementPaymentLine {
   invoiceName: string | null
   amount: number
   method: string | null
+  paymentJournal?: { code: string; name: string } | null
   paidAt: string | null
   note: string | null
   createdBy: string | null
@@ -514,7 +515,7 @@ export default function StatementsPage() {
                               <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700" title={p.note ?? ''}>{isEn ? 'Driver cash handover' : '司机现金交账'}</span>
                             ) : (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
-                                {p.method === 'cash' ? (isEn ? 'Cash' : '现金') : p.method === 'transfer' ? (isEn ? 'Transfer' : '汇款') : (isEn ? 'Other' : '其他')}
+                                {p.paymentJournal?.name ?? (p.method === 'cash' ? (isEn ? 'Cash' : '现金') : p.method === 'transfer' ? (isEn ? 'Transfer' : '汇款') : (isEn ? 'Other' : '其他'))}
                               </span>
                             )}
                           </td>
@@ -797,7 +798,7 @@ function downloadStatementCsv(statement: Statement, detail: StatementDetail, isE
     [isEn ? 'Type' : '类型', isEn ? 'Transaction date' : '交易日期', isEn ? 'Order #' : '订单号', isEn ? 'Invoice #' : '发票号', isEn ? 'Invoice date' : '开票日期', isEn ? 'Credit note #' : '贷记单号', isEn ? 'Description' : '说明', isEn ? 'Tax base' : '未税金额', isEn ? 'Tax' : '税额', isEn ? 'Debit' : '借方', isEn ? 'Credit' : '贷方'],
     [isEn ? 'Opening balance' : '期初余额', '', '', '', '', '', '', '', '', statement.openingBalance.toFixed(2), ''],
     ...detail.orders.map(o => [isEn ? 'Sale' : '销售', fmtDate(o.deliveryDate), o.code ?? '—', o.invoices.map(i => i.name).join(' / ') || (isEn ? 'Pending invoice' : '待开票'), o.invoices.map(i => fmtDate(i.issueDate)).join(' / '), '', '', '', '', Number(o.incTaxTotal).toFixed(2), '']),
-    ...detail.payments.map(p => [isEn ? 'Payment' : '收款', fmtDate(p.paidAt), '', p.invoiceName ?? '', '', '', p.note ?? p.method ?? '', '', '', '', Number(p.amount).toFixed(2)]),
+    ...detail.payments.map(p => [isEn ? 'Payment' : '收款', fmtDate(p.paidAt), '', p.invoiceName ?? '', '', '', p.note ?? p.paymentJournal?.name ?? p.method ?? '', '', '', '', Number(p.amount).toFixed(2)]),
     ...detail.credits.map(c => [isEn ? 'Credit note' : '贷记单', fmtDate(c.creditDate), c.sourceOrderIds.map(id => detail.orders.find(o => o.id === id)?.code ?? id.slice(0, 8)).join(' / '), '', '', c.name, c.notes ?? '', c.subtotalExTax.toFixed(2), c.tax.toFixed(2), '', Number(c.amount).toFixed(2)]),
     [],
     [isEn ? 'Closing balance' : '期末余额', '', '', '', '', '', '', '', '', statement.closingBalance.toFixed(2), ''],

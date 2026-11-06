@@ -22,10 +22,19 @@ interface PaymentRow {
   paidAt: string
   note?: string | null
   createdBy?: string | null
+  paymentJournal?: { id: string; code: string; name: string } | null
 }
 
-const METHOD_LABEL_ZH: Record<string, string> = { cash: '现金', transfer: '转账', other: '其他' }
-const METHOD_LABEL_EN: Record<string, string> = { cash: 'Cash', transfer: 'Transfer', other: 'Other' }
+interface PaymentJournalOption {
+  id: string
+  code: string
+  name: string
+  type: string
+  currencyCode: string
+}
+
+const METHOD_LABEL_ZH: Record<string, string> = { cash: '现金', transfer: '转账', cheque: '支票', pos_card: '银行卡', direct_debit: 'Direct Debit', other: '其他' }
+const METHOD_LABEL_EN: Record<string, string> = { cash: 'Cash', transfer: 'Bank transfer', cheque: 'Cheque', pos_card: 'POS card', direct_debit: 'Direct Debit', other: 'Other' }
 
 const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   draft: '草稿',
@@ -61,8 +70,9 @@ export default function ClassicInvoiceDetailPage() {
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const [inv, setInv] = useState<Invoice | null>(null)
   const [payments, setPayments] = useState<PaymentRow[]>([])
+  const [paymentJournals, setPaymentJournals] = useState<PaymentJournalOption[]>([])
   const [payAmount, setPayAmount] = useState('')
-  const [payMethod, setPayMethod] = useState('transfer')
+  const [payJournalCode, setPayJournalCode] = useState('BANK')
   const [payNote, setPayNote] = useState('')
   const [payBusy, setPayBusy] = useState(false)
 
@@ -73,6 +83,9 @@ export default function ClassicInvoiceDetailPage() {
       setInv({ ...found, status: found.status?.toLowerCase() as Invoice['status'] ?? found.status })
       apiGet<PaymentRow[]>(`/api/payments?invoiceId=${params.id}`)
         .then(setPayments)
+        .catch(() => {})
+      apiGet<PaymentJournalOption[]>('/api/payments?journals=1')
+        .then(setPaymentJournals)
         .catch(() => {})
     } catch {
       setInv(null)
@@ -95,7 +108,7 @@ export default function ClassicInvoiceDetailPage() {
     setPayBusy(true)
     try {
       await apiPost('/api/payments', {
-        invoiceId: inv.id, amount, method: payMethod, note: payNote || undefined,
+        invoiceId: inv.id, amount, paymentJournalCode: payJournalCode, note: payNote || undefined,
       })
       toast.success(isEn ? `Payment of €${amount.toFixed(2)} recorded` : `已登记收款 €${amount.toFixed(2)}`)
       setPayAmount(''); setPayNote('')
@@ -368,7 +381,7 @@ export default function ClassicInvoiceDetailPage() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                       p.method === 'cash' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
                     }`}>
-                      {METHOD_LABEL[p.method] ?? p.method}
+                      {p.paymentJournal?.name ?? METHOD_LABEL[p.method] ?? p.method}
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold text-green-700">€{Number(p.amount).toFixed(2)}</td>
@@ -391,13 +404,21 @@ export default function ClassicInvoiceDetailPage() {
               className="w-28 border border-amber-300 rounded px-2 py-1 text-sm"
             />
             <select
-              value={payMethod}
-              onChange={e => setPayMethod(e.target.value)}
+              value={payJournalCode}
+              onChange={e => setPayJournalCode(e.target.value)}
               className="border border-amber-300 rounded px-2 py-1 text-sm bg-white"
+              aria-label={isEn ? 'Payment Journal' : '收款账簿'}
             >
-              <option value="transfer">{isEn ? 'Transfer' : '转账'}</option>
-              <option value="cash">{isEn ? 'Cash' : '现金'}</option>
-              <option value="other">{isEn ? 'Other' : '其他'}</option>
+              {paymentJournals.map(journal => {
+                const zhLabels: Record<string, string> = {
+                  BANK: 'Bank (EUR) · 银行转账',
+                  CHEQUE: 'Cheque (EUR) · 支票',
+                  POS: 'POS Card (EUR) · 刷卡',
+                  CASH: 'Cash (EUR) · 现金',
+                  DIRECT_DEBIT: 'Direct Debit (EUR) · SEPA 直接扣款',
+                }
+                return <option key={journal.id} value={journal.code}>{isEn ? journal.name : zhLabels[journal.code] ?? journal.name}</option>
+              })}
             </select>
             <input
               value={payNote}
@@ -407,6 +428,11 @@ export default function ClassicInvoiceDetailPage() {
             />
             <Button size="sm" disabled={payBusy} onClick={() => addPayment(Number(payAmount))}>{isEn ? 'Record' : '登记'}</Button>
             <span className="text-[11px] text-amber-600">{isEn ? 'Auto-marks as "Paid" once fully settled' : '付清后自动转「已付款」'}</span>
+            {payJournalCode === 'DIRECT_DEBIT' && (
+              <span className="w-full text-[11px] text-amber-700">
+                {isEn ? 'Record this only after the SEPA debit has actually been collected; this does not initiate a debit or create a mandate.' : '请在 SEPA 扣款实际到账后登记；此操作不会发起扣款或创建授权书。'}
+              </span>
+            )}
           </div>
         )}
       </div>

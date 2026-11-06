@@ -53,7 +53,10 @@ export async function GET(
         prisma.payment.findMany({
           where: { customerId: item.customerId, paidAt: { gte: period.start, lt: period.endExclusive } },
           orderBy: { paidAt: 'asc' },
-          select: { id: true, invoiceId: true, amount: true, method: true, paidAt: true, note: true, createdBy: true },
+          select: {
+            id: true, invoiceId: true, amount: true, method: true, paidAt: true, note: true, createdBy: true,
+            paymentJournal: { select: { code: true, name: true } },
+          },
         }),
         prisma.creditNote.findMany({
           where: { id: { in: item.creditNoteIds ?? [] } },

@@ -38,7 +38,7 @@ export async function handleStatementPreview(req: Request) {
         prisma.payment.findMany({ where: { customerId, paidAt: { lt: period.start } }, select: { amount: true } }),
         prisma.creditNote.findMany({ where: { customerId, status: { in: ['CONFIRMED', 'APPLIED'] }, creditDate: { lt: period.start } }, select: { totalIncTax: true } }),
         prisma.order.findMany({ where: { restaurantId: customerId, status: { in: BILLABLE_STATUSES as never[] }, deliveryDate: { gte: period.start, lt: period.endExclusive } }, orderBy: { deliveryDate: 'asc' }, select: orderSelect }),
-        prisma.payment.findMany({ where: { customerId, paidAt: { gte: period.start, lt: period.endExclusive } }, orderBy: { paidAt: 'asc' }, select: { id: true, invoiceId: true, amount: true, method: true, paidAt: true, note: true, createdBy: true } }),
+        prisma.payment.findMany({ where: { customerId, paidAt: { gte: period.start, lt: period.endExclusive } }, orderBy: { paidAt: 'asc' }, select: { id: true, invoiceId: true, amount: true, method: true, paidAt: true, note: true, createdBy: true, paymentJournal: { select: { code: true, name: true } } } }),
         prisma.creditNote.findMany({ where: { customerId, status: { in: ['CONFIRMED', 'APPLIED'] }, creditDate: { gte: period.start, lt: period.endExclusive } }, orderBy: { creditDate: 'asc' }, select: { id: true, name: true, creditDate: true, subtotalExTax: true, totalTax: true, totalIncTax: true, notes: true, lines: { select: { sourceOrderId: true } } } }),
         prisma.invoice.findMany({ where: { customerId, status: 'POSTED', amountDue: { gt: 0 } }, select: { name: true, dueDate: true, amountDue: true } }),
       ])
@@ -60,7 +60,7 @@ export async function handleStatementPreview(req: Request) {
       }
 
       const orders = orderRows.map(o => ({ id: o.id, code: o.code, status: o.status, confirmationDate: o.confirmationDate, deliveryDate: o.deliveryDate, incTaxTotal: orderIncTaxTotal(o.lines), invoices: invoicesByOrder.get(o.id) ?? [] }))
-      const payments = paymentRows.map(p => ({ id: p.id, invoiceId: p.invoiceId, invoiceName: p.invoiceId ? invoiceById.get(p.invoiceId) ?? null : null, amount: toNum(p.amount), method: p.method, paidAt: p.paidAt, note: p.note, createdBy: p.createdBy, source: paymentSource(p.note), confirmationId: paymentConfirmationId(p.note) }))
+      const payments = paymentRows.map(p => ({ id: p.id, invoiceId: p.invoiceId, invoiceName: p.invoiceId ? invoiceById.get(p.invoiceId) ?? null : null, amount: toNum(p.amount), method: p.method, paymentJournal: p.paymentJournal, paidAt: p.paidAt, note: p.note, createdBy: p.createdBy, source: paymentSource(p.note), confirmationId: paymentConfirmationId(p.note) }))
       const credits = creditRows.map(c => ({ id: c.id, name: c.name, creditDate: c.creditDate, amount: toNum(c.totalIncTax), subtotalExTax: toNum(c.subtotalExTax), tax: toNum(c.totalTax), notes: c.notes, sourceOrderIds: [...new Set(c.lines.map(l => l.sourceOrderId).filter((id): id is string => id != null))] }))
       const summary = summarizeStatement(openingBalance, orders, payments, credits)
       const reconciliation = reconcileStatement({ stored: summary, orders, payments, credits })

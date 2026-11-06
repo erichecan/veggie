@@ -7,6 +7,7 @@ import { postPaymentToJournal } from '@/lib/accounting'
 import { recordPrepaymentReceived } from '@/lib/prepayments'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
+import { PAYMENT_JOURNALS, paymentJournalByCode, paymentJournalByMethod } from '@/lib/finance/payment-journals'
 
 /**
  * /api/payments — 发票分笔收款 / 客户预收款登记
@@ -20,7 +21,6 @@ import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
  *   Dr Bank / Cr 2300(客户预收款负债)，与普通收款(Cr AR)方向不同。
  */
 
-const VALID_METHODS = new Set(['cash', 'transfer', 'other'])
 const VALID_SOURCES = new Set(['CASH', 'PREPAYMENT_RECEIVED'])
 
 export async function GET(req: Request) {
@@ -29,6 +29,14 @@ export async function GET(req: Request) {
       const { searchParams } = new URL(req.url)
       const invoiceId = searchParams.get('invoiceId')
       const customerId = searchParams.get('customerId')
+      if (searchParams.get('journals') === '1') {
+        const journals = await prisma.paymentJournal.findMany({
+          where: { active: true },
+          orderBy: { sequence: 'asc' },
+          select: { id: true, code: true, name: true, type: true, currencyCode: true },
+        })
+        return NextResponse.json(serializeApi(journals))
+      }
       const where: Record<string, unknown> = {}
       if (invoiceId) where.invoiceId = invoiceId
       if (customerId) where.customerId = customerId
@@ -37,6 +45,7 @@ export async function GET(req: Request) {
         where,
         orderBy: { paidAt: 'desc' },
         take: 500,
+        include: { paymentJournal: { select: { id: true, code: true, name: true } } },
       })
       return NextResponse.json(serializeApi(payments))
     } catch (error) {
@@ -52,17 +61,26 @@ export async function POST(req: Request) {
       const data = await req.json()
       const source = String(data.source ?? 'CASH').toUpperCase()
       const amount = round2(Number(data.amount))
-      const method = String(data.method ?? 'transfer').toLowerCase()
+      const requestedCode = String(data.paymentJournalCode ?? '').trim().toUpperCase()
+      const requestedMethod = String(data.method ?? 'transfer').toLowerCase()
+      const journalConfig = requestedCode
+        ? paymentJournalByCode(requestedCode)
+        : paymentJournalByMethod(requestedMethod) ?? (requestedMethod === 'other' ? paymentJournalByCode('BANK') : null)
 
       if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: '收款金额必须大于 0' }, { status: 400 })
       }
-      if (!VALID_METHODS.has(method)) {
-        return NextResponse.json({ error: '收款方式无效(cash/transfer/other)' }, { status: 400 })
+      if (!journalConfig) {
+        return NextResponse.json({ error: `收款账簿无效。可选项：${PAYMENT_JOURNALS.map(journal => journal.code).join(', ')}` }, { status: 400 })
       }
       if (!VALID_SOURCES.has(source)) {
         return NextResponse.json({ error: 'source 无效(CASH/PREPAYMENT_RECEIVED)' }, { status: 400 })
       }
+      const paymentJournal = await prisma.paymentJournal.findUnique({ where: { code: journalConfig.code } })
+      if (!paymentJournal?.active) {
+        return NextResponse.json({ error: `收款账簿未配置或已停用：${journalConfig.name}` }, { status: 503 })
+      }
+      const method = journalConfig.method
 
       // 预收款：还没有对应发票，走独立分支——不碰 Invoice，贷方记 2300 而非 AR
       if (source === 'PREPAYMENT_RECEIVED') {
@@ -73,6 +91,7 @@ export async function POST(req: Request) {
           customerId,
           amount,
           method,
+          paymentJournalId: paymentJournal.id,
           paidAt: data.paidAt ? new Date(data.paidAt) : undefined,
           note: data.note ? String(data.note).trim().slice(0, 500) : null,
           actor: { userId: user.userId, name: user.name, email: user.email },
@@ -112,6 +131,7 @@ export async function POST(req: Request) {
             invoiceId,
             customerId: invoice.customerId,
             amount,
+            paymentJournalId: paymentJournal.id,
             method,
             paidAt: data.paidAt ? new Date(data.paidAt) : new Date(),
             note: data.note ? String(data.note).trim().slice(0, 500) : null,
@@ -124,7 +144,7 @@ export async function POST(req: Request) {
         // SSOT: 生成收款凭证 Dr Bank / Cr AR(此前缺失,致总账 AR 永久虚高 — P1-6)
         const entry = await postPaymentToJournal(
           tx as never,
-          { id: payment.id, invoiceName: invoice.name, customerId: invoice.customerId, amount },
+          { id: payment.id, invoiceName: invoice.name, customerId: invoice.customerId, amount, paymentJournalId: paymentJournal.id, method },
           user.userId,
         )
         return { payment, invoice: invoiceAfter, journalEntry: entry }

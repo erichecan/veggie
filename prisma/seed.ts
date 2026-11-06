@@ -6,6 +6,7 @@ import { SEED_PRICELISTS } from '../lib/seed-pricelists'
 import { SEED_DEMO_CUSTOMERS } from '../lib/seed-customers'
 import { SEED_UOM_CATEGORIES } from '../lib/seed-uoms'
 import { STANDARD_ACCOUNTS } from '../lib/accounting'
+import { PAYMENT_JOURNALS } from '../lib/finance/payment-journals'
 import { loadCsvProducts, loadCsvCustomers } from './csv-loader'
 import type { OrderStatus } from '../lib/generated/prisma/enums'
 import { randomBytes } from 'node:crypto'
@@ -145,6 +146,20 @@ async function main() {
     })
   }
   console.log(`✅ 会计科目: ${STANDARD_ACCOUNTS.length} 条`)
+
+  // Odoo-style incoming payment journals (idempotent; preserve journal IDs in payments).
+  let paymentJournalCount = 0
+  for (const journal of PAYMENT_JOURNALS) {
+    const account = await prisma.account.findUnique({ where: { code: journal.accountCode }, select: { id: true } })
+    if (!account) throw new Error(`缺少付款账簿科目 ${journal.accountCode}`)
+    await prisma.paymentJournal.upsert({
+      where: { code: journal.code },
+      update: { name: journal.name, type: journal.type, currencyCode: 'EUR', accountId: account.id, sequence: (paymentJournalCount + 1) * 10, active: true },
+      create: { code: journal.code, name: journal.name, type: journal.type, currencyCode: 'EUR', accountId: account.id, sequence: (paymentJournalCount + 1) * 10 },
+    })
+    paymentJournalCount += 1
+  }
+  console.log(`✅ 客户收款账簿: ${paymentJournalCount} 条`)
 
   // Products — bulk import from pic/product.product.csv
   // ⚠️ 防重复守卫：本 CSV 导入使用 p{num} 体系，与生产库已去重的 cuid25 正版不同；

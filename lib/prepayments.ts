@@ -70,9 +70,9 @@ interface Actor {
  */
 export async function recordPrepaymentReceived(
   db: DbClient,
-  params: { customerId: string; amount: number; method?: string; paidAt?: Date; note?: string | null; actor: Actor },
+  params: { customerId: string; amount: number; method?: string; paymentJournalId?: string | null; paidAt?: Date; note?: string | null; actor: Actor },
 ) {
-  const { customerId, amount, method = 'transfer', paidAt, note, actor } = params
+  const { customerId, amount, method = 'transfer', paymentJournalId, paidAt, note, actor } = params
   const customer = await db.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true } })
   if (!customer) throw Object.assign(new Error('客户不存在'), { status: 404 })
 
@@ -80,6 +80,7 @@ export async function recordPrepaymentReceived(
     data: {
       customerId,
       amount,
+      paymentJournalId: paymentJournalId ?? null,
       method,
       source: 'PREPAYMENT_RECEIVED',
       paidAt: paidAt ?? new Date(),
@@ -89,7 +90,7 @@ export async function recordPrepaymentReceived(
   })
   const journalEntry = await postPaymentToJournal(
     db,
-    { id: payment.id, invoiceName: `Prepayment - ${customer.name}`, customerId, amount },
+    { id: payment.id, invoiceName: `Prepayment - ${customer.name}`, customerId, amount, paymentJournalId, method },
     actor.userId,
     { creditAccountCode: '2300', narration: `Prepayment received from ${customer.name}` },
   )

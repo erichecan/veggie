@@ -72,6 +72,12 @@ enum PaymentMethod {
   CASH
 }
 
+enum PaymentJournalType {
+  BANK
+  CASH
+  CREDIT_CARD
+}
+
 enum WaveStatus {
   PENDING
   PICKING
