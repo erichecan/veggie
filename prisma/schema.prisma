@@ -1258,26 +1258,30 @@ model Invoice {
  * Invoice.amountPaid 为各笔 Payment 之和(由 /api/payments 在事务内维护)。
  */
 model Payment {
-  id         String   @id @default(cuid())
+  id               String          @id @default(cuid())
   /// 预收款登记（source=PREPAYMENT_RECEIVED）时没有对应发票，此时为 null
-  invoiceId  String?
-  invoice    Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  customerId String
-  amount     Decimal  @db.Decimal(12, 2)
+  invoiceId        String?
+  invoice          Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  customerId       String
+  /// Customer incoming-payment journal selected in the Register Payment flow.
+  paymentJournalId String?
+  paymentJournal   PaymentJournal? @relation(fields: [paymentJournalId], references: [id], onDelete: Restrict)
+  amount           Decimal         @db.Decimal(12, 2)
   /// cash | transfer | other
-  method     String   @default("transfer")
+  method           String          @default("transfer")
   /// CASH（普通收款，原有语义）| PREPAYMENT_RECEIVED（收到预收款，无关联发票）
   /// | PREPAYMENT_APPLIED（用预收款冲抵某张发票，与 CASH 记账方向相反）
-  source     String   @default("CASH")
-  paidAt     DateTime @default(now())
-  note       String?
-  createdBy  String?
-  createdAt  DateTime @default(now())
+  source           String          @default("CASH")
+  paidAt           DateTime        @default(now())
+  note             String?
+  createdBy        String?
+  createdAt        DateTime        @default(now())
 
   @@index([invoiceId])
   @@index([customerId])
   @@index([paidAt])
   @@index([source])
+  @@index([paymentJournalId])
 }
 
 /**
@@ -1629,16 +1633,17 @@ model GoodsReceipt {
  * 1200 Bank (ASSET)
  */
 model Account {
-  id          String             @id @default(cuid())
-  code        String             @unique
-  name        String
-  nameZh      String?
-  type        AccountType
-  active      Boolean            @default(true)
+  id              String             @id @default(cuid())
+  code            String             @unique
+  name            String
+  nameZh          String?
+  type            AccountType
+  active          Boolean            @default(true)
   /// 是否接受手动过账；false 表示只通过系统自动生成（如 AR/AP）
-  allowManual Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  lines       JournalEntryLine[]
+  allowManual     Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  lines           JournalEntryLine[]
+  paymentJournals PaymentJournal[]   @relation("PaymentJournalAccount")
 
   @@index([type])
   @@index([active])
@@ -1651,26 +1656,52 @@ model Account {
  * 来源事件包括：发票过账 / 收款 / 供应商账单 / 付款 / 手动调整。
  */
 model JournalEntry {
-  id          String             @id @default(cuid())
-  name        String             @unique // JE-00001
-  date        DateTime           @default(now())
-  narration   String // 简要说明
+  id               String             @id @default(cuid())
+  name             String             @unique // JE-00001
+  date             DateTime           @default(now())
+  narration        String // 简要说明
   /// 来源类型：invoice / vendor_bill / payment / manual
-  sourceType  String?
+  sourceType       String?
   /// 来源单据 ID
-  sourceId    String?
-  status      JournalEntryStatus @default(DRAFT)
-  totalDebit  Decimal            @default(0) @db.Decimal(14, 2)
-  totalCredit Decimal            @default(0) @db.Decimal(14, 2)
-  createdBy   String?
-  postedAt    DateTime?
-  createdAt   DateTime           @default(now())
+  sourceId         String?
+  status           JournalEntryStatus @default(DRAFT)
+  totalDebit       Decimal            @default(0) @db.Decimal(14, 2)
+  totalCredit      Decimal            @default(0) @db.Decimal(14, 2)
+  createdBy        String?
+  /// Journal used to register this payment; null for other voucher sources or legacy payments.
+  paymentJournalId String?
+  paymentJournal   PaymentJournal?    @relation(fields: [paymentJournalId], references: [id], onDelete: Restrict)
+  postedAt         DateTime?
+  createdAt        DateTime           @default(now())
 
   lines JournalEntryLine[]
 
   @@index([date])
   @@index([sourceType, sourceId])
   @@index([status])
+  @@index([paymentJournalId])
+}
+
+/**
+ * Incoming payment journals inspired by Odoo bank, cash, and credit-card journals.
+ * A journal identifies both the payment channel and the asset/clearing account
+ * debited when a customer payment is registered.
+ */
+model PaymentJournal {
+  id             String             @id @default(cuid())
+  code           String             @unique
+  name           String
+  type           PaymentJournalType
+  currencyCode   String             @default("EUR")
+  accountId      String
+  account        Account            @relation("PaymentJournalAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  sequence       Int                @default(10)
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  payments       Payment[]
+  journalEntries JournalEntry[]
+
+  @@index([active, sequence])
 }
 
 /**
