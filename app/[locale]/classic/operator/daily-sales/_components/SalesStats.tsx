@@ -43,7 +43,6 @@ interface ReportLine {
   categoryName: string
   uomId: string
   uomName: string
-  unitKind: 'Base unit' | 'Sellable unit' | 'Default'
   /** 订单号（Order.code），没有号的老单为空串 */
   orderCode: string
   /** 配送批次三元组，与顶部司机/AM-PM/批次筛选同一来源（formatDriverSlotFromOrder，wave 派生优先）；
@@ -63,19 +62,14 @@ const DOW_LABELS_ZH = ['周一', '周二', '周三', '周四', '周五', '周六
 const DOW_LABELS_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const fmtQty = (v: number) => (v % 1 === 0 ? v.toFixed(0) : v.toFixed(2))
 
-function getUnitKind(lineUomId: string | null | undefined, productUomId: string | null | undefined): ReportLine['unitKind'] {
-  if (!lineUomId) return 'Default'
-  return lineUomId === productUomId ? 'Base unit' : 'Sellable unit'
-}
-
-function unitLabel(line: Pick<ReportLine, 'uomName' | 'unitKind'>) {
-  return `${line.uomName || '—'} · ${line.unitKind}`
+function unitLabel(line: Pick<ReportLine, 'uomName'>) {
+  return line.uomName || '—'
 }
 
 function summarizeProductUnits(lines: ReportLine[]) {
   const groups = new Map<string, { name: string; unit: string; qty: number; amount: number }>()
   for (const line of lines) {
-    const key = `${line.productId || line.productName}\u0000${line.uomId || line.uomName}\u0000${line.unitKind}`
+    const key = `${line.productId || line.productName}\u0000${line.uomName.trim().toLocaleLowerCase()}`
     const group = groups.get(key) ?? { name: line.productName, unit: unitLabel(line), qty: 0, amount: 0 }
     group.qty += line.qty
     group.amount += line.amount
@@ -87,7 +81,7 @@ function summarizeProductUnits(lines: ReportLine[]) {
 function summarizeUnitQuantities(lines: ReportLine[]) {
   const groups = new Map<string, { unit: string; qty: number }>()
   for (const line of lines) {
-    const key = `${line.uomId || line.uomName}\u0000${line.unitKind}`
+    const key = line.uomName.trim().toLocaleLowerCase()
     const group = groups.get(key) ?? { unit: unitLabel(line), qty: 0 }
     group.qty += line.qty
     groups.set(key, group)
@@ -376,7 +370,6 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
           categoryName: prod?.category ?? (isEn ? 'Uncategorized' : '未分类'),
           uomId: l.uomId ?? '',
           uomName: l.uomName ?? prod?.uomName ?? '',
-          unitKind: getUnitKind(l.uomId, prod?.uomId),
           orderCode,
           batchNum: slot.num,
           timeOfDay: slot.time,
@@ -442,10 +435,10 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // 查看方式②：按商品（跨区间聚合）
   const productReport = useMemo(() => {
-    const m = new Map<string, { productId: string; name: string; uomId: string; uomName: string; unitKind: ReportLine['unitKind']; qty: number; amount: number; customers: Set<string>; specs: Set<string>; sequence: number }>()
+    const m = new Map<string, { productId: string; name: string; uomId: string; uomName: string; qty: number; amount: number; customers: Set<string>; specs: Set<string>; sequence: number }>()
     for (const l of reportLines) {
-      const key = `${l.productId || l.productName}\u0000${l.uomId || l.uomName}\u0000${l.unitKind}`
-      const e = m.get(key) ?? { productId: l.productId, name: l.productName, uomId: l.uomId, uomName: l.uomName, unitKind: l.unitKind, qty: 0, amount: 0, customers: new Set<string>(), specs: new Set<string>(), sequence: l.sequence }
+      const key = `${l.productId || l.productName}\u0000${l.uomName.trim().toLocaleLowerCase()}`
+      const e = m.get(key) ?? { productId: l.productId, name: l.productName, uomId: l.uomId, uomName: l.uomName, qty: 0, amount: 0, customers: new Set<string>(), specs: new Set<string>(), sequence: l.sequence }
       e.qty += l.qty
       e.amount += l.amount
       e.customers.add(l.customerId)
@@ -453,7 +446,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       m.set(key, e)
     }
     return [...m.values()]
-      .map(v => ({ productId: v.productId, name: v.name, unit: unitLabel(v), spec: [...v.specs].join(' / '), qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence, uomName: v.uomName, unitKind: v.unitKind }))
+      .map(v => ({ productId: v.productId, name: v.name, unit: unitLabel(v), spec: [...v.specs].join(' / '), qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence, uomName: v.uomName }))
       .sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) || a.unit.localeCompare(b.unit) : b.amount - a.amount)
   }, [reportLines, sortBySequence])
 
