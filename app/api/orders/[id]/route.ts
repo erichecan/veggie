@@ -15,8 +15,6 @@ import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
-import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
-import { uomConversionKey } from '@/lib/print/uom-conversion'
 import { checkCustomerCredit } from '@/lib/credit-check'
 
 const orderInvoiceSummarySelect = {
@@ -63,7 +61,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       where: { id },
       include: {
         lines: {
-          orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+          orderBy: { sequence: 'asc' },
           include: {
             product: {
               select: {
@@ -96,10 +94,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       driverCommissionTotal: _driverCommissionTotal, commissionFrozenAt: _commissionFrozenAt,
       ...orderWithoutCommission } = order
     // 打印排序主键：装货顺序（客户要求 2026-09-14），见 lib/print/line-sort.ts
-    const [uomSeqMap, uomConversionMap] = await Promise.all([
-      fetchUomSequences(order.lines.map(l => ({ productId: l.productId, uomId: l.uomId }))),
-      loadUomConversionMap(order.lines.map(l => ({ productId: l.productId, uomId: l.uomId }))),
-    ])
+    const uomSeqMap = await fetchUomSequences(order.lines.map(l => ({ productId: l.productId, uomId: l.uomId })))
     const includeInvoices = new URL(req.url).searchParams.get('includeInvoices') === '1'
     const invoiceData = includeInvoices ? await Promise.all([
       prisma.invoice.findMany({
@@ -138,7 +133,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           internalRef: product?.internalRef ?? null,
           productSequence: product?.sequence ?? null,
           uomSequence: resolveUomSequence(uomSeqMap, line.productId, line.uomId),
-          uomConversion: uomConversionMap.get(uomConversionKey(line.productId, line.uomId)) ?? null,
         }
       }),
     }
@@ -588,7 +582,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         where: { id },
         data: updateData,
         include: {
-          lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] },
+          lines: { orderBy: { sequence: 'asc' } },
           driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
         },
       })

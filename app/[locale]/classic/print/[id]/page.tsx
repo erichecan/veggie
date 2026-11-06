@@ -11,9 +11,8 @@ import { barcodeValue } from '@/lib/barcode'
 import { DOCUMENT_HEADER_CSS, documentHeader, documentHeaderOverheadMm, paymentDetails } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
-import { chunkOrderLinesForPrint, escapeHtml } from '@/lib/print/trip-common'
+import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
-import { groupOrderLines } from '@/lib/order-quantity-summary'
 import { giftBadgeHtml, giftMoneyCell } from '@/lib/print/gift-mark'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatVatRate } from '@/lib/order-pdf'
@@ -116,10 +115,9 @@ export function buildOrderHtml(
   const docNoLabel = t.docNo[docType]
   // 送货单不含价格:隐藏单价/税/金额列与合计(价格在销售订单/发票上体现)
   const hidePrice = opts.docType === 'delivery'
-  const sourceLines = order.lines ?? []
-  const productGroups = hidePrice ? [] : groupOrderLines(sourceLines)
-  // 销售单按商品首次出现顺序分组，组内保持原订单行顺序；送货单保留原有装货顺序。
-  const lines = hidePrice ? sortLinesByUomSequence(sourceLines) : productGroups.flatMap(group => group.lines)
+  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
+  // 与拣货单堆叠顺序一致。见 lib/print/line-sort.ts
+  const lines = sortLinesByUomSequence(order.lines ?? [])
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
 
   const vatGroups: Record<string, { base: number; vat: number }> = {}
@@ -175,28 +173,6 @@ export function buildOrderHtml(
       <td class="col-incl">${giftMoneyCell(isGift, eur(inclVat))}</td>`}
     </tr>`
   }
-
-  function renderSummaryRow(group: (typeof productGroups)[number]): string {
-    const salesLabel = lang === 'zh' ? '商品数量合计' : 'Product total'
-    const baseLabel = lang === 'zh' ? '基础单位折算' : 'Base unit equivalent'
-    const baseValue = group.baseUnitQuantity && group.baseUomName
-      ? `${group.baseUnitQuantity} ${group.baseUomName}`
-      : (lang === 'zh' ? '暂无法折算' : 'Unavailable')
-    return `<tr class="product-quantity-summary">
-      <td colspan="3"><strong>${salesLabel} · ${escapeHtml(group.productName)}:</strong> ${escapeHtml(group.salesUnitQuantity)}</td>
-      ${hidePrice ? '' : `<td colspan="3"><strong>${baseLabel}:</strong> ${escapeHtml(baseValue)}</td>`}
-    </tr>`
-  }
-
-  type PrintTableRow =
-    | { kind: 'line'; line: (typeof lines)[number]; spec: string | null; note: string | null }
-    | { kind: 'summary'; group: (typeof productGroups)[number]; spec: string; note: string | null }
-  const tableRows: PrintTableRow[] = hidePrice
-    ? lines.map(line => ({ kind: 'line' as const, line, spec: line.spec ?? null, note: line.note ?? null }))
-    : productGroups.flatMap(group => [
-        ...group.lines.map(line => ({ kind: 'line' as const, line, spec: line.spec ?? null, note: line.note ?? null })),
-        { kind: 'summary' as const, group, spec: group.salesUnitQuantity, note: group.baseUnitQuantity },
-      ])
 
   const vatRowsHtml = Object.entries(vatGroups)
     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
@@ -267,14 +243,12 @@ export function buildOrderHtml(
   // position:fixed 图省事，那样整份文档只有一份内容，没法按块显示不同的当前页码。
   // 第 2 个参数是每页的页脚（默认小字页脚），第 3 个才是最后一页的尾部内容 ——
   // 改造前把 80mm 当成每页开销传，导致每页都白留 80mm、只印 19 行
-  const chunks = chunkOrderLinesForPrint(tableRows, undefined, RICH_FOOTER_OVERHEAD_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
+  const chunks = chunkOrderLinesForPrint(lines, undefined, RICH_FOOTER_OVERHEAD_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
     const pageBreak = (!isLastChunk || opts.pageBreakAfter) ? 'page-break-after: always;' : ''
-    const linesHtml = chunk.map((row, rowIdx) => row.kind === 'line'
-      ? renderLineRow(row.line, rowIdx)
-      : renderSummaryRow(row.group)).join('')
+    const linesHtml = chunk.map(renderLineRow).join('')
     return `
 <div class="page" style="${pageBreak}">
   ${headerBlockHtml}
@@ -283,8 +257,8 @@ export function buildOrderHtml(
     <thead>
       <tr>
         <th class="col-qty">${t.qty}</th>
-        <th class="col-unit">${lang === 'zh' ? '销售单位' : 'Sales unit'}</th>
-        <th class="col-desc">${lang === 'zh' ? '商品 / 单位规格' : 'Product / unit spec'}</th>
+        <th class="col-unit">${t.unit}</th>
+        <th class="col-desc">${t.description}</th>
         ${hidePrice ? '' : `<th class="col-price">${t.price}</th>
         <th class="col-vat">${t.vat}</th>
         <th class="col-incl">${t.inclVat}</th>`}
@@ -334,8 +308,6 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 .lines-table thead th { padding: 1.6mm 2.5mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
 .lines-table tbody tr.row-even { background: #fff; }
 .lines-table tbody tr.row-odd  { background: #f7f7f7; }
-  .lines-table tbody tr.product-quantity-summary { background: #f1f4f7; border-top: 1.2px solid #9aa7b5; border-bottom: 2px solid #9aa7b5; break-inside: avoid; page-break-inside: avoid; }
-  .lines-table tbody tr.product-quantity-summary td { padding: 1.3mm 2.5mm; font-size: 8pt; color: #344256; }
 /* 行高与 lib/order-pdf.ts 同一口径（客户要求一页至少 20 行，2026-08-18）。
    ⚠️ 这个页面是**手工预估分页**的（chunkOrderLinesForPrint），改这里的行高
    必须同步改 lib/print/trip-common.ts 的 PRINT_ROW_BASE_MM ——

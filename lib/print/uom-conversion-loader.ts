@@ -4,12 +4,12 @@
  * 跟同文件旁边的 `loadPackSpecMap`（`trip-loader.ts`）走同一套既有模式：
  * **live 查询，不落库快照**——这类"包装规格"信息本来就是现有 `packSpec`
  * （拆箱用）的取法，是打印时现查 ProductSaleUom/Uom，不是订单行的金额字段，
- * 改了商品配置只影响数量折算，不影响历史单据的金额/销售单位数量；基础单位
- * 折算会按当前商品单位配置计算。
+ * 改了商品配置只影响"这行的说明文字长什么样"，不影响历史单据的金额/数量，
+ * 复用这套已验证过的取舍，不需要给 OrderLine 新增快照字段。
  *
  * 与 `loadPackSpecMap` 的区别：那个只取"factor 最大的那个大单位"（给拆箱用），
  * 这个按 `productId::uomId` 精确取"这一行实际选的是哪个单位"，取不到（该行选的
- * 就是基准单位）时按 1:1 处理；被删除或无法识别的非基础单位不做猜测。
+ * 就是基准单位，或商品没配这个可售单位了）时不返回换算说明。
  *
  * 纯格式化部分(UomConversionInfo/uomConversionKey/formatUomConversionHint)拆在
  * `uom-conversion.ts`（无 Prisma 依赖，模板文件才能安全 import）。
@@ -25,7 +25,7 @@ export async function loadUomConversionMap(
   pairs: Array<{ productId: string; uomId: string | null | undefined }>,
 ): Promise<Map<string, UomConversionInfo>> {
   const map = new Map<string, UomConversionInfo>()
-  const productIds = [...new Set(pairs.map(p => p.productId))]
+  const productIds = [...new Set(pairs.filter(p => p.uomId).map(p => p.productId))]
   if (productIds.length === 0) return map
 
   const rows = await prisma.$queryRaw<Array<{
@@ -65,44 +65,6 @@ export async function loadUomConversionMap(
       netWeight: r.netWeight != null ? Number(r.netWeight) : null,
       grossWeight: r.grossWeight != null ? Number(r.grossWeight) : null,
     })
-  }
-
-  // Some legacy products have a Product.uomId but no ProductSaleUom row yet.
-  // Their selected base unit still converts 1:1 to itself, so include that
-  // deterministic fallback for order quantity summaries.
-  const missingBasePairs = pairs.filter(pair => {
-    if (map.has(uomConversionKey(pair.productId, pair.uomId))) return false
-    return true
-  })
-  if (missingBasePairs.length > 0) {
-    const baseRows = await prisma.$queryRaw<Array<{
-      productId: string
-      uomId: string
-      uomName: string
-      baseName: string
-    }>>`
-      SELECT p.id AS "productId",
-             base.id AS "uomId",
-             base.name AS "uomName",
-             base.name AS "baseName"
-      FROM "Product" p
-      JOIN "Uom" base ON base.id = p."uomId"
-      WHERE p.id = ANY(${[...new Set(missingBasePairs.map(pair => pair.productId))]})
-    `
-    const baseByProduct = new Map(baseRows.map(row => [row.productId, row]))
-    for (const pair of missingBasePairs) {
-      const base = baseByProduct.get(pair.productId)
-      // Legacy order lines without uomId predate multi-unit sales and represent the
-      // product's base UOM; explicit IDs fall back only when they match that base UOM.
-      if (!base || (pair.uomId != null && pair.uomId !== base.uomId)) continue
-      map.set(uomConversionKey(pair.productId, pair.uomId), {
-        factor: 1,
-        thisUomName: base.uomName,
-        baseUomName: base.baseName,
-        netWeight: null,
-        grossWeight: null,
-      })
-    }
   }
   return map
 }

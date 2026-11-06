@@ -37,7 +37,6 @@ import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 import RecordPager from '@/components/shared/RecordPager'
 import { useRecordNav } from '@/lib/hooks/use-record-nav'
-import { groupOrderLines, flattenOrderLineGroups } from '@/lib/order-quantity-summary'
 
 const PURPLE = '#875A7B'
 
@@ -254,9 +253,6 @@ export default function SalesOrderDetailPage() {
         preGiftPrice: null,
         uomId: newUomId,
         uomName: nameOf(newUomId),
-        uomConversion: p.uomName
-          ? { factor: factorOf(rows, newUomId), thisUomName: nameOf(newUomId) ?? UNSET_UOM_LABEL, baseUomName: p.uomName, netWeight: null, grossWeight: null }
-          : null,
         unitPrice: newUnitPrice,
         cost: newCost,
         subtotal: Math.round(qty * newUnitPrice * 100) / 100,
@@ -453,29 +449,11 @@ export default function SalesOrderDetailPage() {
 
   function reorderLine(from: number, to: number) {
     setEditLines(prev => {
-      const groups = groupOrderLines(prev)
-      const groupedLines = flattenOrderLineGroups(groups)
-      if (from === to || from < 0 || to < 0 || from >= groupedLines.length || to >= groupedLines.length) return prev
-      const source = groupedLines[from]
-      const target = groupedLines[to]
-      const sourceKey = source.productId ? `product:${source.productId}` : `line:${source.id}`
-      const targetKey = target.productId ? `product:${target.productId}` : `line:${target.id}`
-      if (sourceKey === targetKey) {
-        const group = groups.find(candidate => candidate.key === sourceKey)
-        if (!group) return prev
-        const localFrom = group.lines.findIndex(line => line.id === source.id)
-        const localTo = group.lines.findIndex(line => line.id === target.id)
-        const movedLines = [...group.lines]
-        const [moved] = movedLines.splice(localFrom, 1)
-        movedLines.splice(localTo, 0, moved)
-        return groups.flatMap(candidate => candidate.key === sourceKey ? movedLines : candidate.lines)
-      }
-      const movingGroup = groups.find(candidate => candidate.key === sourceKey)
-      if (!movingGroup) return prev
-      const remaining = groups.filter(candidate => candidate.key !== sourceKey)
-      const targetIndex = remaining.findIndex(candidate => candidate.key === targetKey)
-      remaining.splice(targetIndex < 0 ? remaining.length : targetIndex, 0, movingGroup)
-      return remaining.flatMap(group => group.lines)
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
     })
   }
 
@@ -824,21 +802,12 @@ export default function SalesOrderDetailPage() {
   const creditBlocked = creditInfo?.canOrder === false && !canOverrideCredit
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
-  const sourceDisplayLines = editing ? editLines : lines
-  const quantityLines = sourceDisplayLines.map(line => {
-    if (line.uomConversion || !line.productId) return line
-    const product = allProducts.find(candidate => candidate.id === line.productId)
-    const selectedUomId = line.uomId ?? product?.uomId
-    const selectedUom = (saleUomOptions[line.productId] ?? []).find(option => option.uomId === selectedUomId)
-    const factor = selectedUom?.factor ?? (selectedUomId && selectedUomId === product?.uomId ? 1 : null)
-    return factor != null && product?.uomName
-      ? { ...line, uomConversion: { factor, thisUomName: line.uomName ?? product.uomName, baseUomName: product.uomName, netWeight: null, grossWeight: null } }
-      : line
-  })
-  const productGroups = groupOrderLines(quantityLines)
-  const displayLines = flattenOrderLineGroups(productGroups)
-  const productGroupByKey = new Map(productGroups.map(group => [group.key, group]))
-  const editIndexById = new Map(editLines.map((line, index) => [line.id, index]))
+  const displayLines = editing && editLines.length > 0 ? editLines : lines
+  const orderQtyByUnit = displayLines.reduce((totals, line) => {
+    const unit = line.uomName ?? UNSET_UOM_LABEL
+    totals.set(unit, (totals.get(unit) ?? 0) + (Number(line.orderedQty) || 0))
+    return totals
+  }, new Map<string, number>())
   const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing && editLines.length > 0
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
@@ -1279,27 +1248,8 @@ export default function SalesOrderDetailPage() {
             )}
             <OrderLineEditor
               lines={displayLines}
-              groupKey={line => line.productId ? `product:${line.productId}` : `line:${line.id}`}
-              renderGroupFooter={(_groupLines, key) => {
-                const summary = productGroupByKey.get(key)
-                if (!summary?.productId) return null
-                const salesLabel = isEn ? 'Product total' : '商品合计'
-                const baseLabel = isEn ? 'Base unit equivalent' : '基础单位折算'
-                const baseValue = summary.baseUnitQuantity && summary.baseUomName
-                  ? `${summary.baseUnitQuantity} ${summary.baseUomName}`
-                  : (isEn ? 'Unavailable' : '暂无法折算')
-                return (
-                  <tr key={`summary-${key}`} className="border-t border-b-2 border-gray-300 bg-gray-50 text-xs text-gray-700">
-                    <td colSpan={6} className="px-2 py-2 font-semibold">{salesLabel} · {summary.productName}</td>
-                    <td className="px-2 py-2 text-right font-semibold">{summary.salesUnitQuantity}</td>
-                    <td colSpan={11} className="px-2 py-2 text-right">
-                      <span className="text-gray-500">{baseLabel}:</span> <span className="font-semibold text-teal-700">{baseValue}</span>
-                    </td>
-                  </tr>
-                )
-              }}
               editing={editing}
-              onDeleteLine={lineId => deleteLine(editIndexById.get(lineId) ?? -1)}
+              onDeleteLine={(_lineId, i) => deleteLine(i)}
               onReorder={reorderLine}
               emptyColSpan={18}
               products={allProducts}
@@ -1320,8 +1270,8 @@ export default function SalesOrderDetailPage() {
                   <th className="px-2 py-3 text-left">NO</th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
-                  <th className="px-2 py-3 text-left">Sales Unit Spec</th>
-                  <th className="px-2 py-3 text-left"><div className="leading-tight">Sales<br/>Unit</div></th>
+                  <th className="px-2 py-3 text-left">Description</th>
+                  <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
                   <th className="px-2 py-3 text-right">Cost</th>
@@ -1337,7 +1287,6 @@ export default function SalesOrderDetailPage() {
                 </tr>
               )}
               renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
-                const stateIndex = editIndexById.get(l.id) ?? i
                 const fc = forecastMap.get(l.productId)
                 // 历史行(此字段上线前)没有成本快照，null 与真实 €0 要分得开，不能都显示成 0.00
                 const costRaw = (l as unknown as { cost?: number | null }).cost
@@ -1378,7 +1327,7 @@ export default function SalesOrderDetailPage() {
                           data-desc-line={l.id}
                           className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
                           value={l.spec ?? ''}
-                          onChange={e => updateLine(stateIndex, 'spec', e.target.value)}
+                          onChange={e => updateLine(i, 'spec', e.target.value)}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                         />
                       ) : (l.spec || '')}
@@ -1393,7 +1342,7 @@ export default function SalesOrderDetailPage() {
                           return (
                             <select
                               value={l.uomId ?? anchorUomId ?? ''}
-                              onChange={e => switchLineUnit(stateIndex, e.target.value)}
+                              onChange={e => switchLineUnit(i, e.target.value)}
                               onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                               className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
@@ -1416,7 +1365,7 @@ export default function SalesOrderDetailPage() {
                         <input type="number" step="0.001" min="0" className={inputCls}
                           ref={firstFieldRef as React.Ref<HTMLInputElement>}
                           value={Number(l.orderedQty)}
-                          onChange={e => updateLine(stateIndex, 'orderedQty', Number(e.target.value))}
+                          onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
                           onFocus={e => e.target.select()}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.orderedQty).toFixed(2)}
@@ -1427,7 +1376,7 @@ export default function SalesOrderDetailPage() {
                           value={Number(l.unitPrice)}
                           disabled={!!(l as unknown as { isGift?: boolean }).isGift}
                           title={(l as unknown as { isGift?: boolean }).isGift ? (isEn ? 'Gift line — price locked at 0' : '赠品行——单价锁定为 0') : undefined}
-                          onChange={e => updateLine(stateIndex, 'unitPrice', Number(e.target.value))}
+                          onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))}
                           onFocus={e => e.target.select()}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.unitPrice).toFixed(2)}
@@ -1448,7 +1397,7 @@ export default function SalesOrderDetailPage() {
                               customerId={customer?.id}
                               productId={l.productId}
                               productName={l.productName}
-                              onSelectPrice={editing ? (price) => updateLine(stateIndex, 'unitPrice', price) : undefined}
+                              onSelectPrice={editing ? (price) => updateLine(i, 'unitPrice', price) : undefined}
                             />
                           </>
                         )
@@ -1458,7 +1407,7 @@ export default function SalesOrderDetailPage() {
                       {editing ? (
                         <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none"
                           value={Number(l.taxRate ?? 0)}
-                          onChange={e => updateLine(stateIndex, 'taxRate', Number(e.target.value))}
+                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
                           onKeyDown={lineFieldKeyHandler({
                             onNextRow: focusSearch,
                             isLastFieldOfLastRow: i === displayLines.length - 1,
@@ -1478,7 +1427,7 @@ export default function SalesOrderDetailPage() {
                           data-note-line={l.id}
                           className="border border-amber-300 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
                           value={l.note ?? ''}
-                          onChange={e => updateLine(stateIndex, 'note', e.target.value)}
+                          onChange={e => updateLine(i, 'note', e.target.value)}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                         />
                       ) : (l.note || '')}
@@ -1489,7 +1438,7 @@ export default function SalesOrderDetailPage() {
                         <input
                           type="checkbox"
                           checked={!!(l as unknown as { isGift?: boolean }).isGift}
-                          onChange={e => updateLine(stateIndex, 'isGift', e.target.checked)}
+                          onChange={e => updateLine(i, 'isGift', e.target.checked)}
                           title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
                         />
                       ) : ((l as unknown as { isGift?: boolean }).isGift ? '🎁' : '')}
@@ -1543,6 +1492,7 @@ export default function SalesOrderDetailPage() {
           {/* Totals */}
           <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">
             <div className="text-sm text-right space-y-1 min-w-[260px]">
+              <div className="flex justify-between gap-4"><span className="text-gray-600 shrink-0">{isEn ? 'Order Qty:' : '订购数量:'}</span><span className="text-gray-800">{Array.from(orderQtyByUnit, ([unit, qty]) => `${qty.toFixed(2)} ${unit}`).join(' · ') || '0.00'}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>
               <div className="border-t border-gray-200 my-1" />

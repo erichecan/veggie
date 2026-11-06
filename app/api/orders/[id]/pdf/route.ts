@@ -3,8 +3,8 @@ import { prisma } from '@/lib/db'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { renderOrderHtml, type OrderDocInput } from '@/lib/order-pdf'
-import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
-import { uomConversionKey } from '@/lib/print/uom-conversion'
+import { withProductSequence } from '@/lib/print/product-sequence'
+import { withUomSequence } from '@/lib/print/uom-sequence'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -13,7 +13,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const order = await prisma.order.findUnique({
       where: { id },
       include: {
-        lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] },
+        lines: { orderBy: { sequence: 'asc' } },
         driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
         salesUser: { select: { id: true, name: true } },
       },
@@ -34,15 +34,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     // 单据模板抽在 lib/order-pdf.ts —— 发邮件时要拿同一份当 PDF 附件，
     // 留在这里的话邮件那边只能复制一份，两份日后必然各改各的。
-    const uomConversionMap = await loadUomConversionMap(order.lines.map(line => ({ productId: line.productId, uomId: line.uomId })))
+    // 打印顺序按装货顺序排（客户要求 2026-09-14）—— 模板内部排序，这里只负责把
+    // sequence 取来附上。见 lib/print/line-sort.ts
+    const linesWithSeq = await withUomSequence(await withProductSequence(order.lines))
     const html = renderOrderHtml(
-      {
-        ...order,
-        lines: order.lines.map(line => ({
-          ...line,
-          uomConversion: uomConversionMap.get(uomConversionKey(line.productId, line.uomId)) ?? null,
-        })),
-      } as unknown as OrderDocInput,
+      { ...order, lines: linesWithSeq } as unknown as OrderDocInput,
       customer,
       deliveryBatch,
     )

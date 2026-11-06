@@ -6,8 +6,8 @@ import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { renderOrderHtml, type OrderDocInput } from '@/lib/order-pdf'
-import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
-import { uomConversionKey } from '@/lib/print/uom-conversion'
+import { withProductSequence } from '@/lib/print/product-sequence'
+import { withUomSequence } from '@/lib/print/uom-sequence'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendOrderDocument } from '@/lib/email'
 import { normalizeEmail, MAX_RECIPIENTS_PER_EMAIL } from '@/lib/customer-contacts'
@@ -100,7 +100,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const order = await prisma.order.findUnique({
         where: { id },
         include: {
-          lines: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] },
+          lines: { orderBy: { sequence: 'asc' } },
           driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
           // managerId 同上：isRowVisible 的 TEAM 判定要用
           salesUser: { select: { id: true, name: true, managerId: true } },
@@ -170,7 +170,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       const orderCode = (order as unknown as { code?: string }).code ?? order.id.slice(-8).toUpperCase()
       const lines = order.lines ?? []
-      const uomConversionMap = await loadUomConversionMap(lines.map(line => ({ productId: line.productId, uomId: line.uomId })))
       const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
       const totalIncVat = lines.reduce(
         (s, l) => s + Number(l.subtotal) * (1 + Number(l.taxRate ?? 0) / 100),
@@ -184,13 +183,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       try {
         const pdfBuffer = await renderHtmlToPdf(
           renderOrderHtml(
-            {
-              ...order,
-              lines: lines.map(line => ({
-                ...line,
-                uomConversion: uomConversionMap.get(uomConversionKey(line.productId, line.uomId)) ?? null,
-              })),
-            } as unknown as OrderDocInput,
+            { ...order, lines: await withUomSequence(await withProductSequence(order.lines)) } as unknown as OrderDocInput,
             customer,
             deliveryBatch,
           ),

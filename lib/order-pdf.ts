@@ -2,14 +2,8 @@ import { DOCUMENT_HEADER_CSS, documentHeader, paymentDetails } from '@/lib/print
 import { barcodeValue } from './barcode'
 import { formatDateOnly } from './format-date'
 import { eur } from './format-money'
-import { groupOrderLines } from '@/lib/order-quantity-summary'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { giftMoneyCell } from '@/lib/print/gift-mark'
-
-const escapeHtml = (value: string): string => value
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
 
 /**
  * 销售单 / 报价单的单据 HTML。
@@ -28,8 +22,6 @@ const escapeHtml = (value: string): string => value
 
 /** 宽松输入类型：沿用原 route 的字段读法，不强绑 Prisma 生成类型 */
 export interface OrderDocLine {
-  productId?: string | null
-  uomId?: string | null
   productName: string
   /**
    * 商品的 sequence（排序次级键），由调用方用 lib/print/product-sequence.ts 的
@@ -48,13 +40,6 @@ export interface OrderDocLine {
   spec?: string | null
   note?: string | null
   uomName?: string | null
-  uomConversion?: {
-    factor: number
-    thisUomName: string
-    baseUomName: string
-    netWeight: number | null
-    grossWeight: number | null
-  } | null
   /**
    * 赠品行（OrderLine.isGift）。true 时 PRICE 与 INCL VAT 两列印 GIFT 而不是 €0.00 ——
    * 客户要求 20260918，见 lib/print/gift-mark.ts。
@@ -103,9 +88,9 @@ export function renderOrderHtml(
   /** 司机归属。SSOT 是所属 wave 派生的结果，调用方负责算好传进来 */
   deliveryBatch: string,
 ): string {
-  // 按商品首次出现位置分组，组内保留订单行顺序。
-  const productGroups = groupOrderLines(order.lines ?? [])
-  const lines = productGroups.flatMap(group => group.lines)
+  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
+  // 与拣货单堆叠顺序一致。规则见 lib/print/line-sort.ts
+  const lines = sortLinesByUomSequence(order.lines ?? [])
 
   // Compute totals
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
@@ -136,7 +121,7 @@ export function renderOrderHtml(
   const deliveryDate = formatDateOnly((order.deliveryDate ?? order.quotationDate) as string)
   const invoiceDate = formatDateOnly(order.quotationDate as string)
 
-  const renderOrderLine = (l: OrderDocLine, i: number) => {
+  const linesHtml = lines.map((l, i) => {
     const spec = l.spec
     const note = l.note
     const taxRate = Number(l.taxRate ?? 0)
@@ -154,19 +139,6 @@ export function renderOrderHtml(
         <td class="col-vat">${taxRate > 0 ? formatVatRate(taxRate) : '0%'}</td>
         <td class="col-incl">${giftMoneyCell(l.isGift, eur(inclVat))}</td>
       </tr>`
-  }
-
-  const linesHtml = productGroups.map(group => {
-    const lineRowsHtml = group.lines.map((line, index) => renderOrderLine(line, index)).join('')
-    const baseValue = group.baseUnitQuantity && group.baseUomName
-      ? `${group.baseUnitQuantity} ${group.baseUomName}`
-      : 'Unavailable'
-    const quantitySummaryRow = `
-      <tr class="product-quantity-summary">
-        <td colspan="3"><strong>Product total · ${escapeHtml(group.productName)}:</strong> ${escapeHtml(group.salesUnitQuantity)}</td>
-        <td colspan="3"><strong>Base unit equivalent:</strong> ${escapeHtml(baseValue)}</td>
-      </tr>`
-    return lineRowsHtml + quantitySummaryRow
   }).join('')
 
   const vatRowsHtml = Object.entries(vatGroups)
@@ -212,8 +184,6 @@ export function renderOrderHtml(
   .lines-table thead th { padding: 1.6mm 2.5mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
   .lines-table tbody tr.row-even { background: #fff; }
   .lines-table tbody tr.row-odd  { background: #f7f7f7; }
-  .lines-table tbody tr.product-quantity-summary { background: #f1f4f7; border-top: 1.2px solid #9aa7b5; border-bottom: 2px solid #9aa7b5; break-inside: avoid; page-break-inside: avoid; }
-  .lines-table tbody tr.product-quantity-summary td { padding: 1.3mm 2.5mm; font-size: 8pt; color: #344256; }
   /* 行高按「一页至少 20 行」定的（客户要求 2026-08-18）：内边距 2mm→1.1mm、
      字号 9pt→8.5pt、行距收紧。实测长商品名（要折两行）时也能到 26 行/页，
      短名可到 40+ 行。改这几个数之前先跑 scripts 下的测量脚本，别凭感觉调。 */
@@ -302,8 +272,8 @@ ${DOCUMENT_HEADER_CSS}
     <thead>
       <tr>
         <th class="col-qty">QTY</th>
-        <th class="col-unit">SALES UNIT</th>
-        <th class="col-desc">PRODUCT / UNIT SPEC</th>
+        <th class="col-unit">UNIT</th>
+        <th class="col-desc">DESCRIPTION</th>
         <th class="col-price">PRICE</th>
         <th class="col-vat">VAT</th>
         <th class="col-incl">INCL VAT</th>

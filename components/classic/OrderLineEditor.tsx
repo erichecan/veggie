@@ -1,5 +1,5 @@
 'use client'
-import { Fragment, type ReactNode, type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -65,9 +65,6 @@ interface Props<
   renderHeaders: () => ReactNode
   renderRow: (line: L, index: number, opts: RowRenderOpts) => ReactNode
   rowStyle?: (line: L, index: number) => CSSProperties | undefined
-  /** Optional contiguous product grouping: adds a separator and a subtotal row after each group. */
-  groupKey?: (line: L, index: number) => string
-  renderGroupFooter?: (lines: L[], key: string) => ReactNode
   /** 跟数据行同一张 table 里渲染的合计行（一个完整的 `<tr>`），列能跟表头精确对齐；
    * 只在 lines 非空时显示。`footer` 是 table 外面的区块，两者不是一回事。 */
   footerRow?: ReactNode
@@ -109,8 +106,6 @@ export default function OrderLineEditor<
   renderHeaders,
   renderRow,
   rowStyle,
-  groupKey,
-  renderGroupFooter,
   footerRow,
   footer,
   emptyColSpan = 1,
@@ -166,11 +161,6 @@ export default function OrderLineEditor<
           <thead>{renderHeaders()}</thead>
           <tbody className={tbodyClassName}>
             {lines.map((line, i) => {
-              const currentGroupKey = groupKey?.(line, i)
-              const previousGroupKey = i > 0 ? groupKey?.(lines[i - 1], i - 1) : undefined
-              const nextGroupKey = i + 1 < lines.length ? groupKey?.(lines[i + 1], i + 1) : undefined
-              const startsGroup = currentGroupKey !== undefined && currentGroupKey !== previousGroupKey
-              const endsGroup = currentGroupKey !== undefined && currentGroupKey !== nextGroupKey
               const isDragging = dragIndex === i
               const isOver = canDrag && overIndex === i && dragIndex !== null && dragIndex !== i
 
@@ -213,21 +203,15 @@ export default function OrderLineEditor<
 
               const cls = [
                 defaultRowCls,
-                startsGroup ? 'border-t-2 border-t-gray-200' : '',
                 isDragging ? 'opacity-40' : '',
                 isOver ? 'border-t-2 border-t-[#875A7B]' : '',
               ]
                 .filter(Boolean)
                 .join(' ')
 
-              let groupStart = i
-              if (endsGroup && currentGroupKey) {
-                while (groupStart > 0 && groupKey?.(lines[groupStart - 1], groupStart - 1) === currentGroupKey) groupStart -= 1
-              }
-              const groupLines = endsGroup && currentGroupKey ? lines.slice(groupStart, i + 1) : []
               return (
-                <Fragment key={line.id}>
                 <tr
+                  key={line.id}
                   draggable={canDrag && handleActive}
                   onDragStart={canDrag ? () => setDragIndex(i) : undefined}
                   onDragOver={
@@ -259,8 +243,6 @@ export default function OrderLineEditor<
                 >
                   {renderRow(line, i, opts)}
                 </tr>
-                {endsGroup && currentGroupKey ? renderGroupFooter?.(groupLines, currentGroupKey) : null}
-                </Fragment>
               )
             })}
 
