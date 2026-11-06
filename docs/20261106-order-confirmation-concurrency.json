@@ -1,0 +1,84 @@
+{
+  "scope": "Three isolated local executions; same-key concurrency is timing dependent",
+  "observations": [
+    {
+      "name": "direct-concurrent-idempotency-key",
+      "http": [
+        201,
+        500
+      ],
+      "state": [
+        {
+          "id": "cmw59pr4n002tsvry1xzsixy7",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "direct-concurrent-idempotency-key",
+      "http": [
+        201,
+        201
+      ],
+      "state": [
+        {
+          "id": "cmw59qjfk002vv3rym6jem2e1",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        },
+        {
+          "id": "cmw59qjfx002yv3rypymongyo",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "direct-concurrent-idempotency-key",
+      "http": [
+        201,
+        500
+      ],
+      "state": [
+        {
+          "id": "cmw59rb52002vxhryy28c5urb",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    }
+  ]
+}

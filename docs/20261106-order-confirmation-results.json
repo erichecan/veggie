@@ -1,0 +1,1499 @@
+{
+  "timestamp": "2026-11-06T17:50:05.605Z",
+  "scope": "Real route handlers + local PostgreSQL; no HTTP middleware/browser; schema db push plus active-wave unique index; synthetic data",
+  "results": [
+    {
+      "name": "single-normal-slot-false",
+      "http": [
+        200
+      ],
+      "body": [
+        {
+          "id": "cmw59s34r0008zcry1i067hnz",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-1",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "CONFIRMED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:02.715Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:02.734Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": null,
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s34s0009zcrypia7lb1g",
+              "orderId": "cmw59s34r0008zcry1i067hnz",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:02.715Z",
+              "updatedAt": "2026-11-06T17:50:02.715Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": null,
+          "pricingWarnings": []
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s34r0008zcry1i067hnz",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": false,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-normal-slot-true",
+      "http": [
+        200
+      ],
+      "body": [
+        {
+          "id": "cmw59s38b000ezcryyfwpw3k0",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-2",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:02.843Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:02.850Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s37w000dzcry1xl03ivw",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s38c000fzcryh92jxfjx",
+              "orderId": "cmw59s38b000ezcryyfwpw3k0",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:02.843Z",
+              "updatedAt": "2026-11-06T17:50:02.843Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s37w000dzcry1xl03ivw",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-2"
+          },
+          "pricingWarnings": []
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s38b000ezcryyfwpw3k0",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s38b000ezcryyfwpw3k0",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-2",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "bulk-normal",
+      "http": [
+        200
+      ],
+      "body": [
+        {
+          "ok": true,
+          "affected": 1,
+          "detail": "批量确认 1 张报价单"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3as000mzcryeecc7lho",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3as000mzcryeecc7lho",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-3",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "bulk-repeat",
+      "http": [
+        400
+      ],
+      "body": [
+        {
+          "error": "选中订单中没有待处理状态的订单"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3as000mzcryeecc7lho",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3as000mzcryeecc7lho",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-3",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "direct-confirm",
+      "http": [
+        201
+      ],
+      "body": [
+        {
+          "id": "cmw59s3d7000wzcryvtnnh1qp",
+          "code": "D-261106-013",
+          "legacyCode": null,
+          "createdById": "cmw59s32a0000zcryf12g049o",
+          "createdByName": "Audit",
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "spec": "",
+              "price": 100,
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "CONFIRMED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:03.019Z",
+          "pricelistId": null,
+          "priceType": "default",
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": "2026-11-06T17:50:03.017Z",
+          "confirmationDate": "2026-11-06T17:50:03.014Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3cf000tzcry33vc6oky",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "pricingWarnings": [],
+          "pricingDetail": [
+            {
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "authoritativePrice": 100,
+              "submittedPrice": 100,
+              "priceMatched": true,
+              "ruleSource": "客户定价模式：直接牌价（未挂价格表）",
+              "pricelistName": "直接牌价",
+              "isSpecialPrice": false
+            }
+          ]
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3d7000wzcryvtnnh1qp",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-repeat",
+      "http": [
+        200,
+        200
+      ],
+      "body": [
+        {
+          "id": "cmw59s3dx0012zcryz9whqmnf",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-5",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:03.045Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:03.066Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3dw0011zcry9kfgwvbn",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s3dz0013zcry1p06qm9x",
+              "orderId": "cmw59s3dx0012zcryz9whqmnf",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:03.045Z",
+              "updatedAt": "2026-11-06T17:50:03.045Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s3dw0011zcry9kfgwvbn",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-5"
+          },
+          "pricingWarnings": []
+        },
+        {
+          "id": "cmw59s3dx0012zcryz9whqmnf",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-5",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:03.045Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:03.100Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3dw0011zcry9kfgwvbn",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s3dz0013zcry1p06qm9x",
+              "orderId": "cmw59s3dx0012zcryz9whqmnf",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:03.045Z",
+              "updatedAt": "2026-11-06T17:50:03.045Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s3dw0011zcry9kfgwvbn",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-5"
+          },
+          "pricingWarnings": []
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3dx0012zcryz9whqmnf",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3dx0012zcryz9whqmnf",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-5",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 2,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-locked",
+      "http": [
+        409
+      ],
+      "body": [
+        {
+          "error": "确认订单失败：预安排的司机批次可能已锁定或出发，请先到调度台处理后重试"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3gh001dzcrybc3y1fkf",
+          "baseDemand": 0,
+          "status": "PENDING",
+          "confirmationDate": false,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 0,
+          "audits": 0,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-fail-after-wave",
+      "http": [
+        500
+      ],
+      "body": [
+        {
+          "error": "更新订单失败"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3ha001hzcryvf8qbv70",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3ha001hzcryvf8qbv70",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-7",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 0,
+          "audits": 0,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-slip-failure",
+      "http": [
+        200
+      ],
+      "body": [
+        {
+          "id": "cmw59s3iq001nzcry248cztbo",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-8",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:03.218Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:03.224Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3io001mzcry4y4rl7lq",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s3iq001ozcrypvk7wlar",
+              "orderId": "cmw59s3iq001nzcry248cztbo",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:03.218Z",
+              "updatedAt": "2026-11-06T17:50:03.218Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s3io001mzcry4y4rl7lq",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-8"
+          },
+          "pricingWarnings": []
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3iq001nzcry248cztbo",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3iq001nzcry248cztbo",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-8",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 0,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "bulk-middle-failure",
+      "http": [
+        500
+      ],
+      "body": [
+        {
+          "error": "批量操作失败"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3ki001xzcry62rudcqg",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3ki001xzcry62rudcqg",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-9",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 0,
+          "stockMoves": 0,
+          "onHand": 1000
+        },
+        {
+          "id": "cmw59s3ks0021zcry0tr4auld",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 0,
+          "audits": 0,
+          "stockMoves": 0,
+          "onHand": 1000
+        },
+        {
+          "id": "cmw59s3ko001zzcrybydhrk34",
+          "baseDemand": 0,
+          "status": "PENDING",
+          "confirmationDate": false,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 0,
+          "audits": 0,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-concurrent",
+      "http": [
+        200,
+        200
+      ],
+      "body": [
+        {
+          "id": "cmw59s3mw0028zcry9vm76pgz",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-12",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:03.368Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:03.374Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3mu0027zcryxishhbh3",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s3mw0029zcryyiw4nytm",
+              "orderId": "cmw59s3mw0028zcry9vm76pgz",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:03.368Z",
+              "updatedAt": "2026-11-06T17:50:03.368Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s3mu0027zcryxishhbh3",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-12"
+          },
+          "pricingWarnings": []
+        },
+        {
+          "id": "cmw59s3mw0028zcry9vm76pgz",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-12",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:03.368Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:03.374Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3mu0027zcryxishhbh3",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s3mw0029zcryyiw4nytm",
+              "orderId": "cmw59s3mw0028zcry9vm76pgz",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:03.368Z",
+              "updatedAt": "2026-11-06T17:50:03.368Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s3mu0027zcryxishhbh3",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-12"
+          },
+          "pricingWarnings": []
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s3mw0028zcry9vm76pgz",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s3mw0028zcry9vm76pgz",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-12",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 2,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "single-bulk-concurrent",
+      "http": [
+        200,
+        200
+      ],
+      "body": [
+        {
+          "id": "cmw59s4gs002jzcryulliu7as",
+          "code": "AUDIT-cmw59s32a0000zcryf12g049o-13",
+          "legacyCode": null,
+          "createdById": null,
+          "createdByName": null,
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "price": 100,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "WAVE_ASSIGNED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:04.444Z",
+          "pricelistId": null,
+          "priceType": null,
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": null,
+          "confirmationDate": "2026-11-06T17:50:04.451Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s4gq002izcry2z56buy9",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "lines": [
+            {
+              "id": "cmw59s4gt002kzcry6x0hzkxd",
+              "orderId": "cmw59s4gs002jzcryulliu7as",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "spec": null,
+              "note": null,
+              "uomId": "cmw59s33e0004zcryplrhoc31",
+              "uomName": "CASE",
+              "unitPrice": 100,
+              "taxRate": null,
+              "orderedQty": 2,
+              "deliveredQty": 0,
+              "invoicedQty": 0,
+              "subtotal": 200,
+              "commissionPrice": null,
+              "unitCost": null,
+              "priceSourceType": null,
+              "priceSourceDetail": null,
+              "priceSourceDate": null,
+              "sequence": 0,
+              "createdAt": "2026-11-06T17:50:04.444Z",
+              "updatedAt": "2026-11-06T17:50:04.444Z",
+              "isGift": false
+            }
+          ],
+          "driverSlot": {
+            "id": "cmw59s4gq002izcry2z56buy9",
+            "batchNum": 1,
+            "timeOfDay": "am",
+            "driverName": "Audit-cmw59s32a0000zcryf12g049o-13"
+          },
+          "pricingWarnings": []
+        },
+        {
+          "ok": true,
+          "affected": 1,
+          "detail": "批量确认 1 张报价单"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s4gs002jzcryulliu7as",
+          "baseDemand": 20,
+          "status": "WAVE_ASSIGNED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 1,
+          "palletItems": [
+            {
+              "qty": 2,
+              "orderId": "cmw59s4gs002jzcryulliu7as",
+              "uomName": "CASE",
+              "orderCode": "AUDIT-cmw59s32a0000zcryf12g049o-13",
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+              "restaurantName": "Confirmation audit"
+            }
+          ],
+          "slips": 1,
+          "audits": 2,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "direct-create-transaction-failure",
+      "http": [
+        500
+      ],
+      "body": [
+        {
+          "error": "创建订单失败"
+        }
+      ],
+      "state": []
+    },
+    {
+      "name": "direct-create-rollback-count",
+      "before": 78,
+      "after": 78
+    },
+    {
+      "name": "direct-concurrent-idempotency-key",
+      "http": [
+        201,
+        500
+      ],
+      "body": [
+        {
+          "id": "cmw59s5bc002vzcry4epbs1y2",
+          "code": "D-261106-014",
+          "legacyCode": null,
+          "createdById": "cmw59s32a0000zcryf12g049o",
+          "createdByName": "Audit",
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "spec": "",
+              "price": 100,
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "CONFIRMED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:05.544Z",
+          "pricelistId": null,
+          "priceType": "default",
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": "2026-11-06T17:50:05.543Z",
+          "confirmationDate": "2026-11-06T17:50:05.541Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3cf000tzcry33vc6oky",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "pricingWarnings": [],
+          "pricingDetail": [
+            {
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "authoritativePrice": 100,
+              "submittedPrice": 100,
+              "priceMatched": true,
+              "ruleSource": "客户定价模式：直接牌价（未挂价格表）",
+              "pricelistName": "直接牌价",
+              "isSpecialPrice": false
+            }
+          ]
+        },
+        {
+          "error": "创建订单失败"
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s5bc002vzcry4epbs1y2",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    },
+    {
+      "name": "direct-repeat-idempotency-key",
+      "http": [
+        201,
+        201
+      ],
+      "body": [
+        {
+          "id": "cmw59s5cd0031zcryu86h5cvl",
+          "code": "D-261106-015",
+          "legacyCode": null,
+          "createdById": "cmw59s32a0000zcryf12g049o",
+          "createdByName": "Audit",
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "spec": "",
+              "price": 100,
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "CONFIRMED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:05.581Z",
+          "pricelistId": null,
+          "priceType": "default",
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": "2026-11-06T17:50:05.581Z",
+          "confirmationDate": "2026-11-06T17:50:05.579Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3cf000tzcry33vc6oky",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "pricingWarnings": [],
+          "pricingDetail": [
+            {
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "authoritativePrice": 100,
+              "submittedPrice": 100,
+              "priceMatched": true,
+              "ruleSource": "客户定价模式：直接牌价（未挂价格表）",
+              "pricelistName": "直接牌价",
+              "isSpecialPrice": false
+            }
+          ]
+        },
+        {
+          "id": "cmw59s5cd0031zcryu86h5cvl",
+          "code": "D-261106-015",
+          "legacyCode": null,
+          "createdById": "cmw59s32a0000zcryf12g049o",
+          "createdByName": "Audit",
+          "source": "INTERNAL",
+          "restaurantId": "cmw59s3340001zcrysfvfxuzu",
+          "restaurantName": "Confirmation audit",
+          "items": [
+            {
+              "spec": "",
+              "price": 100,
+              "quantity": 2,
+              "subtotal": 200,
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion"
+            }
+          ],
+          "totalAmount": 200,
+          "status": "CONFIRMED",
+          "paymentMethod": "ONLINE",
+          "externalRef": null,
+          "createdAt": "2026-11-06T17:50:05.581Z",
+          "pricelistId": null,
+          "priceType": "default",
+          "paymentTerm": null,
+          "commissionRate": null,
+          "internalNote": null,
+          "externalNote": null,
+          "deliveryNote": null,
+          "salesUserId": null,
+          "quotationDate": "2026-11-06T17:50:05.581Z",
+          "confirmationDate": "2026-11-06T17:50:05.579Z",
+          "deliveryDate": "2030-01-01T00:00:00.000Z",
+          "invoiceDate": null,
+          "invoiceNo": null,
+          "returnStatus": "PENDING",
+          "returnIssueNote": null,
+          "returnConfirmedAt": null,
+          "returnConfirmedBy": null,
+          "deliveryBatch": null,
+          "driverSlotId": "cmw59s3cf000tzcry33vc6oky",
+          "sentAt": null,
+          "lockedAt": null,
+          "printedAt": null,
+          "printedById": null,
+          "printedByName": null,
+          "printType": null,
+          "printCount": 0,
+          "commissionFixed": null,
+          "driverCommissionTotal": null,
+          "commissionFrozenAt": null,
+          "goodsReturnStatus": null,
+          "goodsReturnedAt": null,
+          "pricingWarnings": [],
+          "pricingDetail": [
+            {
+              "productId": "cmw59s33j0005zcryimqps14o",
+              "productName": "Audit onion",
+              "authoritativePrice": 100,
+              "submittedPrice": 100,
+              "priceMatched": true,
+              "ruleSource": "客户定价模式：直接牌价（未挂价格表）",
+              "pricelistName": "直接牌价",
+              "isSpecialPrice": false
+            }
+          ]
+        }
+      ],
+      "state": [
+        {
+          "id": "cmw59s5cd0031zcryu86h5cvl",
+          "baseDemand": 20,
+          "status": "CONFIRMED",
+          "confirmationDate": true,
+          "slot": true,
+          "waves": 0,
+          "palletItems": [],
+          "slips": 1,
+          "audits": 1,
+          "stockMoves": 0,
+          "onHand": 1000
+        }
+      ]
+    }
+  ]
+}
