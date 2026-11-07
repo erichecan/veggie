@@ -16,6 +16,7 @@ import { resolveOrderLines } from '@/lib/server-pricing'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
 import { checkCustomerCredit } from '@/lib/credit-check'
+import { confirmOrdersInTransaction, OrderConfirmationError } from '@/lib/order-confirmation'
 
 const orderInvoiceSummarySelect = {
   id: true,
@@ -295,13 +296,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // Build update payload — only include defined values (never spread unknown fields)
       const updateData: Record<string, unknown> = {}
-      if (newStatus) updateData.status = newStatus
+      if (newStatus && newStatus !== 'CONFIRMED') updateData.status = newStatus
       if (salesUserId !== undefined) updateData.salesUserId = salesUserId ? String(salesUserId) : null
       // SSOT(P0-1): deliveryBatch 字符串弃用,不再写入;调度归属真相在 wave。
       // driverSlotId 保留为「下单意向」列,实际 wave 归属在 update 之后经 wave-assign 同步(双向一致)。
       if (driverSlotId !== undefined) updateData.driverSlotId = driverSlotId || null
       if (paymentMethod) updateData.paymentMethod = String(paymentMethod).toUpperCase()
-      if (confirmationDate !== undefined) updateData.confirmationDate = confirmationDate ? new Date(confirmationDate) : null
+      if (confirmationDate !== undefined && newStatus !== 'CONFIRMED') updateData.confirmationDate = confirmationDate ? new Date(confirmationDate) : null
       if (deliveryDate !== undefined) updateData.deliveryDate = deliveryDate ? new Date(deliveryDate) : null
       if (invoiceDate !== undefined) updateData.invoiceDate = invoiceDate ? new Date(invoiceDate) : null
       if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null
@@ -327,9 +328,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
 
       // Auto-set confirmationDate when confirming
-      if (newStatus === 'CONFIRMED' && !confirmationDate) {
-        updateData.confirmationDate = new Date()
-      }
+      if (newStatus === 'CONFIRMED') delete updateData.confirmationDate
       // Clear confirmationDate when withdrawing back to PENDING
       if (newStatus === 'PENDING' && confirmationDate === null) {
         updateData.confirmationDate = null
@@ -578,14 +577,35 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      const order = await (prisma.order.update as Function)({
+      const orderUpdateArgs = {
         where: { id },
         data: updateData,
         include: {
-          lines: { orderBy: { sequence: 'asc' } },
+          lines: { orderBy: { sequence: 'asc' as const } },
           driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
         },
-      })
+      }
+      const order = newStatus === 'CONFIRMED'
+        ? await prisma.$transaction(async tx => {
+            // Keep confirmation state/date under the shared business action. If we write CONFIRMED
+            // here first, the service sees a retry and can skip the required wave/slip/audit work.
+            const confirmationUpdateArgs = {
+              ...orderUpdateArgs,
+              data: { ...updateData },
+            }
+            delete confirmationUpdateArgs.data.status
+            delete confirmationUpdateArgs.data.confirmationDate
+            await (tx.order.update as Function)(confirmationUpdateArgs)
+            await confirmOrdersInTransaction(tx, [id], user, { allowAlreadyConfirmed: true })
+            return tx.order.findUniqueOrThrow({
+              where: { id },
+              include: {
+                lines: { orderBy: { sequence: 'asc' } },
+                driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
+              },
+            })
+          })
+        : await (prisma.order.update as Function)(orderUpdateArgs)
 
       // SSOT(P0-1): 销售单改批次同步到 wave.orderIds(与调度台拖拽同一写入逻辑,双向一致)。
       // 报价阶段只把司机批次存到 Order.driverSlotId；确认报价时即使请求只带 status，
@@ -596,7 +616,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         : newStatus === 'CONFIRMED'
           ? orderBefore.driverSlotId
           : undefined
-      const shouldSyncWave = driverSlotId !== undefined || (newStatus === 'CONFIRMED' && !!driverSlotToSync)
+      const shouldSyncWave = newStatus !== 'CONFIRMED' && driverSlotId !== undefined
       if (shouldSyncWave) {
         try {
           if (driverSlotToSync) {
@@ -764,7 +784,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
 
       // Write audit log
-      await prismaAny.orderAuditLog.create({
+      if (newStatus !== 'CONFIRMED') await prismaAny.orderAuditLog.create({
         data: {
           orderId: id,
           userId: user.userId,
@@ -779,7 +799,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // ── 库存：订单状态或行变了 → 按「目标 − 已拿」对账（20261014 复式改造 L3，lib/order-stock.ts）──
       // 取代原先散在这里的确认扣减 / 改行差额 / 撤回释放 / 取消释放四段：那几段按 orderedQty 盲目加减，
       // 从没扣过库存的单（Place Order 直接建成 CONFIRMED 的）取消/减量时会凭空多出库存。
-      if (newStatus || Array.isArray(linesPayload)) {
+      if ((newStatus || Array.isArray(linesPayload)) && newStatus !== 'CONFIRMED') {
         const shippedNow = !!newStatus && ORDER_SHIPPED_STATUSES.has(newStatus)
           && !ORDER_SHIPPED_STATUSES.has(String(orderBefore.status).toUpperCase())
         await prisma.$transaction(
@@ -793,7 +813,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // 换客户后，确认订单时已生成的送货单抬头要跟着换 —— 它是 1:1 快照(customerId/
       // customerName)，留着旧客户就会出现"订单是 A、送货单是 B"的分叉，司机拿到的是旧抬头。
-      if (customerChanged && newCustomer) {
+      if (customerChanged && newCustomer && newStatus !== 'CONFIRMED') {
         await prismaAny.deliverySlip.updateMany({
           where: { orderId: id },
           data: { customerId: newCustomer.id, customerName: newCustomer.name },
@@ -802,19 +822,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // On CONFIRMED: 仅建送货单。Trip 不再在确认时建(P0-2/A):配送调度统一归 wave,
       // Trip 改在 wave「确认出发」时按波次生成(见 waves/[id]/dispatch + lib/trip-from-wave)。
-      if (newStatus === 'CONFIRMED') {
-        const existingSlip = await prismaAny.deliverySlip.findUnique({ where: { orderId: id } }).catch(() => null)
-        if (!existingSlip) {
-          await prismaAny.deliverySlip.create({
-            data: {
-              orderId: id,
-              customerId: orderBefore.restaurantId,
-              customerName: orderBefore.restaurantName,
-              deliveryDate: updateData.deliveryDate as Date | null ?? null,
-            },
-          }).catch((e: unknown) => console.error('[DeliverySlip create]', e))
-        }
-      }
+      // Confirmation already created/updated the delivery slip in its transaction.
 
       // On COMPLETED：只补实送量默认值（全送），不在这里开票/冻结提成了。
       // ⛔ 20261026：开票与提成冻结挪到会计「核销确认」之后触发（app/api/orders/bulk/route.ts

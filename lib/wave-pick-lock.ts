@@ -1,4 +1,7 @@
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@/lib/generated/prisma/client'
+
+type Db = Prisma.TransactionClient | typeof prisma
 
 /**
  * 拣货锁定：打印员打印拣货单后回填 PickingWave.pickLockedAt，期间调度不可改该批次
@@ -14,8 +17,8 @@ export class WavePickLockedError extends Error {
   }
 }
 
-export async function assertWaveNotPickLocked(waveId: string): Promise<void> {
-  const wave = await prisma.pickingWave.findUnique({
+export async function assertWaveNotPickLocked(waveId: string, db: Db = prisma): Promise<void> {
+  const wave = await db.pickingWave.findUnique({
     where: { id: waveId },
     select: { pickLockedAt: true },
   })

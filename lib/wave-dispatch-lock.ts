@@ -1,4 +1,7 @@
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@/lib/generated/prisma/client'
+
+type Db = Prisma.TransactionClient | typeof prisma
 
 /**
  * 已出发波次保护：确认出发(dispatchedAt)后，波次的订单归属不可再变——
@@ -19,8 +22,8 @@ export class WaveDispatchedError extends Error {
   }
 }
 
-export async function assertWaveNotDispatched(waveId: string): Promise<void> {
-  const wave = await prisma.pickingWave.findUnique({
+export async function assertWaveNotDispatched(waveId: string, db: Db = prisma): Promise<void> {
+  const wave = await db.pickingWave.findUnique({
     where: { id: waveId },
     select: { dispatchedAt: true },
   })
