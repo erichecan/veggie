@@ -23,6 +23,7 @@ import {
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
 import type { PrintLang } from '@/lib/print/print-i18n'
+import { compareDispatchPrintableOrders } from './dispatch-ordering'
 
 const T = {
   zh: {
@@ -76,14 +77,14 @@ export function generateTripSummaryHtml(data: TripPrintData, lang: PrintLang = '
     ? deliveryDates.reduce((a, b) => (a < b ? a : b))
     : trip.departTime
 
-  // 每单单独一行，不按客户合并；同一客户多笔订单都要展示（客户要求，20260715）
+  // 每单单独一行，不按客户合并；跨司机打印先按司机/时段/托盘，再按客户和订单号排序。
   const rowList = orders
     .map(o => ({
       order: o,
       name: customers.get(o.customerId)?.name ?? o.customerName ?? '',
       customer: customers.get(o.customerId),
     }))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.order.code?.localeCompare(b.order.code ?? '') || 0)
+    .sort((a, b) => compareDispatchPrintableOrders(a.order, b.order) || a.name.localeCompare(b.name))
 
   // 客户详情（地址/电话/备注）直接做在表格列里，不再单独列一个详情区块
   const nameRowsHtml = rowList.map((r, i) => {

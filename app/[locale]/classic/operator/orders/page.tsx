@@ -17,7 +17,7 @@ import { useServerList } from '@/hooks/use-server-list'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 import { getSession } from '@/lib/session'
-import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
+import { type Facet, SALES_ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
 import { downloadAuthedFile } from '@/lib/print/open-pdf'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
@@ -469,7 +469,7 @@ export default function ClassicOrdersPage() {
   }
 
   function addFacet(key: string, value: string) {
-    const field = ORDER_FACET_FIELDS.find(f => f.key === key)
+    const field = SALES_ORDER_FACET_FIELDS.find(f => f.key === key)
     if (!field) return
     // 同一维度可累积多个关键词(后端 buildFacetWhere 组成 OR)；不同维度之间 AND
     setFacets(prev => [...prev, { key, label: isEn ? field.labelEn : field.label, value }])
@@ -788,7 +788,7 @@ export default function ClassicOrdersPage() {
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}
         onSearchSubmit={() => {}}
-        facetFields={localizeFacetFields(ORDER_FACET_FIELDS, isEn)}
+        facetFields={localizeFacetFields(SALES_ORDER_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         filterOptions={[
           { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },

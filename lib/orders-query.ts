@@ -49,7 +49,53 @@ export const ORDER_FACET_DEFS: FacetDef[] = [
   ] } } } } }) },
   { key: 'driver',   label: '司机',     toClause: v => driverNameClause(v) },
   { key: 'weekday',  label: '交货星期', toClause: v => weekdayClause(v) },
+  { key: 'dispatchBatch', label: '批次/时段', toClause: v => dispatchBatchClause(v) },
 ]
+
+/**
+ * 配送中心的批次号来自实际托盘(Pallet.seq)，时段来自所属波次(PickingWave.timeOfDay)。
+ * 支持 `1 am` / `am 1` / `batch 1 pm`，也可只输入批次号或 am/pm。
+ * 单独按时段搜取波次中的全部订单；只按批次或批次+时段则只匹配确实放入该托盘的订单。
+ */
+async function dispatchBatchClause(raw: string): Promise<Record<string, unknown>> {
+  const value = raw.trim().toLowerCase()
+  const shiftToken = '(am|pm|morning|afternoon|上午|早上|下午)'
+  const batchToken = '(?:batch\\s*)?(\\d+)'
+  const shiftFirst = value.match(new RegExp(`^${shiftToken}\\s*${batchToken}$`, 'i'))
+  const batchFirst = value.match(new RegExp(`^${batchToken}(?:\\s*${shiftToken})?$`, 'i'))
+  const shiftOnly = value.match(new RegExp(`^${shiftToken}$`, 'i'))
+
+  const rawShift = shiftFirst?.[1] ?? batchFirst?.[2] ?? shiftOnly?.[1] ?? null
+  const shift = rawShift
+    ? /^(am|morning|上午|早上)$/i.test(rawShift) ? 'am' : 'pm'
+    : null
+  const batchText = shiftFirst?.[2] ?? batchFirst?.[1] ?? null
+  const batch = batchText ? Number(batchText) : null
+  if (batch !== null && (!Number.isSafeInteger(batch) || batch < 1)) return { id: { in: [] } }
+  if (batch === null && !shift) return { id: { in: [] } }
+
+  if (batch !== null) {
+    const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT DISTINCT item->>'orderId' AS id
+         FROM "Pallet" p
+         JOIN "PickingWave" w ON w.id = p."waveId"
+         CROSS JOIN LATERAL jsonb_array_elements(p.items::jsonb) item
+        WHERE p.seq = $1
+          AND item->>'orderId' IS NOT NULL
+          ${shift ? 'AND lower(w."timeOfDay") = $2' : ''}`,
+      ...(shift ? [batch, shift] : [batch]),
+    )
+    return { id: { in: rows.map(row => row.id) } }
+  }
+
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT DISTINCT unnest(w."orderIds") AS id
+       FROM "PickingWave" w
+      WHERE lower(w."timeOfDay") = $1`,
+    shift,
+  )
+  return { id: { in: rows.map(row => row.id) } }
+}
 
 /**
  * 单个星期几在全表(15 万+订单)里平均能匹配 1/7，约 2-3 万条——两个维度值 OR 在一起
