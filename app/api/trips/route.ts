@@ -52,12 +52,53 @@ export async function GET(req: Request) {
         ? await prisma.order.findMany({ where: { id: { in: allOrderIds } }, select: { id: true, code: true } })
         : []
       const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
+      const canonicalReturns = trips.length > 0
+        ? await prisma.orderReturn.findMany({ where: { sourceTripId: { in: trips.map(t => t.id) } }, orderBy: { createdAt: 'asc' } })
+        : []
+      const returnsByTripOrder = new Map<string, Array<Record<string, unknown>>>()
+      for (const ret of canonicalReturns) {
+        const key = `${ret.sourceTripId}:${ret.orderId}`
+        const rows = returnsByTripOrder.get(key) ?? []
+        rows.push({
+          id: ret.id,
+          orderId: ret.orderId,
+          orderLineId: ret.orderLineId,
+          sourceTripId: ret.sourceTripId,
+          productId: ret.productId,
+          productName: ret.productName,
+          quantity: Number(ret.quantity),
+          photo: ret.photo,
+          unitPrice: ret.unitPrice == null ? undefined : Number(ret.unitPrice),
+          refundMode: ret.refundMode,
+          refundPct: ret.refundPct == null ? undefined : Number(ret.refundPct),
+          refundAmount: ret.refundAmount == null ? undefined : Number(ret.refundAmount),
+          refundNote: ret.refundNote,
+          lateReportNote: ret.lateReportNote,
+          reason: ret.reason,
+          actionType: ret.actionType,
+          status: ret.status,
+          disposition: ret.disposition,
+          exchangeOrderId: ret.exchangeOrderId,
+          warehouseVerifiedById: ret.warehouseVerifiedById,
+          warehouseVerifiedByName: ret.warehouseVerifiedByName,
+          warehouseVerifiedAt: ret.warehouseVerifiedAt,
+          warehouseNote: ret.warehouseNote,
+          createdAt: ret.createdAt,
+          approvedAt: ret.approvedAt,
+          settledAt: ret.settledAt,
+        })
+        returnsByTripOrder.set(key, rows)
+      }
       const tripsWithOrderCodes = trips.map(trip => ({
         ...trip,
         departTime: trip.departTime ?? (trip.waveId ? dispatchedAtByWaveId.get(trip.waveId) : null),
         restaurants: (trip.restaurants as Array<{ orderIds?: string[]; [key: string]: unknown }>).map(restaurant => ({
           ...restaurant,
           orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
+          returns: [
+            ...(Array.isArray(restaurant.returns) ? restaurant.returns : []),
+            ...(restaurant.orderIds ?? []).flatMap(orderId => returnsByTripOrder.get(`${trip.id}:${orderId}`) ?? []),
+          ],
         })),
       }))
       return NextResponse.json(serializeApi(tripsWithOrderCodes))

@@ -955,6 +955,7 @@ model OrderLine {
   /// 均据此排除），但仍正常走库存扣减、拣货单、发票展示——物理上是真实发出的货，
   /// 只是不计钱。true 时 API 层强制 unitPrice=0，不允许"又是赠品又收钱"的矛盾状态。
   isGift            Boolean   @default(false)
+  goodsReturns      OrderReturn[]
 
   @@index([orderId])
   @@index([productId])
@@ -1133,6 +1134,7 @@ model Trip {
   departTime       String?
   status           TripStatus @default(PENDING)
   restaurants      Json       @default("[]")
+  goodsReturns     OrderReturn[]
   totalPayment     Decimal    @default(0) @db.Decimal(12, 2)
   /// 本次配送司机总佣金（按每家客户 commissionRate × subtotal 累加）
   driverCommission Decimal?   @db.Decimal(12, 2)
@@ -1170,17 +1172,26 @@ enum GoodsReturnDisposition {
   SCRAP
 }
 
-/// 日销售中心「退货登记」手动入口专用（20261027）。司机现场上报的退货仍走
-/// Trip.restaurants[].returns（ReturnItem），两套互不迁移、互不冲突；operator/inventory 的
-/// 「退换货」统一看板会同时查两边、共用 lib/returns-engine.ts 同一套核实/审核/处置函数。
-/// 与 Trip 版本相比直接挂 orderId，不用再按 restaurantId+productId 反查订单。
+/// 司机端和手动登记共用的退货账本。每条新记录精确关联原订单行；sourceTripId 仅记录
+/// 司机上报来源，Trip.restaurants[].returns 只保留历史兼容数据，不再写入新记录。
 model OrderReturn {
   id                      String                   @id @default(cuid())
   orderId                 String
   order                   Order                    @relation(fields: [orderId], references: [id])
+  orderLineId             String?
+  orderLine               OrderLine?               @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
+  sourceTripId            String?
+  sourceTrip              Trip?                    @relation(fields: [sourceTripId], references: [id], onDelete: SetNull)
   productId               String
   productName             String
   quantity                Decimal                  @db.Decimal(12, 3)
+  unitPrice               Decimal?                 @db.Decimal(12, 2)
+  photo                   String?
+  lateReportNote          String?
+  refundMode              String?
+  refundPct               Decimal?                 @db.Decimal(6, 3)
+  refundAmount            Decimal?                 @db.Decimal(12, 2)
+  refundNote              String?
   reason                  String?
   /// return=退货 / exchange=换货（换货一律新开单，不在本记录里维护第二套商品明细，
   /// 对齐 ReturnItem.exchangeOrderId 的既有拍板）
@@ -1207,6 +1218,8 @@ model OrderReturn {
   createdAt               DateTime                 @default(now())
 
   @@index([orderId])
+  @@index([orderLineId, status])
+  @@index([sourceTripId, status])
   @@index([status])
 }
 

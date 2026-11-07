@@ -39,6 +39,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const restaurants = trip.restaurants as unknown as RestaurantWithOrderTiming[]
         const owner = restaurants.find(r => (r.orderIds ?? []).includes(orderId))
         if (!owner) return { error: '该订单不属于此行程', status: 404 as const }
+        const legacyReturns = owner.returns ?? []
+        const canonicalReturns = await tx.orderReturn.findMany({
+          where: { sourceTripId: id, orderId },
+          orderBy: { createdAt: 'asc' },
+        })
+        owner.returns = [
+          ...(owner.returns ?? []),
+          ...canonicalReturns.map(ret => ({
+            id: ret.id,
+            orderId: ret.orderId,
+            orderLineId: ret.orderLineId ?? undefined,
+            productId: ret.productId,
+            productName: ret.productName,
+            quantity: Number(ret.quantity),
+            unitPrice: ret.unitPrice == null ? undefined : Number(ret.unitPrice),
+            refundAmount: ret.refundAmount == null ? undefined : Number(ret.refundAmount),
+            status: ret.status,
+          })),
+        ]
 
         const timings: Record<string, OrderTiming> = { ...(owner.orderTimings ?? {}) }
         const current: OrderTiming = timings[orderId] ?? {}
@@ -85,6 +104,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         owner.orderTimings = timings
+        owner.returns = legacyReturns
         const updated = await tx.trip.update({
           where: { id },
           data: { restaurants: restaurants as never },

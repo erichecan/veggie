@@ -81,12 +81,53 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, code: true } })
       : []
     const orderCodeById = new Map((orders as Array<{ id: string; code: string | null }>).map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
+    const canonicalReturns = await prisma.orderReturn.findMany({
+      where: { sourceTripId: id },
+      orderBy: { createdAt: 'asc' },
+    })
+    const canonicalByOrder = new Map<string, Array<Record<string, unknown>>>()
+    for (const ret of canonicalReturns) {
+      const rows = canonicalByOrder.get(ret.orderId) ?? []
+      rows.push({
+        id: ret.id,
+        orderId: ret.orderId,
+        orderLineId: ret.orderLineId,
+        sourceTripId: ret.sourceTripId,
+        productId: ret.productId,
+        productName: ret.productName,
+        quantity: Number(ret.quantity),
+        photo: ret.photo,
+        unitPrice: ret.unitPrice == null ? undefined : Number(ret.unitPrice),
+        refundMode: ret.refundMode,
+        refundPct: ret.refundPct == null ? undefined : Number(ret.refundPct),
+        refundAmount: ret.refundAmount == null ? undefined : Number(ret.refundAmount),
+        refundNote: ret.refundNote,
+        reason: ret.reason,
+        actionType: ret.actionType,
+        status: ret.status,
+        disposition: ret.disposition,
+        exchangeOrderId: ret.exchangeOrderId,
+        lateReportNote: ret.lateReportNote,
+        warehouseVerifiedById: ret.warehouseVerifiedById,
+        warehouseVerifiedByName: ret.warehouseVerifiedByName,
+        warehouseVerifiedAt: ret.warehouseVerifiedAt,
+        warehouseNote: ret.warehouseNote,
+        createdAt: ret.createdAt,
+        approvedAt: ret.approvedAt,
+        settledAt: ret.settledAt,
+      })
+      canonicalByOrder.set(ret.orderId, rows)
+    }
     const tripWithOrderCodes = {
       ...trip,
       departTime: trip.departTime ?? departureWave?.dispatchedAt ?? null,
       restaurants: restaurants.map(restaurant => ({
         ...restaurant,
         orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
+        returns: [
+          ...(Array.isArray(restaurant.returns) ? restaurant.returns : []),
+          ...(restaurant.orderIds ?? []).flatMap(orderId => canonicalByOrder.get(orderId) ?? []),
+        ],
       })),
     }
     return NextResponse.json(serializeApi(tripWithOrderCodes))
@@ -107,6 +148,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const driverScope = driverRowScope(user)
       if (driverScope && before.driverId !== driverScope.userId) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+      }
+
+      // `GET /api/trips/:id` projects canonical OrderReturn rows into restaurants[].returns
+      // for display/calculation. Never persist that projection back into the legacy Trip JSON.
+      if (Array.isArray(data.restaurants) && Array.isArray(before.restaurants)) {
+        const oldReturns = new Map((before.restaurants as Array<{ restaurantId: string; returns?: unknown[] }>).map(r => [r.restaurantId, r.returns ?? []]))
+        data.restaurants = (data.restaurants as Array<{ restaurantId: string; [key: string]: unknown }>).map(r => ({
+          ...r,
+          returns: oldReturns.get(r.restaurantId) ?? [],
+        }))
       }
 
       const blocked = findBlockedReturnStatusChange(before.restaurants, data.restaurants)
@@ -188,7 +239,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               orderTimings?: Record<string, { endedAt?: string }>
             }>
           : []
-        const unprocessedStops = restaurants.filter(r => !r.delivered && (r.returns?.length ?? 0) === 0)
+        const canonicalReturns = await prisma.orderReturn.findMany({ where: { sourceTripId: id }, select: { orderId: true } })
+        const returnedOrderIds = new Set(canonicalReturns.map(ret => ret.orderId))
+        const unprocessedStops = restaurants.filter(r =>
+          !r.delivered && (r.returns?.length ?? 0) === 0 && !(r.orderIds ?? []).some(orderId => returnedOrderIds.has(orderId)),
+        )
         if (unprocessedStops.length > 0) {
           return NextResponse.json({ error: '请先完成每个站点：送达或报告异常后，再结束行程' }, { status: 409 })
         }

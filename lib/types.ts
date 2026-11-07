@@ -359,6 +359,9 @@ export type OrderStatus = 'pending' | 'confirmed' | 'wave_assigned' | 'in_delive
 export type PaymentMethod = 'online' | 'cash'
 
 export interface OrderItem {
+  /** Canonical source OrderLine id; required when a driver reports a return. */
+  orderLineId?: string
+  orderId?: string
   productId: string
   productName: string
   spec: string
@@ -581,6 +584,9 @@ export interface ReturnItem {
   /// 相关接口对缺 id 的旧记录仍按 productId+status 兜底匹配。
   id?: string
   productId: string
+  orderLineId?: string
+  orderId?: string
+  sourceTripId?: string
   productName: string
   quantity: number
   photo?: string
@@ -621,15 +627,20 @@ export interface ReturnItem {
   lateReportNote?: string
 }
 
-/**
- * 日销售中心「退货登记」手动入口（20261027，退货/报废整合 M3），直接挂 orderId，
- * 与司机上报的 ReturnItem 是两套互不迁移的数据源，状态机/核实/审核/处置规则完全一致
- * （共用 `lib/returns-engine.ts`），在 M1 看板里合并展示。字段比 ReturnItem 少很多——
- * 没有退款相关字段，审核只需选 disposition，不涉及退款金额/比例。
- */
+/** Shared driver/manual return ledger. Driver reports have sourceTripId and refund/evidence fields;
+ * manual registrations omit those. Both retain the exact original orderLineId. */
 export interface OrderReturn {
   id: string
   orderId: string
+  orderLineId?: string | null
+  sourceTripId?: string | null
+  unitPrice?: number | null
+  photo?: string | null
+  lateReportNote?: string | null
+  refundMode?: 'pct' | 'fixed' | null
+  refundPct?: number | null
+  refundAmount?: number | null
+  refundNote?: string | null
   order?: { code: string; restaurantId: string; restaurantName: string }
   productId: string
   productName: string

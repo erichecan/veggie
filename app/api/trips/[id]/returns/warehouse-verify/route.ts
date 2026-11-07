@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import type { TripRestaurant } from '@/lib/types'
 import { createAutoGoodsReturnPost } from '@/lib/bulletin'
+import { syncOrderGoodsReturnStatus } from '@/lib/returns-engine'
 
 /**
  * 仓库核实（20260922）：司机上报的退换货先落 WAREHOUSE_PENDING，次日仓库工作人员
@@ -49,6 +50,51 @@ export async function PUT(
       const trip = await prisma.trip.findUnique({ where: { id } })
       if (!trip) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+      }
+
+      if (returnId) {
+        const canonical = await prisma.orderReturn.findFirst({ where: { id: returnId, sourceTripId: id } })
+        if (canonical) {
+          if (canonical.productId !== productId || canonical.status !== 'WAREHOUSE_PENDING') {
+            return NextResponse.json({ error: '未找到待仓库核实的对应退货记录（可能已被处理）' }, { status: 409 })
+          }
+          const updated = await prisma.$transaction(async tx => {
+            const result = await tx.orderReturn.updateMany({
+              where: { id: canonical.id, status: 'WAREHOUSE_PENDING' },
+              data: {
+                status: action === 'verify' ? 'PENDING_REVIEW' : 'REJECTED',
+                warehouseVerifiedById: user.userId,
+                warehouseVerifiedByName: user.name,
+                warehouseVerifiedAt: new Date(),
+                warehouseNote: note?.trim() || undefined,
+              },
+            })
+            if (!result.count) return null
+            if (action === 'reject') {
+              await syncOrderGoodsReturnStatus(tx, [{
+                orderId: canonical.orderId,
+                status: 'REJECTED',
+                productName: canonical.productName,
+                quantity: Number(canonical.quantity),
+              }], user)
+            } else {
+              await createAutoGoodsReturnPost(tx, {
+                restaurantName: (trip.restaurants as unknown as TripRestaurant[]).find(r => r.restaurantId === restaurantId)?.restaurantName ?? '',
+                productName: canonical.productName,
+                quantity: Number(canonical.quantity),
+                linkUrl: `/classic/operator/inventory?tab=returns&highlight=${canonical.id}&source=trip`,
+              })
+            }
+            return tx.orderReturn.findUnique({ where: { id: canonical.id } })
+          })
+          if (!updated) return NextResponse.json({ error: '该退货记录已被处理，请刷新后重试' }, { status: 409 })
+          await writeLog({
+            userId: user.userId, userEmail: user.email, userName: user.name,
+            action: 'UPDATE', resource: 'order_return', resourceId: canonical.id,
+            detail: `司机退货仓库核实: ${canonical.productName} × ${canonical.quantity} — ${action === 'verify' ? '核实通过' : `核实不通过(${note})`}`,
+          })
+          return NextResponse.json(serializeApi({ message: action === 'verify' ? '已核实通过，转入审核' : '已标记核实不通过', returnId: canonical.id, status: updated.status }))
+        }
       }
 
       const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]

@@ -22,6 +22,7 @@ const EXCEPTION_REASONS_ZH = ['品质问题', '数量错误', '客户拒收', '�
 const EXCEPTION_REASONS_EN = ['Quality issue', 'Wrong quantity', 'Customer refused', 'Delivery delay', 'Damaged packaging', 'Other']
 
 interface ExceptionProduct {
+  orderLineId?: string
   productId: string
   productName: string
   quantity: number
@@ -220,6 +221,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     const rest = trip.restaurants.find(r => r.restaurantId === restId)
     if (!rest) return
     setExceptionProducts(rest.items.map(item => ({
+      orderLineId: item.orderLineId,
       productId: item.productId,
       productName: item.productName,
       quantity: item.quantity,
@@ -274,6 +276,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       await apiPost<{ returns: ReturnItem[] }>(`/api/trips/${trip.id}/returns`, {
         restaurantId: exceptionModal.restId,
         returns: selected.map(p => ({
+          orderLineId: p.orderLineId,
           productId: p.productId,
           productName: p.productName,
           quantity: p.quantity,

@@ -25,8 +25,41 @@ export function useGoodsReturnData(isEn: boolean) {
         apiGet<Record<string, unknown>[]>('/api/trips'),
         apiGet<{ returns: OrderReturn[] }>('/api/order-returns'),
       ])
-      setTrips(tripsData as unknown as Trip[])
-      setOrderReturns(returnsData.returns ?? [])
+      const tripRows = tripsData as unknown as Trip[]
+      const allReturns = returnsData.returns ?? []
+      // Keep driver-originated canonical rows on the trip review UI for the existing
+      // refund flow, while the database itself stores them only once in OrderReturn.
+      for (const ret of allReturns) {
+        if (!ret.sourceTripId) continue
+        const trip = tripRows.find(row => row.id === ret.sourceTripId)
+        const restaurant = trip?.restaurants.find(row => row.restaurantId === ret.order?.restaurantId)
+        if (!restaurant) continue
+        if ((restaurant.returns ?? []).some(existing => existing.id === ret.id)) continue
+        restaurant.returns = [...(restaurant.returns ?? []), {
+          id: ret.id,
+          orderId: ret.orderId,
+          orderLineId: ret.orderLineId ?? undefined,
+          sourceTripId: ret.sourceTripId,
+          productId: ret.productId,
+          productName: ret.productName,
+          quantity: Number(ret.quantity),
+          photo: ret.photo ?? undefined,
+          unitPrice: ret.unitPrice == null ? undefined : Number(ret.unitPrice),
+          refundMode: ret.refundMode ?? undefined,
+          refundPct: ret.refundPct == null ? undefined : Number(ret.refundPct),
+          refundAmount: ret.refundAmount == null ? undefined : Number(ret.refundAmount),
+          refundNote: ret.refundNote ?? undefined,
+          lateReportNote: ret.lateReportNote ?? undefined,
+          reason: ret.reason,
+          actionType: ret.actionType,
+          status: ret.status,
+          disposition: ret.disposition,
+          exchangeOrderId: ret.exchangeOrderId,
+          createdAt: ret.createdAt,
+        }]
+      }
+      setTrips(tripRows)
+      setOrderReturns(allReturns.filter(ret => !ret.sourceTripId))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load data' : '加载数据失败'))
     } finally {

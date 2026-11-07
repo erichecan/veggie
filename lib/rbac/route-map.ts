@@ -204,7 +204,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/returns', methods: ['PUT'], permission: 'dispatch.trip.returns' },
   { pattern: '/api/trips/*/returns/warehouse-verify', methods: ['PUT'], permission: 'dispatch.trip.warehouse_verify' },
   // 20261027（退货/报废整合）：日销售中心手动登记退货，OrderReturn 表，
-  // 与上面 Trip/ReturnItem 是两条入口，共用 lib/returns-engine.ts 的处置规则，
+  // 与司机入口共用 OrderReturn 原订单行账本及 lib/returns-engine.ts 的处置规则，
   // 权限点各自独立（见 lib/rbac/catalog.ts dispatch.goods_return 模块说明）。
   // 列表不单设 read 权限点（DEV-PLAN 路由清单原文）：谁能核实或审核，就能看列表。
   { pattern: '/api/order-returns', methods: R, permission: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review'] },

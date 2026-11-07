@@ -65,6 +65,9 @@ export async function GET(req: Request) {
           }
         }
       }
+      // New driver-originated and manual returns share the OrderReturn ledger; legacy Trip JSON
+      // remains included above for historical rows until those records age out.
+      pendingReturns += await prisma.orderReturn.count({ where: { status: 'PENDING_REVIEW' } })
 
       return NextResponse.json({
         pendingQuotations,

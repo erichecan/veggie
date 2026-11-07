@@ -61,6 +61,7 @@ export async function POST(req: Request) {
         tripId: string
         restaurants: TripRestaurant[]
       }> = []
+      const settledOrderReturnIds: string[] = []
 
       for (const trip of trips) {
         const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
@@ -96,6 +97,27 @@ export async function POST(req: Request) {
           }
         }
 
+        // New driver returns use the same OrderReturn ledger as manual entries.
+        const canonicalReturns = await prisma.orderReturn.findMany({
+          where: { sourceTripId: trip.id, status: 'APPROVED' },
+          include: { order: { select: { restaurantId: true, restaurantName: true, code: true } } },
+        })
+        for (const ret of canonicalReturns) {
+          if (!customerReturns.has(ret.order.restaurantId)) {
+            customerReturns.set(ret.order.restaurantId, { customerName: ret.order.restaurantName, lines: [] })
+          }
+          customerReturns.get(ret.order.restaurantId)!.lines.push({
+            productId: ret.productId,
+            productName: ret.productName,
+            quantity: toNum(ret.quantity),
+            unitPrice: toNum(ret.unitPrice),
+            reason: ret.reason ?? null,
+            sourceOrderId: ret.orderId,
+            sourceTripId: trip.id,
+          })
+          settledOrderReturnIds.push(ret.id)
+        }
+
         if (tripModified) {
           tripUpdates.push({ tripId: trip.id, restaurants })
         }
@@ -105,21 +127,29 @@ export async function POST(req: Request) {
       // unitPrice 没有存在 OrderReturn 上（创建时只做了存在性校验），在这里按
       // orderId+productId 补查一次 OrderLine，跟登记时的查法一致。
       // 批量查（而非逐条 findFirst），同批 Trip 路径早就是这么做的。
-      const settledOrderReturnIds: string[] = []
       if (orderReturnIds.length > 0) {
         const orderReturns = await prisma.orderReturn.findMany({
-          where: { id: { in: orderReturnIds }, status: 'APPROVED' },
+          where: { id: { in: orderReturnIds, notIn: settledOrderReturnIds }, status: 'APPROVED' },
           include: { order: { select: { restaurantId: true, restaurantName: true } } },
         })
         const orderIds = [...new Set(orderReturns.map(r => r.orderId))]
-        const productIds = [...new Set(orderReturns.map(r => r.productId))]
-        const priceLines = orderIds.length > 0 ? await prisma.orderLine.findMany({
-          where: { orderId: { in: orderIds }, productId: { in: productIds } },
+        const lineIds = [...new Set(orderReturns.map(r => r.orderLineId).filter((v): v is string => Boolean(v)))]
+        const priceLines = lineIds.length > 0 ? await prisma.orderLine.findMany({
+          where: { id: { in: lineIds } },
+          select: { id: true, orderId: true, productId: true, unitPrice: true },
+        }) : []
+        const priceMap = new Map(priceLines.map(l => [l.id, l.unitPrice]))
+        const legacyPriceLines = orderReturns.filter(r => !r.orderLineId)
+        const legacyPrices = legacyPriceLines.length > 0 ? await prisma.orderLine.findMany({
+          where: { orderId: { in: [...new Set(legacyPriceLines.map(r => r.orderId))] }, productId: { in: [...new Set(legacyPriceLines.map(r => r.productId))] } },
           select: { orderId: true, productId: true, unitPrice: true },
         }) : []
-        const priceMap = new Map(priceLines.map(l => [`${l.orderId}:${l.productId}`, l.unitPrice]))
+        const legacyPriceMap = new Map(legacyPrices.map(l => [`${l.orderId}:${l.productId}`, l.unitPrice]))
 
-        const unpriced = orderReturns.filter(ret => !priceMap.has(`${ret.orderId}:${ret.productId}`))
+        const getPrice = (ret: typeof orderReturns[number]) => ret.unitPrice ?? (ret.orderLineId
+          ? priceMap.get(ret.orderLineId)
+          : legacyPriceMap.get(`${ret.orderId}:${ret.productId}`))
+        const unpriced = orderReturns.filter(ret => getPrice(ret) == null)
         if (unpriced.length > 0) {
           return NextResponse.json({
             error: `以下退货记录在原订单里找不到对应商品行，无法确定单价，已中止生成：${unpriced.map(r => r.id).join(', ')}`,
@@ -138,10 +168,10 @@ export async function POST(req: Request) {
             productId: ret.productId,
             productName: ret.productName,
             quantity: toNum(ret.quantity),
-            unitPrice: toNum(priceMap.get(`${ret.orderId}:${ret.productId}`)!),
+            unitPrice: toNum(getPrice(ret)!),
             reason: ret.reason ?? null,
             sourceOrderId: ret.orderId,
-            sourceTripId: null,
+            sourceTripId: ret.sourceTripId,
           })
           settledOrderReturnIds.push(ret.id)
         }
