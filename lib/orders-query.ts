@@ -10,6 +10,7 @@ import { salesRowScope, withRowScope } from '@/lib/row-scope'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { buildFacetWhere, type FacetDef } from '@/lib/facet-sql'
 import { parseWeekday } from '@/lib/list-filters'
+import { parseDriverDispatchSearch } from '@/lib/dispatch-search'
 import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
 
 export const ORDER_STATUSES = new Set<$Enums.OrderStatus>([
@@ -49,8 +50,43 @@ export const ORDER_FACET_DEFS: FacetDef[] = [
   ] } } } } }) },
   { key: 'driver',   label: '司机',     toClause: v => driverNameClause(v) },
   { key: 'weekday',  label: '交货星期', toClause: v => weekdayClause(v) },
+  { key: 'dispatchAssignment', label: '司机 + 批次 + 时段', toClause: v => dispatchAssignmentClause(v) },
   { key: 'dispatchBatch', label: '批次/时段', toClause: v => dispatchBatchClause(v) },
 ]
+
+/**
+ * Full natural-order search for one actual delivery assignment. Names come from both
+ * current/archived slots and wave snapshots so old deliveries remain searchable.
+ */
+async function dispatchAssignmentClause(raw: string): Promise<Record<string, unknown>> {
+  const driverRows = await prisma.$queryRaw<{ driverName: string }[]>`
+    SELECT DISTINCT trim("driverName") AS "driverName"
+      FROM "PickingWave"
+     WHERE "driverName" IS NOT NULL AND trim("driverName") <> ''
+    UNION
+    SELECT DISTINCT trim("driverName") AS "driverName"
+      FROM "DriverSlot"
+     WHERE trim("driverName") <> ''
+  `
+  const parsed = parseDriverDispatchSearch(raw, driverRows.map(row => row.driverName))
+  if (!parsed) {
+    // If this facet is selected for incomplete/ordinary text, keep normal All-search behavior.
+    return { OR: [{ restaurantName: like(raw) }, { code: like(raw) }] }
+  }
+
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT DISTINCT item->>'orderId' AS id
+      FROM "Pallet" p
+      JOIN "PickingWave" w ON w.id = p."waveId"
+      LEFT JOIN "DriverSlot" ds ON ds.id = w."driverSlotId"
+      CROSS JOIN LATERAL jsonb_array_elements(p.items::jsonb) item
+     WHERE p.seq = ${parsed.batch}
+       AND lower(COALESCE(NULLIF(w."driverName", ''), ds."driverName")) = lower(${parsed.driverName})
+       AND lower(COALESCE(NULLIF(w."timeOfDay", ''), ds."timeOfDay")) = ${parsed.timeOfDay}
+       AND item->>'orderId' IS NOT NULL
+  `
+  return { id: { in: rows.map(row => row.id) } }
+}
 
 /**
  * 配送中心的批次号来自实际托盘(Pallet.seq)，时段来自所属波次(PickingWave.timeOfDay)。

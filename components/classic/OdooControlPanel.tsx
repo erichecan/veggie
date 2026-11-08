@@ -58,6 +58,8 @@ interface OdooControlPanelProps {
   /** 传入后启用 Odoo 式分面搜索：输入关键词→下拉选维度→onFacetAdd 生成 chip */
   facetFields?: FacetField[]
   onFacetAdd?: (key: string, value: string) => void
+  /** 输入完整短语时，可把匹配的搜索维度提升为默认建议；返回 key 或 null。 */
+  smartSearchFacet?: (query: string) => string | null
   activeFilters?: ActiveFilter[]
   /** 独立的一键切换按钮（如"供货商"），点一下直接生效，不像 filterOptions 那样要先展开下拉 */
   toggleButtons?: ToggleButton[]
@@ -105,6 +107,7 @@ export default function OdooControlPanel({
   onSearchSubmit,
   facetFields,
   onFacetAdd,
+  smartSearchFacet,
   activeFilters = [],
   toggleButtons = [],
   filterOptions = [],
@@ -148,10 +151,17 @@ export default function OdooControlPanel({
   const [highlight, setHighlight] = useState(0)
   const searchBoxRef = useRef<HTMLDivElement>(null)
 
+  const suggestedFacetFields = (() => {
+    if (!facetFields || !draft.trim() || !smartSearchFacet) return facetFields ?? []
+    const smartKey = smartSearchFacet(draft.trim())
+    const smartField = smartKey ? facetFields.find(field => field.key === smartKey) : null
+    return smartField ? [smartField, ...facetFields.filter(field => field.key !== smartKey)] : facetFields
+  })()
+
   function commitFacet(idx: number) {
     const v = draft.trim()
-    if (!v || !facetFields || !onFacetAdd) return
-    const field = facetFields[idx] ?? facetFields[0]
+    if (!v || !suggestedFacetFields.length || !onFacetAdd) return
+    const field = suggestedFacetFields[idx] ?? suggestedFacetFields[0]
     if (!field) return
     // "a or b" 一次录入两个关键词：与 chip 上的显示写法对称（同维度多值 OR）
     for (const term of splitOrTerms(v)) onFacetAdd(field.key, term)
@@ -333,10 +343,10 @@ export default function OdooControlPanel({
                     return
                   }
                   if (!facetMode) { if (e.key === 'Enter') onSearchSubmit?.(); return }
-                  if (!facetOpen || !facetFields) { if (e.key === 'Enter' && draft.trim()) commitFacet(0); return }
+                  if (!facetOpen || suggestedFacetFields.length === 0) { if (e.key === 'Enter' && draft.trim()) commitFacet(0); return }
                   // 上下键循环(20261007)：在第一项「全部」按 ↑ 跳到最后一项，在最后一项按 ↓ 回到第一项
-                  if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => (h + 1) % facetFields.length) }
-                  else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => (h - 1 + facetFields.length) % facetFields.length) }
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => (h + 1) % suggestedFacetFields.length) }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => (h - 1 + suggestedFacetFields.length) % suggestedFacetFields.length) }
                   else if (e.key === 'Enter') { e.preventDefault(); commitFacet(highlight) }
                   else if (e.key === 'Escape') { setFacetOpen(false) }
                 }}
@@ -355,9 +365,9 @@ export default function OdooControlPanel({
             </div>
 
             {/* 分面下拉：Search {维度} for: {关键词} */}
-            {facetMode && facetOpen && draft.trim() && facetFields && (
+            {facetMode && facetOpen && draft.trim() && suggestedFacetFields.length > 0 && (
               <div className="absolute left-0 top-full mt-1 w-full bg-white rounded border border-gray-200 shadow-lg z-40 py-1 text-sm">
-                {facetFields.map((f, i) => (
+                {suggestedFacetFields.map((f, i) => (
                   <button
                     key={f.key}
                     onMouseEnter={() => setHighlight(i)}

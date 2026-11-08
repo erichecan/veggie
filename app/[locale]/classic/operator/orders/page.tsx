@@ -24,6 +24,7 @@ import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { parseCsv, downloadCsv } from '@/lib/csv-export'
 import { orderLineExportColumns } from '@/lib/export/columns/order-lines'
+import { parseDriverDispatchSearch } from '@/lib/dispatch-search'
 
 const PAGE_SIZE = 50
 
@@ -155,6 +156,7 @@ export default function ClassicOrdersPage() {
   const [pendingBatch, setPendingBatch] = useState<Record<string, string>>({})
   const [savingBatch, setSavingBatch] = useState(false)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
+  const [searchDriverNames, setSearchDriverNames] = useState<string[]>([])
 
   // ── Import modal(CSV 导入，镜像采购单页 purchases/page.tsx）─────────────────
   const [showImportModal, setShowImportModal] = useState(false)
@@ -164,7 +166,15 @@ export default function ClassicOrdersPage() {
   const importFileRef = useRef<HTMLInputElement>(null)
 
   function fetchDriverSlots() {
-    return apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
+    return Promise.all([
+      apiGet<DriverSlotInfo[]>('/api/driver-slots'),
+      apiGet<DriverSlotInfo[]>('/api/driver-slots?archived=true&includeInactiveUser=true').catch(() => [] as DriverSlotInfo[]),
+    ]).then(([active, archived]) => {
+      const activeRows = Array.isArray(active) ? active : []
+      const archivedRows = Array.isArray(archived) ? archived : []
+      setDriverSlots(activeRows)
+      setSearchDriverNames([...new Set([...activeRows, ...archivedRows].map(slot => slot.driverName).filter(Boolean))])
+    }).catch(() => {})
   }
   useEffect(() => { fetchDriverSlots() }, [])
   const [groupBy, setGroupBy] = useState('')
@@ -789,6 +799,7 @@ export default function ClassicOrdersPage() {
         onSearch={v => { setServerSearch(v) }}
         onSearchSubmit={() => {}}
         facetFields={localizeFacetFields(SALES_ORDER_FACET_FIELDS, isEn)}
+        smartSearchFacet={query => parseDriverDispatchSearch(query, searchDriverNames) ? 'dispatchAssignment' : null}
         onFacetAdd={addFacet}
         filterOptions={[
           { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },
