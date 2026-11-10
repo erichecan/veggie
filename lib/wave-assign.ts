@@ -181,8 +181,13 @@ export async function deletePalletForDriverSlot(slot: {
 export async function assignOrderToWave(
   orderId: string,
   driverSlotId: string,
+  transactionClient?: Prisma.TransactionClient,
 ): Promise<{ waveId: string; driverName: string } | null> {
-  const order = await prisma.order.findUnique({ where: { id: orderId } })
+  if (!transactionClient) {
+    return prisma.$transaction(tx => assignOrderToWave(orderId, driverSlotId, tx))
+  }
+  const db = transactionClient
+  const order = await db.order.findUnique({ where: { id: orderId } })
   if (!order) return null
   // 报价单(PENDING)/已取消(CANCELLED)不属于配送流程,任何调用方都不得把它放进波次。
   // ⛔ 2026-09-16 客户反馈的"撤回成报价单后还在调度台显示"就出在这里:撤回时
@@ -191,19 +196,24 @@ export async function assignOrderToWave(
   // orders/[id] PUT 便又调本函数把报价单塞回波次和托盘。守卫放在这里而不是某个调用方,
   // 才能保证"报价单不在波次里"这条不变量对所有入口成立。确认转 CONFIRMED 后照常可分配。
   if (order.status === 'PENDING' || order.status === 'CANCELLED') return null
-  const slot = await prisma.driverSlot.findUnique({ where: { id: driverSlotId } })
+  const slot = await db.driverSlot.findUnique({ where: { id: driverSlotId } })
   if (!slot) return null
 
   const waveDate = order.deliveryDate ? dateOnlyUTC(order.deliveryDate) : todayUTC()
-  let wave = await prisma.pickingWave.findFirst({
+  const waveLockKey = `${waveDate.toISOString().slice(0, 10)}|${slot.driverName}|${slot.timeOfDay}`
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${waveLockKey}))`
+  let wave = await db.pickingWave.findFirst({
     where: { waveDate, driverName: slot.driverName, timeOfDay: slot.timeOfDay, dispatchedAt: null },
   })
-  if (wave) await assertWaveNotPickLocked(wave.id)
+  if (wave) {
+    await assertWaveNotPickLocked(wave.id, db)
+    await assertWaveNotDispatched(wave.id, db)
+  }
   if (!wave) {
     const dateLabel = waveDate.toISOString().slice(0, 10)
     const waveName = `${dateLabel} ${slot.driverName} ${slot.timeOfDay.toUpperCase()}`
     try {
-      wave = await prisma.pickingWave.create({
+      wave = await db.pickingWave.create({
         data: {
           name: waveName,
           waveDate,
@@ -226,25 +236,25 @@ export async function assignOrderToWave(
       // (2026-09-05 生产事故:两个同一毫秒的分配请求各建了一条「#3 YANG」,其中一单被隔离进
       // 界面找不到的重复波次,订正见 scripts/fix-orphan-and-duplicate-wave-20260906.ts)。
       if ((e as { code?: string }).code !== 'P2002') throw e
-      const raced = await prisma.pickingWave.findFirst({
+      const raced = await db.pickingWave.findFirst({
         where: { waveDate, driverName: slot.driverName, timeOfDay: slot.timeOfDay, dispatchedAt: null },
       })
       if (!raced) throw e
       wave = raced
-      await assertWaveNotPickLocked(wave.id)
+      await assertWaveNotPickLocked(wave.id, db)
     }
   }
 
-  const otherWaves = await prisma.pickingWave.findMany({
+  const otherWaves = await db.pickingWave.findMany({
     where: { id: { not: wave.id }, orderIds: { has: orderId } },
   })
   for (const ow of otherWaves) {
-    await assertWaveNotPickLocked(ow.id)
-    await assertWaveNotDispatched(ow.id)
+    await assertWaveNotPickLocked(ow.id, db)
+    await assertWaveNotDispatched(ow.id, db)
   }
   const finalWave = wave
 
-  await prisma.$transaction(async (tx) => {
+  const apply = async (tx: Prisma.TransactionClient) => {
     // 行锁：与 app/api/waves/[id]/assign/route.ts 同一处竞态——两次单单分配（如调度台连续
     // 拖两单进同一司机同一时段）若各自基于旧快照计算 merged/remaining，后提交的一次会把先
     // 提交那次刚并入的订单 id 整体覆盖掉，Pallet.items 各自独立写入不受影响，于是出现
@@ -256,14 +266,14 @@ export async function assignOrderToWave(
     for (const ow of otherWaves) {
       const freshOtherWave = await tx.pickingWave.findUniqueOrThrow({ where: { id: ow.id }, select: { orderIds: true } })
       const remaining = (freshOtherWave.orderIds as string[]).filter((oid) => oid !== orderId)
-      const zones = await buildZonesByRestaurant(remaining)
+      const zones = await buildZonesByRestaurant(remaining, tx)
       await tx.pickingWave.update({ where: { id: ow.id }, data: { orderIds: remaining, zones } })
       await removeOrderFromPalletsInWave(ow.id, orderId, tx)
     }
 
     const freshWave = await tx.pickingWave.findUniqueOrThrow({ where: { id: finalWave.id }, select: { orderIds: true } })
     const merged = Array.from(new Set([...(freshWave.orderIds as string[]), orderId]))
-    const targetZones = await buildZonesByRestaurant(merged)
+    const targetZones = await buildZonesByRestaurant(merged, tx)
     // driverSlotId 快照随最近一次指派更新——一个波次现在可能横跨多个 batchNum,这个字段只作
     // "任取一个属于本波次的 DriverSlot"的兼容读兜底(打印/交接摘要等未接 Pallet 的旧消费方用),
     // 精确到"这单在第几个托盘"的口径一律走 Pallet,不读这个字段。
@@ -273,7 +283,8 @@ export async function assignOrderToWave(
     await tx.order.updateMany({ where: { id: orderId, status: 'CONFIRMED' }, data: { status: 'WAVE_ASSIGNED' } })
     await removeOrderFromPalletsInWave(finalWave.id, orderId, tx)
     await putOrderIntoPallet(finalWave.id, slot.batchNum, order, tx)
-  })
+  }
+  await apply(db)
 
   return { waveId: wave.id, driverName: slot.driverName }
 }

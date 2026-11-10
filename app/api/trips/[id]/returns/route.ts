@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { recalcTripDriverCommission } from '@/lib/commission'
+import { createOrderReturn, OrderReturnInputError } from '@/lib/order-returns'
 import {
   buildReturnStockMoves,
   postReturnStockMoves,
@@ -58,6 +59,45 @@ export async function GET(
       }
     }
 
+    const canonical = await prisma.orderReturn.findMany({
+      where: { sourceTripId: id },
+      include: { order: { select: { restaurantId: true, restaurantName: true } } },
+      orderBy: { createdAt: 'asc' },
+    })
+    for (const ret of canonical) {
+      allReturns.push({
+        id: ret.id,
+        orderId: ret.orderId,
+        orderLineId: ret.orderLineId ?? undefined,
+        sourceTripId: id,
+        productId: ret.productId,
+        productName: ret.productName,
+        quantity: Number(ret.quantity),
+        photo: ret.photo ?? undefined,
+        unitPrice: ret.unitPrice == null ? undefined : Number(ret.unitPrice),
+        refundMode: ret.refundMode === 'fixed' ? 'fixed' : ret.refundMode === 'pct' ? 'pct' : undefined,
+        refundPct: ret.refundPct == null ? undefined : Number(ret.refundPct),
+        refundAmount: ret.refundAmount == null ? undefined : Number(ret.refundAmount),
+        refundNote: ret.refundNote ?? undefined,
+        reason: ret.reason ?? undefined,
+        actionType: ret.actionType === 'exchange' ? 'exchange' : 'return',
+        status: ret.status,
+        disposition: ret.disposition ?? undefined,
+        exchangeOrderId: ret.exchangeOrderId ?? undefined,
+        lateReportNote: ret.lateReportNote ?? undefined,
+        warehouseVerifiedById: ret.warehouseVerifiedById ?? undefined,
+        warehouseVerifiedByName: ret.warehouseVerifiedByName ?? undefined,
+        warehouseVerifiedAt: ret.warehouseVerifiedAt?.toISOString(),
+        warehouseNote: ret.warehouseNote ?? undefined,
+        createdAt: ret.createdAt.toISOString(),
+        approvedAt: ret.approvedAt?.toISOString(),
+        settledAt: ret.settledAt?.toISOString(),
+        restaurantId: ret.order.restaurantId,
+        restaurantName: ret.order.restaurantName,
+        tripId: id,
+      })
+    }
+
     return NextResponse.json(serializeApi({
       tripId: trip.id,
       tripName: trip.name,
@@ -101,6 +141,7 @@ export async function POST(
       const { restaurantId, returns: returnItems } = body as {
         restaurantId: string
         returns: Array<{
+          orderLineId: string
           productId: string
           productName: string
           quantity: number
@@ -155,53 +196,32 @@ export async function POST(
       }
 
       const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
-      const rIdx = restaurants.findIndex(r => r.restaurantId === restaurantId)
-      if (rIdx === -1) {
+      const restaurant = restaurants.find(r => r.restaurantId === restaurantId)
+      if (!restaurant) {
         return NextResponse.json(
           { error: `行程中未找到客户 ${restaurantId}` },
           { status: 404 },
         )
       }
-
-      const restaurant = restaurants[rIdx]
-
-      // 查找商品的单价（从 items 中获取，用于后续退款计算）
-      const itemPriceMap = new Map(
-        (restaurant.items ?? []).map((it: OrderItem) => [it.productId, it.price]),
-      )
-
-      // 构建 ReturnItem 记录。20260922：初始状态改为 WAREHOUSE_PENDING——次日仓库
-      // 核实实物在不在车上，核实通过才转 PENDING_REVIEW 进入现有销售/运营审核队列。
-      const now = new Date().toISOString()
-      const newReturns: ReturnItem[] = returnItems.map(ri => ({
-        // 稳定 id：同一商品可能被多次分别上报（不同批次的异常，或历史订单补报），
-        // 仓库核实/销售审核靠这个 id 精确定位到具体这一条，不靠 productId 猜
-        id: crypto.randomUUID(),
-        productId: ri.productId,
-        productName: ri.productName,
-        quantity: ri.quantity,
-        reason: ri.reason,
-        actionType: ri.actionType ?? 'return',
-        photo: ri.photo,
-        lateReportNote: ri.lateReportNote?.trim() || undefined,
-        unitPrice: itemPriceMap.get(ri.productId),
-        status: 'WAREHOUSE_PENDING' as const,
-        restaurantId,
-        restaurantName: restaurant.restaurantName,
-        tripId: id,
-        createdAt: now,
-      }))
-
-      // 追加到 restaurant.returns
-      const existingReturns = restaurant.returns ?? []
-      restaurants[rIdx] = {
-        ...restaurant,
-        returns: [...existingReturns, ...newReturns],
-      }
-
-      await prisma.trip.update({
-        where: { id },
-        data: { restaurants: restaurants as never },
+      const newReturns = await prisma.$transaction(async tx => {
+        const created = []
+        for (const ri of returnItems) {
+          if (!ri.orderLineId) throw new OrderReturnInputError(`商品「${ri.productName}」缺少原订单行信息`)
+          const sourceItem = restaurant.items.find(item => item.orderLineId === ri.orderLineId && item.productId === ri.productId)
+          const orderId = sourceItem?.orderId && restaurant.orderIds.includes(sourceItem.orderId) ? sourceItem.orderId : undefined
+          if (!orderId) throw new OrderReturnInputError(`商品「${ri.productName}」不属于当前客户订单`, 404)
+          created.push(await createOrderReturn(tx, {
+            orderId,
+            orderLineId: ri.orderLineId,
+            quantity: ri.quantity,
+            reason: ri.reason,
+            actionType: ri.actionType,
+            photo: ri.photo,
+            lateReportNote: ri.lateReportNote,
+            sourceTripId: id,
+          }, user))
+        }
+        return created
       })
 
       await writeLog({
@@ -214,9 +234,16 @@ export async function POST(
         message: `已提交 ${returnItems.length} 项退货`,
         restaurantId,
         restaurantName: restaurant.restaurantName,
-        returns: newReturns,
+        returns: newReturns.map(ret => ({
+          ...ret,
+          quantity: Number(ret.quantity),
+          unitPrice: ret.unitPrice == null ? undefined : Number(ret.unitPrice),
+          orderLineId: ret.orderLineId,
+          status: ret.status,
+        })),
       }))
     } catch (error) {
+      if (error instanceof OrderReturnInputError) return NextResponse.json({ error: error.message }, { status: error.status })
       console.error('[POST /api/trips/[id]/returns]', error)
       return NextResponse.json({ error: '提交退货失败' }, { status: 500 })
     }
@@ -290,6 +317,82 @@ export async function PUT(
       const trip = await prisma.trip.findUnique({ where: { id } })
       if (!trip) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+      }
+
+      const reviewIds = reviews.map(r => r.returnId).filter((value): value is string => Boolean(value))
+      const canonicalRows = reviewIds.length === reviews.length
+        ? await prisma.orderReturn.findMany({ where: { id: { in: reviewIds }, sourceTripId: id } })
+        : []
+      if (canonicalRows.length > 0) {
+        if (canonicalRows.length !== reviews.length) {
+          return NextResponse.json({ error: '部分退货记录已过期或不属于此行程，请刷新后重试' }, { status: 409 })
+        }
+        let approved = 0
+        let rejected = 0
+        let sellable = 0
+        let scrap = 0
+        await prisma.$transaction(async tx => {
+          for (const review of reviews) {
+            const ret = canonicalRows.find(row => row.id === review.returnId)!
+            if (ret.status !== 'PENDING_REVIEW') throw new Error('RETURN_ALREADY_REVIEWED')
+            await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${ret.orderId} FOR UPDATE`
+            const changed = await tx.orderReturn.updateMany({
+              where: { id: ret.id, status: 'PENDING_REVIEW' },
+              data: review.action === 'approve'
+                ? {
+                    status: 'APPROVED',
+                    disposition: review.disposition,
+                    refundMode: review.refundMode,
+                    refundPct: review.refundPct,
+                    refundAmount: review.refundAmount ?? calculateRefundAmount(toNum(ret.unitPrice), toNum(ret.quantity), review),
+                    refundNote: review.refundNote,
+                    exchangeOrderId: ret.actionType === 'exchange' ? review.exchangeOrderId?.trim() || undefined : undefined,
+                    approvedById: user.userId,
+                    approvedByName: user.name,
+                    approvedAt: new Date(),
+                  }
+                : { status: 'REJECTED', refundNote: review.refundNote, approvedById: user.userId, approvedByName: user.name, approvedAt: new Date() },
+            })
+            if (!changed.count) throw new Error('RETURN_ALREADY_REVIEWED')
+            if (review.action === 'approve') {
+              const line = ret.orderLineId
+                ? await tx.orderLine.findUnique({ where: { id: ret.orderLineId }, select: { uomId: true } })
+                : await tx.orderLine.findFirst({ where: { orderId: ret.orderId, productId: ret.productId }, select: { uomId: true } })
+              const order = await tx.order.findUniqueOrThrow({ where: { id: ret.orderId }, select: { code: true, restaurantId: true, restaurantName: true } })
+              const disposition = review.disposition as 'SELLABLE' | 'SCRAP'
+              const moves = buildReturnStockMoves({
+                productId: ret.productId,
+                productName: ret.productName,
+                quantity: toNum(ret.quantity),
+                disposition,
+                scrapReason: review.scrapReason,
+                reason: ret.reason ?? undefined,
+                uomId: line?.uomId ?? null,
+                partnerId: order.restaurantId,
+                partnerName: order.restaurantName,
+                sourceType: 'ORDER_RETURN',
+                sourceId: ret.id,
+                sourceRef: order.code,
+              })
+              await postReturnStockMoves(tx, moves, user)
+              await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, orderLineId: ret.orderLineId ?? undefined, productId: ret.productId, reduceQty: toNum(ret.quantity) }])
+              await syncOrderGoodsReturnStatus(tx, [{ orderId: ret.orderId, status: 'APPROVED', productName: ret.productName, quantity: toNum(ret.quantity), disposition }], user)
+              approved++
+              if (disposition === 'SELLABLE') sellable++
+              else scrap++
+            } else {
+              await syncOrderGoodsReturnStatus(tx, [{ orderId: ret.orderId, status: 'REJECTED', productName: ret.productName, quantity: toNum(ret.quantity) }], user)
+              rejected++
+            }
+          }
+          await recalcTripDriverCommission(id, tx)
+        })
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'trip', resourceId: id,
+          detail: `退货审核: 通过${approved}项(可再售${sellable}/报废${scrap}), 拒绝${rejected}项`,
+        })
+        return NextResponse.json(serializeApi({ message: `已审核 ${reviews.length} 项退货`, approved, rejected, sellable, scrap }))
       }
 
       const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]

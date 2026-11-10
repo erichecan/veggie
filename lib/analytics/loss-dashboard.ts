@@ -2,21 +2,17 @@
  * 损耗与退货仪表盘 · 数据层
  * ============================================================================
  * 背景（见 docs 20260709 退货处置审计）：仓库报废损耗（StockMove type=SCRAP）与客户
- * 退货（Trip.restaurants[].returns[] JSON）长期是两套互不相通的数据。P0 修复给每条
- * 已审批退货加了 disposition（SELLABLE=可再售回补库存 / SCRAP=报废），SCRAP 处置会
+ * 历史司机退货保存在 Trip.restaurants[].returns[] JSON；当前司机与手工退货统一保存于
+ * OrderReturn。每条已审批退货都记录 disposition（SELLABLE=可再售回补库存 / SCRAP=报废），SCRAP 处置会
  * 额外生成一笔 StockMove(type=SCRAP, sourceType 以 _SCRAP 结尾)，使其自然落入既有报废
  * 损耗统计；但"退货回收率""退货去向"这类只有退货语境才能回答的问题，仍必须回到
  * 退货记录本身扫描 disposition 字段才能算——StockMove 本身分不清一笔 SCRAP 是客退报废
  * 还是仓库过期报废（虽然可以用 sourceType 以 RETURN_SCRAP 结尾反查客退报废子集，见
  * getLossTrend 的 returnScrapQty）。
  *
- * 退货有两条入库路径（20261027 退货/报废整合统一到 lib/returns-engine.ts 共用处置逻辑，
- * 但记录各自落自己的表，没有合并成一张）：Trip.restaurants[].returns[]（司机端上报，
- * JSON，历史遗留）与 OrderReturn（日销售中心手动登记，关系表，M3 新增）。本文件的
- * getDispositionCounts/getPendingReturnCount 两条路径都要查，漏查 OrderReturn 会导致
- * "退货回收率""待处置条数"只反映司机上报那一半（已修复，见 scanOrderReturnsForDisposition）；
- * getScrapValueSum/getLossReasonBreakdown/getLossStageBreakdown 直接查 StockMove
- * type=SCRAP 不分来源，两条路径天然都覆盖，不需要这层合并。
+ * 新司机上报和手动登记统一写 OrderReturn。Trip.restaurants[].returns[] 仅含历史司机记录，
+ * 因此 getDispositionCounts/getPendingReturnCount 仍同时扫描历史 JSON 与当前账本，避免
+ * 迁移前记录消失；getScrapValueSum 等直接查 StockMove type=SCRAP，无需区分入口。
  *
  * 已知限制（不在本次范围内修复）：
  *   - Trip 侧仍只能整表扫描 Trip.restaurants JSON，量大时有性能代价；
@@ -126,11 +122,10 @@ async function scanReturns(tripWhere?: { createdAt?: { lt: Date } }): Promise<Sc
 }
 
 /**
- * OrderReturn 表（日销售中心手动登记，20261027 M3）按去向/状态汇总——与 scanReturns
+ * OrderReturn 表（当前统一退货账本）按去向/状态汇总——与历史 scanReturns
  * 同口径：disposition 已写入用 approvedAt 作生效日期，否则用 createdAt（OrderReturn
  * 是关系表直接有 createdAt 列，不需要像 Trip JSON 那样 fallback 到父记录时间）。
- * 两条入库路径（Trip/ReturnItem 司机上报 + OrderReturn 手动登记）状态机字面值完全一致
- * （WAREHOUSE_PENDING/PENDING_REVIEW/APPROVED/REJECTED/SETTLED），直接复用同一判断逻辑。
+ * 司机和手工入口共享状态值（WAREHOUSE_PENDING/PENDING_REVIEW/APPROVED/REJECTED/SETTLED）。
  */
 async function scanOrderReturnsForDisposition(before: Date): Promise<Array<{
   quantity: unknown

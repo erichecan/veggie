@@ -21,6 +21,7 @@ import { fetchProductSequences } from './product-sequence'
 import { fetchUomSequences, resolveUomSequence } from './uom-sequence'
 import { uomConversionKey } from './uom-conversion'
 import { loadUomConversionMap } from './uom-conversion-loader'
+import { compareDispatchPrintableOrders } from './dispatch-ordering'
 import {
   type PrintContentFilter,
   describePrintFilter,
@@ -336,6 +337,14 @@ export async function loadDispatchPrintData(
     if (orders.length === 0) return null
   }
 
+  // The list UI has a user-selectable sort, but the print output must be stable and
+  // follow actual pallet assignment: driver → AM/PM → pallet number.
+  const waveDisplayMap = await getOrderWaveDisplayMap(orders.map(o => o.id))
+  orders.sort((a, b) => compareDispatchPrintableOrders(
+    { driverBatchLabel: waveDisplayMap[a.id] ?? null, customerName: a.restaurantName, code: a.code },
+    { driverBatchLabel: waveDisplayMap[b.id] ?? null, customerName: b.restaurantName, code: b.code },
+  ))
+
   // 截断保护：单批次累积大量历史订单时，避免一次渲染上千页发票
   const maxOrders = (allBatches || multiMode) ? MAX_PRINT_ORDERS_ALL : MAX_PRINT_ORDERS
   const totalMatched = orders.length
@@ -353,7 +362,7 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [uomAttrMap, productTypeMap, productUomAttrMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
+  const [uomAttrMap, productTypeMap, productUomAttrMap, invoiceNoMap, adjustmentTotalMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
     loadUomPickAttrMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductUomPickAttrMap(productIds),
@@ -361,9 +370,6 @@ export async function loadDispatchPrintData(
     // 客户应付总额 = totalAmount + 调整合计（折扣/配送费/差价修正，20260913），
     // 只在整单打印（未按商品筛选）时叠加，见下方 orderTotal()。
     loadAdjustmentTotalMap(orders.map(o => o.id)),
-    // 筛选打印/全部打印可能横跨多个司机,trip 级 driverName 是空的——每单实际司机身份
-    // 只能按单查(与销售单列表司机列同一 SSOT),见 TripOrder.driverBatchLabel。
-    getOrderWaveDisplayMap(orders.map(o => o.id)),
     // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板拿不到数据库，在这里附上。
     fetchProductSequences(productIds),
     loadUomConversionMap(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),

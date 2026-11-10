@@ -103,6 +103,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const [amCollapsed, setAmCollapsed] = useState(false)
   const [pmCollapsed, setPmCollapsed] = useState(false)
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set())
+  // 托盘可单独收起，长订单列表不再挡住同一司机卡片底部的托盘落点。
+  const [collapsedPallets, setCollapsedPallets] = useState<Set<string>>(new Set())
   // 卡片内 订单视图/托盘视图 切换,按(司机+时段)记忆
   const [viewMode, setViewMode] = useState<Record<string, 'order' | 'pallet'>>({})
   // 顶部统计卡点击联动:右侧车次区/左侧待分配竖条的滚动锚点 + 左侧短暂高亮
@@ -486,6 +488,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       ? groupSlots.filter(slot => wave.pallets.some(p => p.seq === slot.batchNum)
         || (!wave.dispatchedAt && !wave.completedAt && !slot.id.startsWith('wave-only:')))
       : assignableSlots
+    const palletCollapseKeys = renderSlots.map(slot => `${wave.id}::${slot.id}`)
+    const allPalletsCollapsed = palletCollapseKeys.length > 0 && palletCollapseKeys.every(palletKey => collapsedPallets.has(palletKey))
     const canAssign = assignableSlots.length > 0
     // 没手动切换过视图时：0 单默认订单视图(卡片显示"暂无订单"，整卡看起来是空的，
     // 避免每个托盘都画空框造成"明明没订单却有一堆批次"的错觉)；有单默认托盘视图(方便装车)。
@@ -672,12 +676,32 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 
           {mode === 'pallet' && (
             <div className="flex flex-col gap-1.5">
+              {renderSlots.length > 1 && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setCollapsedPallets(previous => {
+                      const next = new Set(previous)
+                      for (const palletKey of palletCollapseKeys) {
+                        if (allPalletsCollapsed) next.delete(palletKey)
+                        else next.add(palletKey)
+                      }
+                      return next
+                    })}
+                    className="px-2 py-1 rounded-md text-[10px] font-medium text-gray-500 hover:text-purple-700 hover:bg-purple-50"
+                  >{allPalletsCollapsed
+                    ? (isEn ? '▾ Expand all pallets' : '▾ 展开全部托盘')
+                    : (isEn ? '▴ Collapse all pallets' : '▴ 折叠全部托盘')}
+                  </button>
+                </div>
+              )}
               {renderSlots.map(slot => {
                 const pallet = palletOf(slot)
                 const orderIds = pallet ? [...new Set(pallet.items.map(it => it.orderId))] : []
                 const palletOrders = orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
                 const pm = ordersMetrics(palletOrders)
                 const dragKey = `${wave.id}::${slot.id}`
+                const palletCollapsed = collapsedPallets.has(dragKey)
                 const over = !dispatched && !locked && dragOverPallet === dragKey
                 return (
                   <div
@@ -689,6 +713,20 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     onDrop={e => { if (!slot.id.startsWith('wave-only:')) dropToPallet(e, wave, slot) }}
                   >
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-[11px] font-semibold">
+                      <button
+                        type="button"
+                        aria-expanded={!palletCollapsed}
+                        onClick={e => {
+                          e.stopPropagation()
+                          setCollapsedPallets(previous => {
+                            const next = new Set(previous)
+                            next.has(dragKey) ? next.delete(dragKey) : next.add(dragKey)
+                            return next
+                          })
+                        }}
+                        className="w-5 h-5 flex-none rounded text-gray-400 hover:text-purple-700 hover:bg-purple-50"
+                        title={palletCollapsed ? (isEn ? 'Expand pallet' : '展开托盘') : (isEn ? 'Collapse pallet' : '折叠托盘')}
+                      >{palletCollapsed ? '▸' : '▾'}</button>
                       <span className="w-[18px] h-[18px] rounded flex items-center justify-center text-white text-[10px] flex-none" style={{ background: PALLET_BLUE }}>{slot.batchNum}</span>
                       {/* 客户习惯叫法：序号+am/pm+司机名(与销售单列表 DriverSlotCombobox 的 slotLabel 同格式)，不叫"托盘N" */}
                       <span className="flex-1 min-w-0 text-gray-700 truncate">{slot.batchNum} {slot.timeOfDay} {slot.driverName}</span>
@@ -703,12 +741,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                         >✕</button>
                       )}
                     </div>
-                    <div className="p-1.5 flex flex-col gap-1.5 min-h-[34px]">
-                      {palletOrders.length === 0 && <div className="text-center text-[10px] text-gray-300 py-2">{isEn ? 'Drag an order to this pallet' : '拖订单到这个托盘'}</div>}
-                      {palletOrders.map(o => (
-                        <OrderChip key={o.id} order={o} isEn={isEn} {...chipDragProps(o.id, wave.id)} />
-                      ))}
-                    </div>
+                    {!palletCollapsed && (
+                      <div className="p-1.5 flex flex-col gap-1.5 min-h-[34px]">
+                        {palletOrders.length === 0 && <div className="text-center text-[10px] text-gray-300 py-2">{isEn ? 'Drag an order to this pallet' : '拖订单到这个托盘'}</div>}
+                        {palletOrders.map(o => (
+                          <OrderChip key={o.id} order={o} isEn={isEn} {...chipDragProps(o.id, wave.id)} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

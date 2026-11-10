@@ -37,7 +37,7 @@ function sortOrdersByDriver<T extends { id: string; driverSlot?: { id: string; b
 }
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { nextOrderCode } from '@/lib/order-code'
-import { syncOrderStock } from '@/lib/order-stock'
+import { confirmOrdersInTransaction } from '@/lib/order-confirmation'
 import { notifyLowStockAfterConfirm } from '@/lib/notify'
 
 const PAYMENT_METHODS = new Set<$Enums.PaymentMethod>(['ONLINE', 'CASH'])
@@ -361,8 +361,7 @@ export async function POST(req: Request) {
                 restaurantName,
                 items: toOrderItems(linesForPersist) as unknown as object,
                 totalAmount: giftAdjustedTotalAmount,
-                status: normalizeStatus(data.status),
-                ...(normalizeStatus(data.status) === 'CONFIRMED' ? { confirmationDate: now } : {}),
+                status: normalizeStatus(data.status) === 'CONFIRMED' ? 'PENDING' : normalizeStatus(data.status),
                 paymentMethod: normalizePaymentMethod(data.paymentMethod),
                 pricelistId,
                 priceType,
@@ -409,14 +408,35 @@ export async function POST(req: Request) {
               },
             })
 
-            // 与 PUT 确认走同一个函数（lib/order-stock.ts）。20261015 起确认不扣在手量，货离仓才扣
-            // （与采购对称）；这里调用保证两条确认路径行为完全一致
-            if (orderCreated.status === 'CONFIRMED') {
-              await syncOrderStock(tx, orderCreated.id, {
-                movedAt: orderCreated.deliveryDate ?? now, userId: user.userId, createdBy: user.name ?? user.email,
-              })
-            }
+            await tx.orderAuditLog.create({
+              data: {
+                orderId: orderCreated.id,
+                userId: user.userId,
+                action: 'created',
+                totalBefore: null,
+                totalAfter: toNum(orderCreated.totalAmount),
+                changedFields: {
+                  status: { before: null, after: String(orderCreated.status) },
+                  itemCount: lines.length,
+                  lineChanges: {
+                    added: linesForPersist.map(l => ({
+                      productName: l.productName,
+                      qty: l.quantity,
+                      unitPrice: l.finalUnitPrice,
+                    })),
+                    deleted: [],
+                    modified: [],
+                  },
+                },
+              },
+            })
 
+            // Direct-confirm creation enters the same confirmation service before
+            // this transaction commits, so lines, state, dispatch, and slip stay atomic.
+            if (normalizeStatus(data.status) === 'CONFIRMED') {
+              await confirmOrdersInTransaction(tx, [orderCreated.id], user)
+              return tx.order.findUniqueOrThrow({ where: { id: orderCreated.id } })
+            }
             return orderCreated
           })
           break // 成功
@@ -436,40 +456,9 @@ export async function POST(req: Request) {
       }
 
       // 直接确认的单：补上 PUT 确认时会做的送货单与低库存提醒（以前这条路径都漏了）
-      if (order.status === 'CONFIRMED') {
-        await prisma.deliverySlip.create({
-          data: { orderId: order.id, customerId: order.restaurantId, customerName: order.restaurantName, deliveryDate: order.deliveryDate ?? null },
-        }).catch((e: unknown) => console.error('[DeliverySlip create on POST confirm]', e))
+      if (['CONFIRMED', 'WAVE_ASSIGNED'].includes(String(order.status))) {
         await notifyLowStockAfterConfirm(linesForPersist.map(l => l.productId), order.code ?? order.id).catch(() => {})
       }
-
-      // 写订单审计日志（action='created'）—— 时间线起点
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const prismaAny = prisma as any
-      await prismaAny.orderAuditLog.create({
-        data: {
-          orderId: order.id,
-          userId: user.userId,
-          action: 'created',
-          totalBefore: null,
-          totalAfter: toNum(order.totalAmount),
-          changedFields: {
-            status: { before: null, after: String(order.status) },
-            itemCount: lines.length,
-            lineChanges: {
-              // 单价记落库值（linesForPersist 已按 isGift 归零），不能记引擎权威价——
-              // 会重现 20260814 那次"日志记了根本没发生的价格"事故
-              added: linesForPersist.map(l => ({
-                productName: l.productName,
-                qty: l.quantity,
-                unitPrice: l.finalUnitPrice,
-              })),
-              deleted: [],
-              modified: [],
-            },
-          },
-        },
-      }).catch((e: unknown) => console.error('[OrderAuditLog created]', e))
 
       await writeLog({
         userId: user.userId,

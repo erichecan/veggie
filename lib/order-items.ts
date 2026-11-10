@@ -15,6 +15,8 @@ import { serializeApi } from './api-serializer'
 
 /** OrderLine(已 serializeApi,Decimal 已转 number)→ 旧 OrderItem JSON 结构 */
 type LineLike = {
+  id?: string
+  orderId?: string
   productId: string
   productName: string
   spec?: string | null
@@ -39,6 +41,8 @@ const num = (v: unknown): number => {
 
 export function lineToOrderItem(l: LineLike): OrderItem {
   return {
+    orderLineId: l.id,
+    orderId: l.orderId,
     productId: l.productId,
     productName: l.productName,
     spec: l.spec ?? '',

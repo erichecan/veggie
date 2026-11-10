@@ -4,10 +4,11 @@ import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { syncOrderStock } from '@/lib/order-stock'
 import { toNum, round2 } from '@/lib/decimal-helpers'
-import { assignOrderToWave, removeOrderFromAllWaves } from '@/lib/wave-assign'
+import { removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
+import { confirmOrdersInTransaction } from '@/lib/order-confirmation'
 
 /**
  * POST /api/orders/bulk
@@ -256,50 +257,21 @@ export async function POST(req: Request) {
         }
 
       } else if (action === 'confirm') {
-        const pendingOrders = before.filter(o => String(o.status).toUpperCase() === 'PENDING')
-        const pendingIds = pendingOrders.map(o => o.id)
-        if (pendingIds.length === 0) {
-          return NextResponse.json({ error: '选中订单中没有待处理状态的订单' }, { status: 400 })
+        if (before.length !== ids.length) {
+          return NextResponse.json({ error: '所选订单中有记录不存在；批量确认未执行' }, { status: 404 })
         }
-
-        await prisma.order.updateMany({
-          where: { id: { in: pendingIds } },
-          data: { status: 'CONFIRMED', confirmationDate: new Date() },
-        })
-        // 库存占用与单单确认走同一个函数（lib/order-stock.ts）
-        for (const ordId of pendingIds) {
-          await prisma.$transaction(tx => syncOrderStock(tx, ordId, {
-            reason: '批量确认占用库存', userId: user.userId, createdBy: user.name ?? user.email,
-          }), { maxWait: 10000, timeout: 60000 })
-          // 报价阶段选的 DriverSlot 是预安排意向；批量确认时同步到配送中心真实读取的 wave。
-          const preassignedSlotId = pendingOrders.find(o => o.id === ordId)?.driverSlotId
-          if (preassignedSlotId) {
-            try {
-              await assignOrderToWave(ordId, preassignedSlotId)
-            } catch (error) {
-              // 目标司机波次已锁定/出发时，不留下“确认成功但没有派车”的半完成状态。
-              await prisma.order.update({ where: { id: ordId }, data: { status: 'PENDING', confirmationDate: null } }).catch(() => {})
-              throw error
-            }
-          }
+        const invalid = before.filter(o => String(o.status).toUpperCase() !== 'PENDING')
+        if (invalid.length > 0) {
+          return NextResponse.json({
+            error: `批量确认要求所选订单全部为待确认状态；未执行。状态不符：${invalid.map(o => o.id).join('、')}`,
+          }, { status: 409 })
         }
-        detail = `批量确认 ${pendingIds.length} 张报价单`
-        affectedOrders = pendingOrders.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
-
-        // Write audit logs for confirmed orders
-        await Promise.all(affectedOrders.map(o =>
-          prismaAny.orderAuditLog.create({
-            data: {
-              orderId: o.id,
-              userId: user.userId,
-              action: 'confirmed',
-              changedFields: {
-                detail: `批量确认操作`,
-                status: { before: o.statusBefore, after: 'CONFIRMED' },
-              },
-            },
-          }).catch((e: unknown) => console.error('[BulkAudit confirm]', e))
-        ))
+        const pendingIds = before.map(o => o.id)
+        await prisma.$transaction(async tx => {
+          await confirmOrdersInTransaction(tx, pendingIds, user)
+        }, { maxWait: 10000, timeout: 60000 })
+        detail = `批量确认 ${pendingIds.length} 张报价单（整批成功）`
+        affectedOrders = before.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
 
       } else if (action === 'start_delivery') {
         const confirmedOrders = before.filter(o => String(o.status).toUpperCase() === 'CONFIRMED')

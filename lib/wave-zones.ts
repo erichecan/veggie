@@ -24,10 +24,13 @@ export interface Zone {
  * 按餐厅分组生成拣货分区快照（zones）。
  * 从 assign/unassign 路由中抽出的共享实现，供波次分配相关写入点复用（DRY）。
  */
-export async function buildZonesByRestaurant(orderIds: string[]): Promise<Prisma.InputJsonValue> {
+export async function buildZonesByRestaurant(
+  orderIds: string[],
+  db: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<Prisma.InputJsonValue> {
   if (orderIds.length === 0) return [] as Prisma.InputJsonValue
 
-  const orders = await prisma.order.findMany({
+  const orders = await db.order.findMany({
     where: { id: { in: orderIds } },
   })
 
@@ -37,7 +40,7 @@ export async function buildZonesByRestaurant(orderIds: string[]): Promise<Prisma
     for (const item of items) allProductIds.add(item.productId)
   }
 
-  const products = await prisma.product.findMany({
+  const products = await db.product.findMany({
     where: { id: { in: Array.from(allProductIds) } },
     select: { id: true, images: true, uom: { select: { name: true } } },
   })

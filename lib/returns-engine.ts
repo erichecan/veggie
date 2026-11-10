@@ -8,8 +8,8 @@ import { Prisma } from '@/lib/generated/prisma/client'
 /**
  * 退货处置共用逻辑（20261027 从 app/api/trips/[id]/returns/route.ts 抽取）。
  *
- * Trip/ReturnItem（司机端上报）与 OrderReturn（日销售中心手动登记）两条入库路径
- * 共用同一套「disposition → StockMove → OrderLine 回写」规则，不允许分叉：
+ * 司机端和日销售中心都写入 OrderReturn；旧 Trip/ReturnItem JSON 只保留历史兼容读取。
+ * 所有退货共用「disposition → StockMove → OrderLine 回写」规则，不允许分叉：
  *   - SELLABLE：货回可售库存，FEFO 回补批次，StockMove(RETURN, +qty)
  *   - SCRAP：StockMove(RETURN, +qty) 记客退事实 + StockMove(SCRAP, -qty) 记报废损耗，qtyOnHand 净不变
  */
@@ -130,6 +130,7 @@ export async function postReturnStockMoves(
 
 export interface OrderLineReduction {
   orderId: string
+  orderLineId?: string
   productId: string
   reduceQty: number
 }
@@ -144,7 +145,9 @@ export async function applyReturnOrderLineReduction(
 ): Promise<string[]> {
   for (const upd of updates) {
     const line = await tx.orderLine.findFirst({
-      where: { orderId: upd.orderId, productId: upd.productId },
+      where: upd.orderLineId
+        ? { id: upd.orderLineId, orderId: upd.orderId, productId: upd.productId }
+        : { orderId: upd.orderId, productId: upd.productId },
       select: { id: true, deliveredQty: true },
     })
     if (line) {

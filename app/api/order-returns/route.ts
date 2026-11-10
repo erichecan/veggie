@@ -3,19 +3,16 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { createOrderReturn, OrderReturnInputError } from '@/lib/order-returns'
 
 /**
  * 日销售中心「退货登记」手动入口（20261027，退货/报废整合 M3）。
  *
- * 跟司机端上报（Trip.restaurants[].returns，ReturnItem）是两条入口，状态机/审核/
- * 处置规则完全一致（lib/returns-engine.ts），落库表不同（OrderReturn，直接挂 orderId，
- * 不用像 ReturnItem 那样反查行程里的 restaurantId）。
+ * 手动登记与司机上报共用 OrderReturn，并必须关联精确的 orderLineId。
  *
  * GET  /api/order-returns — 列表（operator/inventory「退换货」看板读取）
  * POST /api/order-returns — 登记一条退货（初始状态 WAREHOUSE_PENDING，次日仓库核实）
  */
-
-const ALLOWED_ORDER_STATUSES = ['IN_DELIVERY', 'COMPLETED']
 
 export async function GET(req: Request) {
   return withAuth(req, async () => {
@@ -68,7 +65,7 @@ export async function GET(req: Request) {
  * 请求体:
  *   {
  *     orderId: string,
- *     productId: string,
+ *     orderLineId: string,
  *     quantity: number,
  *     reason?: string,
  *     actionType?: 'return' | 'exchange',
@@ -79,66 +76,41 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json()
-      const { orderId, productId, quantity, reason, actionType, exchangeOrderId } = body as {
+      const { orderId, orderLineId, quantity, reason, actionType, exchangeOrderId } = body as {
         orderId?: string
-        productId?: string
+        orderLineId?: string
         quantity?: number
         reason?: string
         actionType?: 'return' | 'exchange'
         exchangeOrderId?: string
       }
 
-      if (!orderId || !productId || !quantity || quantity <= 0) {
+      if (!orderId || !orderLineId || !Number.isFinite(quantity) || Number(quantity) <= 0) {
         return NextResponse.json(
-          { error: '缺少必填字段: orderId, productId, quantity(>0)' },
+          { error: '缺少必填字段: orderId, orderLineId, quantity(>0)' },
           { status: 400 },
         )
       }
-
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { id: true, status: true },
-      })
-      if (!order) {
-        return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      }
-      if (!ALLOWED_ORDER_STATUSES.includes(String(order.status))) {
-        return NextResponse.json(
-          { error: `订单状态 ${order.status} 还没送达，不能登记退货` },
-          { status: 400 },
-        )
-      }
-
-      const line = await prisma.orderLine.findFirst({
-        where: { orderId, productId },
-        select: { productName: true },
-      })
-      if (!line) {
-        return NextResponse.json({ error: '该订单下未找到此商品' }, { status: 404 })
-      }
-
-      const created = await prisma.orderReturn.create({
-        data: {
-          orderId,
-          productId,
-          productName: line.productName,
-          quantity,
-          reason: reason?.trim() || undefined,
-          actionType: actionType ?? 'return',
-          exchangeOrderId: actionType === 'exchange' ? exchangeOrderId?.trim() || undefined : undefined,
-          registeredById: user.userId,
-          registeredByName: user.name,
-        },
-      })
+      const created = await prisma.$transaction(tx => createOrderReturn(tx, {
+        orderId,
+        orderLineId,
+        quantity: Number(quantity),
+        reason,
+        actionType,
+        exchangeOrderId,
+      }, user))
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'order_return', resourceId: created.id,
-        detail: `退货登记: 订单 ${orderId} — ${line.productName} × ${quantity}`,
+        detail: `退货登记: 订单 ${orderId} — ${created.productName} × ${quantity}`,
       })
 
       return NextResponse.json(serializeApi(created))
     } catch (error) {
+      if (error instanceof OrderReturnInputError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
       console.error('[POST /api/order-returns]', error)
       return NextResponse.json({ error: '登记退货失败' }, { status: 500 })
     }

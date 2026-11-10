@@ -69,6 +69,7 @@ export async function PUT(
 
       if (action === 'reject') {
         const updated = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${ret.orderId} FOR UPDATE`
           // updateMany + 状态锁定 where，防止两个并发审核请求都越过上面的前置检查、都执行一遍副作用
           const { count } = await tx.orderReturn.updateMany({
             where: { id, status: 'PENDING_REVIEW' },
@@ -104,7 +105,9 @@ export async function PUT(
       }
 
       const line = await prisma.orderLine.findFirst({
-        where: { orderId: ret.orderId, productId: ret.productId },
+        where: ret.orderLineId
+          ? { id: ret.orderLineId, orderId: ret.orderId, productId: ret.productId }
+          : { orderId: ret.orderId, productId: ret.productId },
         select: { uomId: true },
       })
       const quantity = toNum(ret.quantity)
@@ -125,6 +128,7 @@ export async function PUT(
       })
 
       const updated = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${ret.orderId} FOR UPDATE`
         // updateMany + 状态锁定 where，防止两个并发审核请求都越过上面的前置检查、都执行一遍副作用
         const { count } = await tx.orderReturn.updateMany({
           where: { id, status: 'PENDING_REVIEW' },
@@ -140,7 +144,7 @@ export async function PUT(
         if (count === 0) return null
 
         await postReturnStockMoves(tx, stockMoves, user)
-        await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, productId: ret.productId, reduceQty: quantity }])
+        await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, orderLineId: ret.orderLineId ?? undefined, productId: ret.productId, reduceQty: quantity }])
         await syncOrderGoodsReturnStatus(tx, [{
           orderId: ret.orderId,
           status: 'APPROVED',
