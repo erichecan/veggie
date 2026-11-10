@@ -417,8 +417,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         // unitPrice 只作参考，容差外一律按引擎权威价入库——不再信任"编辑态由客户端算好
         // 传上来、手动改价直接原样落库"的旧行为(见本次改动前的注释)。
         // 本单覆盖：pricelistId/priceType 优先取本次请求刚提交的值(操作员在编辑页显式选择)，
-        // 请求未带这两个字段时才 fallback 到订单已存的值——不能默认沿用客户档案默认链，
-        // 否则编辑页里选好的 pricelist/priceType 形同虚设(见 resolveOrderLines overrides 参数注释)。
+        // 请求未带时沿用订单配置；null 表示客户默认链，只有非空 ID 才覆盖为单张。
         const effectivePricelistId = pricelistId !== undefined
           ? (pricelistId ? String(pricelistId) : null)
           : orderBefore.pricelistId
@@ -443,7 +442,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             taxRate: l.taxRate !== undefined ? Number(l.taxRate) : undefined,
           })),
           {
-            pricelistId: effectivePricelistId, priceType: effectivePriceType,
+            pricelistId: effectivePricelistId ?? undefined, priceType: effectivePriceType,
             // 手动改价（台账 X1/X2）：有 override_price 才采纳操作员填的价。
             // 没有这个权限时**维持按权威价入库、不报错** —— 页面打开后价格表被改过
             // 也会让提交价合法地对不上，硬失败会把正常保存一起挡掉。

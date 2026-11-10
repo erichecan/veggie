@@ -466,7 +466,7 @@ export default function QuotationDetailPage() {
     try {
       // 候选列表是 slim 的，定价必须用含 specialPrices 的完整对象
       const full = await apiGet<Customer>(`/api/customers/${c.id}`).catch(() => c)
-      const nextPricelistId = full.pricelists?.[0]?.pricelistId ?? ''
+      const nextPricelistId = '' // 换客户后沿用新客户的完整价格表链
       const nextPriceType = (full.priceType as string) || 'multi'
       setRestaurantId(full.id)
       setCustomer(full)
@@ -503,7 +503,31 @@ export default function QuotationDetailPage() {
     }
   }
 
+  async function changePricelist(nextId: string) {
+    if (!customer || switchingCustomer || nextId === pricelistId) return
+    setSwitchingCustomer(true)
+    try {
+      const productIds = Array.from(new Set(editLines.map(l => l.productId).filter(Boolean)))
+      const uomEntries = await Promise.all(productIds.map(async pid => [pid, await ensureSaleUomOptions(pid)] as const))
+      const patches = await repriceLinesForCustomer({
+        lines: editLines,
+        customerId: customer.id,
+        effectiveCustomer: overrideCustomerPricing(customer, priceType, nextId),
+        priceType, pricelists, products: allProducts,
+        saleUomOptions: { ...saleUomOptions, ...Object.fromEntries(uomEntries) },
+      })
+      setPricelistId(nextId)
+      setEditLines(prev => prev.map(l => patches[l.id] ? { ...l, ...patches[l.id] } : l))
+      toast.success(isEn ? 'Prices updated' : '已按所选价格体系重新取价')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update prices' : '重新取价失败'))
+    } finally {
+      setSwitchingCustomer(false)
+    }
+  }
+
   async function handleSave() {
+    if (switchingCustomer) return
     if (!order) return
     try {
       // 误按 Enter 多出的空行（没选商品）直接丢弃，不提交也不再提示——客户反馈过这类空行会挡住保存
@@ -1016,11 +1040,12 @@ export default function QuotationDetailPage() {
                 {editing ? (
                   <SearchableDropdown
                     className="flex-1"
-                    options={[{ value: '', label: '— none —' }, ...pricelists.filter(p => p.selectable !== false || p.id === pricelistId).map(p => ({ value: p.id, label: p.name }))]}
+                    options={[{ value: '', label: isEn ? 'Customer pricelists (priority order)' : '沿用客户价格表（按优先级）' }, ...pricelists.filter(p => p.selectable !== false || p.id === pricelistId).map(p => ({ value: p.id, label: p.name }))]}
                     value={pricelistId}
-                    onChange={setPricelistId}
+                    disabled={switchingCustomer}
+                    onChange={changePricelist}
                   />
-                ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
+                ) : <div style={{ color: PURPLE }}>{pricelist?.name || (order.pricelistId ? '—' : (isEn ? 'Customer pricelists (priority order)' : '沿用客户价格表（按优先级）'))}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>

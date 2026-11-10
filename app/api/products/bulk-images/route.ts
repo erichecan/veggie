@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { getObjectStore } from '@/lib/storage/object-store'
 import { writeLog } from '@/lib/action-log'
+import { importImageUrls } from '@/lib/product-image-url-import'
 
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const MAX_SIZE = 5 * 1024 * 1024 // 5 MB，与 /api/upload-image 口径一致
@@ -18,6 +19,9 @@ const MAX_FILES = 60 // 一次请求上限，防表单体积失控，而不是�
  * 覆盖式写入 Product.images（单图，与详情页单图上传行为一致），不是追加。
  */
 export async function POST(req: NextRequest) {
+  if (req.headers.get('content-type')?.includes('application/json')) {
+    return withAuth(req, user => importImageUrls(req, user), { require: 'master.product.update' })
+  }
   // 批量场景一次能带几十张图，按文件数而不是请求数限流才不会卡住正常用户
   const denied = rateLimit(req, { id: 'bulk-upload', max: 10, windowMs: 60_000 })
   if (denied) return denied

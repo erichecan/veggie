@@ -4,7 +4,8 @@ import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
-import { downloadCsv, parseCsv } from '@/lib/csv-export'
+import { downloadCsv } from '@/lib/csv-export'
+import { readImportSheet } from '@/lib/read-import-sheet'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -85,19 +86,7 @@ function rowNoOf(message: string): number | null {
   return m ? Number(m[1]) : null
 }
 
-async function readSheet(file: File): Promise<string[][]> {
-  if (/\.(xlsx|xls)$/i.test(file.name)) {
-    // 按需加载：xlsx 库不小，只有真选了 Excel 文件才下载
-    const XLSX = await import('xlsx')
-    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
-    const sheet = wb.Sheets[wb.SheetNames[0]]
-    if (!sheet) return []
-    // raw:false = 取单元格显示出来的文字(日期/数字按 Excel 里看到的格式)，与 CSV 口径一致
-    const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: false })
-    return aoa.map(r => r.map(v => (v === null || v === undefined ? '' : String(v))))
-  }
-  return parseCsv(await file.text())
-}
+const readSheet = readImportSheet
 
 export default function BulkImportDialog({
   open, onClose, onDone, templateFileName, columns, exampleRows, endpoint, title, hint, extraHint, batchSize = 100,

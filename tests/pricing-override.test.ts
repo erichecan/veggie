@@ -37,7 +37,6 @@ const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: DB
 const CITY_CENTRE_PL = 'pl_35'
 const NONEXISTENT_PL = '__nonexistent_pl__'
 let customerId = ''
-let customerDefaultPl: string | null = null
 let redOnionId = ''
 
 before(async () => {
@@ -48,7 +47,6 @@ before(async () => {
   })
   assert.ok(cust, '测试前置：未找到 ABCT 客户')
   customerId = cust!.id
-  customerDefaultPl = cust!.pricelists[0]?.pricelistId ?? null
 
   const red = await prisma.product.findFirst({
     where: { name: { contains: 'Red Onion 10kg' }, externalId: '18944' },
@@ -81,7 +79,7 @@ test('不传覆盖时使用客户档案默认价格表（持久化值一致）',
     { prisma, restaurantId: customerId },
     [{ productId: redOnionId, quantity: 1, price: 11 }],
   )
-  assert.equal(pricelistId, customerDefaultPl, '无覆盖时应回落到客户档案默认价格表')
+  assert.equal(pricelistId, null, '默认链不能持久化成第一张价格表，否则再次编辑会丢失后续价格表')
 })
 
 // 2026-07-15 跳过：同上，Odoo 全量同步把 Red Onion 牌价从 11 改成了 9.5，

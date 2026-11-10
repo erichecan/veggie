@@ -267,7 +267,8 @@ export async function resolveOrderLines(
   }>,
   /**
    * 本单临时覆盖：操作员可在下单页选择不同于客户档案默认的价格表/定价模式。
-   * 仅当字段存在时才覆盖（undefined = 沿用客户档案；null = 本单明确不用价格表）。
+   * 仅当字段存在时才覆盖（undefined = 沿用客户档案；null = 本次解析不用价格表）。
+   * 返回的 pricelistId 为 null 表示未指定单张；订单保存入口将 null 解释为沿用客户链。
    */
   overrides?: {
     pricelistId?: string | null
@@ -602,9 +603,9 @@ export async function resolveOrderLines(
     lines,
     totalAmount: Math.round(total * 100) / 100,
     customer,
-    // Order.pricelistId 快照：生效链条里优先级最高的一张（跟旧行为一致——
-    // 无论是否真的命中规则，都记录"当时配置/选定的价格表"，不是"最终用了哪条规则"）
-    pricelistId: effectiveCustomer.pricelists?.[0]?.pricelistId ?? null,
+    // 仅记录显式的单张覆盖。客户默认链用 null 表示，不能存成第一张，
+    // 否则再次编辑时会把默认链误读为单张覆盖，第二张及后续价格表失效。
+    pricelistId: overrides?.pricelistId ?? null,
     priceType: effectiveCustomer.priceType ?? null,
     warnings,
   }

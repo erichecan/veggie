@@ -605,7 +605,7 @@ export default function ClassicPlaceOrderPage() {
     setSelectedCustomerFull(null)  // 先清除旧客户的完整对象
     setCustOpen(false)
     setCustSearch('')
-    if (c.pricelists?.[0]?.pricelistId) setPricelistId(c.pricelists[0].pricelistId)
+    setPricelistId('') // 默认沿用客户整条价格表链，不把第一张误当成本单覆盖
     if (c.paymentTerm) setPaymentTerms(c.paymentTerm)
     if (c.priceType)   setPriceType(c.priceType)
     // 业务员默认带入客户绑定的业务员(可手动改);下单时写入 Order.salesUserId
@@ -1621,7 +1621,7 @@ export default function ClassicPlaceOrderPage() {
                     <span className={pricelistId ? 'text-gray-900' : 'text-gray-400'}>
                       {pricelistId
                         ? (pricelists.find(p => p.id === pricelistId)?.name ?? pricelistId)
-                        : (isEn ? '— Select Pricelist —' : '— 选择价格表 —')}
+                        : (isEn ? 'Customer pricelists (priority order)' : '沿用客户价格表（按优先级）')}
                     </span>
                     <span className="text-gray-400 text-xs ml-2">▾</span>
                   </div>
@@ -1645,7 +1645,7 @@ export default function ClassicPlaceOrderPage() {
                           onClick={() => { setPricelistId(''); setPlOpen(false) }}
                           className={`px-3 py-2 text-sm cursor-pointer text-gray-400 hover:bg-gray-50 ${plHighlight === 0 ? 'bg-gray-100' : ''}`}
                         >
-                          {isEn ? '— None —' : '— 无 —'}
+                          {isEn ? 'Customer pricelists (priority order)' : '沿用客户价格表（按优先级）'}
                         </div>
                         {filteredPricelists.map((pl, idx) => (
                           <div

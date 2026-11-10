@@ -1,80 +1,75 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Menu, PanelLeftClose } from 'lucide-react'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet'
 import type { PortalCategory } from './use-customer-portal'
 
 const PURPLE = '#875A7B'
 
-export function CategorySidebar({
-  categories, activeCategoryId, onSelect, isEn,
-}: {
+export function CategorySidebar({ categories, activeCategoryId, onSelect, isEn }: {
   categories: PortalCategory[]
   activeCategoryId: string | null
   onSelect: (id: string | null) => void
   isEn: boolean
 }) {
-  // 移动端默认收起抽屉，给商品列表留更多横向空间；点击触发按钮才展开
-  const [open, setOpen] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [desktopOpen, setDesktopOpen] = useState(true)
+  const title = isEn ? 'Categories' : '商品分类'
+  const allLabel = isEn ? 'All products' : '全部商品'
+  const active = categories.find(c => c.id === activeCategoryId)
+  const activeLabel = active ? (isEn ? active.name || active.nameZh : active.nameZh || active.name) : allLabel
 
-  if (categories.length === 0) return null
+  // A modal opened on a phone must release its scroll/focus lock when resized to desktop.
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)')
+    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false) }
+    desktop.addEventListener('change', closeOnDesktop)
+    return () => desktop.removeEventListener('change', closeOnDesktop)
+  }, [])
 
-  const activeLabel = (() => {
-    if (activeCategoryId === null) return isEn ? 'All' : '全部'
-    const c = categories.find((x) => x.id === activeCategoryId)
-    return c ? (isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)) : (isEn ? 'All' : '全部')
-  })()
+  if (!categories.length) return null
 
+  function select(id: string | null) {
+    onSelect(id)
+    setMobileOpen(false)
+  }
   const items = (
-    <>
-      <button
-        onClick={() => { onSelect(null); setOpen(false) }}
-        className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-        style={activeCategoryId === null ? { background: PURPLE, color: 'white' } : { color: '#444' }}
-      >
-        {isEn ? 'All' : '全部'}
-      </button>
-      {categories.map((c) => (
-        <button
-          key={c.id}
-          onClick={() => { onSelect(c.id); setOpen(false) }}
-          className="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between gap-1"
-          style={activeCategoryId === c.id ? { background: PURPLE, color: 'white', fontWeight: 500 } : { color: '#444' }}
-        >
-          <span className="truncate">{isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)}</span>
-          <span className="text-xs flex-none" style={{ opacity: 0.7 }}>{c.count}</span>
+    <nav aria-label={title} className="space-y-1">
+      {[{id: null, label: allLabel, count: null}, ...categories.map(c => ({id:c.id,label:isEn ? c.name || c.nameZh : c.nameZh || c.name,count:c.count}))].map(c => (
+        <button key={c.id ?? 'all'} type="button" aria-current={activeCategoryId === c.id ? 'true' : undefined}
+          onClick={() => select(c.id)}
+          className="w-full min-h-11 px-3 py-2.5 rounded-lg text-sm text-left flex items-start justify-between gap-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#875A7B]"
+          style={activeCategoryId === c.id ? {background:PURPLE,color:'white',fontWeight:600} : {color:'#444'}}>
+          <span className="min-w-0 break-words">{c.label}</span>
+          {c.count !== null && <span className="text-xs shrink-0 pt-0.5 opacity-70">{c.count}</span>}
         </button>
       ))}
-    </>
+    </nav>
   )
 
-  return (
-    <>
-      {/* lg 以下：折叠成一条触发按钮，点击再展开抽屉 */}
-      <button
-        onClick={() => setOpen(true)}
-        className="lg:hidden w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-sm mb-3"
-        style={{ borderColor: '#ddd', color: '#444' }}
-      >
-        <span className="truncate">{isEn ? 'Category: ' : '分类：'}<span className="font-medium" style={{ color: PURPLE }}>{activeLabel}</span></span>
-        <span className="flex-none text-xs text-gray-400">▾</span>
-      </button>
-
-      {open && (
-        <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
-          <div className="relative bg-white w-64 max-w-[80vw] h-full overflow-y-auto p-3 shadow-xl space-y-0.5">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-sm" style={{ color: PURPLE }}>{isEn ? 'Categories' : '商品分类'}</span>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">✕</button>
-            </div>
-            {items}
-          </div>
-        </div>
-      )}
-
-      {/* lg 及以上：常驻侧栏，行为跟改造前一致 */}
-      <nav className="hidden lg:block flex-none w-44 space-y-0.5">
-        {items}
-      </nav>
-    </>
-  )
+  return <>
+    <div className="lg:hidden mb-3">
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetTrigger className="inline-flex max-w-full min-h-11 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+          aria-label={isEn ? 'Open product categories' : '打开商品分类'}>
+          <Menu className="size-5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{title} · <span style={{color:PURPLE}}>{activeLabel}</span></span>
+        </SheetTrigger>
+        <SheetContent side="left" className="data-[side=left]:w-[min(20rem,85vw)] gap-0">
+          <SheetHeader className="pr-14 pt-[max(1rem,env(safe-area-inset-top))]">
+            <SheetTitle>{title}</SheetTitle>
+            <SheetDescription>{isEn ? 'Choose a category to filter products.' : '选择分类，查看对应商品。'}</SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">{items}</div>
+        </SheetContent>
+      </Sheet>
+    </div>
+    {desktopOpen ? <aside className="hidden lg:block sticky top-20 max-h-[calc(100dvh-6rem)] w-52 shrink-0 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+      <div className="mb-2 flex items-center justify-between gap-2 px-2">
+        <h2 className="font-semibold text-sm" style={{color:PURPLE}}>{title}</h2>
+        <button type="button" className="min-h-11 min-w-11 inline-flex items-center justify-center rounded hover:bg-gray-100" onClick={() => setDesktopOpen(false)} aria-label={isEn ? 'Collapse product categories' : '收起商品分类'}><PanelLeftClose className="size-5" aria-hidden="true" /></button>
+      </div>
+      {items}
+    </aside> : <button type="button" onClick={() => setDesktopOpen(true)} aria-label={isEn ? 'Expand product categories' : '展开商品分类'} className="hidden lg:inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border bg-white" title={title}><Menu className="size-5" aria-hidden="true" /></button>}
+  </>
 }

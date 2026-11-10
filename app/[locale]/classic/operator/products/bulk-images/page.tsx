@@ -6,6 +6,8 @@ import { routing } from '@/i18n/routing'
 import { apiGet, apiUpload, ApiError } from '@/lib/api'
 import { useInlineProductPicker, type InlineProductPickerProduct } from '@/components/classic/useInlineProductPicker'
 
+import UrlImageImport from './UrlImageImport'
+
 type SlimProduct = InlineProductPickerProduct
 
 type PendingImage = {
@@ -123,6 +125,8 @@ export default function BulkProductImagesPage() {
         </button>
       </div>
 
+      <UrlImageImport isEn={isEn} />
+      <h2 className="font-semibold mb-3">{isEn ? 'Upload local image files' : '上传本地图片文件'}</h2>
       <div className="mb-4 flex items-center gap-3">
         <input
           type="file"

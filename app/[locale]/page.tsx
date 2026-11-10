@@ -1,25 +1,9 @@
-'use client'
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { getDefaultLandingPath } from '@/lib/rbac/page-guard'
+import { redirect } from 'next/navigation'
+import { routing } from '@/i18n/routing'
 
-export default function RootPage() {
-  const router = useRouter()
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('veggie_user')
-      if (raw) {
-        router.replace(getDefaultLandingPath(JSON.parse(raw), ''))
-        return
-      }
-    } catch {}
-    router.replace('/enter')
-  }, [router])
-
-  return (
-    <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">
-      正在加载...
-    </div>
-  )
+/** 公共首页统一进入商品商城；后台登录继续使用 /enter。 */
+export default async function RootPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  redirect(`${prefix}/shop`)
 }
