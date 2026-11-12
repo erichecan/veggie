@@ -89,8 +89,28 @@ export async function PUT(
         updateData.notes = data.notes ? String(data.notes).trim().slice(0, 1000) : null
       }
 
+      if (data.creditDate !== undefined) {
+        if (String(existing.status) !== 'DRAFT') {
+          return NextResponse.json({ error: '仅草稿贷记单可以修改日期' }, { status: 400 })
+        }
+        const creditDate = new Date(String(data.creditDate))
+        if (!Number.isFinite(creditDate.getTime())) {
+          return NextResponse.json({ error: '贷记单日期无效' }, { status: 400 })
+        }
+        updateData.creditDate = creditDate
+      }
+
       // 仅 DRAFT 状态允许修改行项
       if (Array.isArray(data.lines) && String(existing.status) === 'DRAFT') {
+        if (data.lines.length === 0) {
+          return NextResponse.json({ error: '贷记单至少需要一行商品' }, { status: 400 })
+        }
+        const invalidLine = (data.lines as Array<{ quantity?: unknown; unitPrice?: unknown; taxRate?: unknown }>).find((line) =>
+          !(toNum(line.quantity) > 0) || toNum(line.unitPrice) < 0 || toNum(line.taxRate) < 0,
+        )
+        if (invalidLine) {
+          return NextResponse.json({ error: '商品数量必须大于 0，单价和税率不能为负数' }, { status: 400 })
+        }
         // 删除旧行，重建新行
         await prisma.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
 
@@ -100,6 +120,7 @@ export async function PUT(
           productId: string; productName: string
           quantity: number; unitPrice: number; taxRate?: number
           reason?: string; sourceOrderId?: string; sourceTripId?: string
+          sourceReturnId?: string
           sequence?: number
         }>).map((l, idx) => {
           const qty = toNum(l.quantity)
@@ -122,6 +143,7 @@ export async function PUT(
             reason: l.reason ? String(l.reason).trim().slice(0, 500) : null,
             sourceOrderId: l.sourceOrderId || null,
             sourceTripId: l.sourceTripId || null,
+            sourceReturnId: l.sourceReturnId || null,
             sequence: l.sequence ?? idx,
           }
         })

@@ -3,13 +3,14 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { toNum } from '@/lib/decimal-helpers'
+import { round2, toNum } from '@/lib/decimal-helpers'
 import {
   buildReturnStockMoves,
   postReturnStockMoves,
   applyReturnOrderLineReduction,
   syncOrderGoodsReturnStatus,
 } from '@/lib/returns-engine'
+import { createDraftCreditNotesForReturns } from '@/lib/finance/return-credit-note'
 
 /**
  * 审核 + 处置（退货/报废整合 M3，对齐 app/api/trips/[id]/returns PUT 的既有规则，
@@ -104,9 +105,14 @@ export async function PUT(
       }
 
       const line = await prisma.orderLine.findFirst({
-        where: { orderId: ret.orderId, productId: ret.productId },
-        select: { uomId: true },
+        where: ret.orderLineId
+          ? { id: ret.orderLineId, orderId: ret.orderId, productId: ret.productId }
+          : { orderId: ret.orderId, productId: ret.productId },
+        select: { uomId: true, unitPrice: true, taxRate: true },
       })
+      if (!line) {
+        return NextResponse.json({ error: '原订单中找不到对应商品行，无法核算贷记金额' }, { status: 400 })
+      }
       const quantity = toNum(ret.quantity)
 
       const stockMoves = buildReturnStockMoves({
@@ -124,7 +130,7 @@ export async function PUT(
         sourceRef: order.code,
       })
 
-      const updated = await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx) => {
         // updateMany + 状态锁定 where，防止两个并发审核请求都越过上面的前置检查、都执行一遍副作用
         const { count } = await tx.orderReturn.updateMany({
           where: { id, status: 'PENDING_REVIEW' },
@@ -140,7 +146,12 @@ export async function PUT(
         if (count === 0) return null
 
         await postReturnStockMoves(tx, stockMoves, user)
-        await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, productId: ret.productId, reduceQty: quantity }])
+        await applyReturnOrderLineReduction(tx, [{
+          orderId: ret.orderId,
+          orderLineId: ret.orderLineId,
+          productId: ret.productId,
+          reduceQty: quantity,
+        }])
         await syncOrderGoodsReturnStatus(tx, [{
           orderId: ret.orderId,
           status: 'APPROVED',
@@ -149,23 +160,39 @@ export async function PUT(
           disposition: disposition as 'SELLABLE' | 'SCRAP',
         }], user)
 
-        return tx.orderReturn.findUnique({ where: { id } })
+        // 销售审核确认退货/换货意图后立即生成草稿贷记单；库存处置（可再售/报废）
+        // 不改变客户贷项，财务仍需在贷记单页面核对后确认过账。
+        const creditNotes = await createDraftCreditNotesForReturns(tx, [{
+          sourceReturnId: `ORDER_RETURN:${ret.id}`,
+          customerId: order.restaurantId,
+          customerName: order.restaurantName,
+          productId: ret.productId,
+          productName: ret.productName,
+          quantity,
+          amountExTax: round2(quantity * toNum(line?.unitPrice ?? 0)),
+          taxRate: toNum(line?.taxRate ?? 0),
+          reason: [ret.actionType === 'exchange' ? '换货' : '退货', disposition === 'SCRAP' ? '报废' : '可再售', ret.reason].filter(Boolean).join(' · '),
+          sourceOrderId: ret.orderId,
+        }], user.userId)
+
+        return { orderReturn: await tx.orderReturn.findUnique({ where: { id } }), creditNotes }
       })
 
-      if (!updated) {
+      if (!result) {
         return NextResponse.json(
           { error: '该退货记录已被处理，请刷新后重试', status: 'RACED' },
           { status: 409 },
         )
       }
 
+      const creditNoteRefs = result.creditNotes.map(cn => cn.name).join(', ')
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'order_return', resourceId: id,
-        detail: `退货审核通过(${disposition === 'SELLABLE' ? '可再售' : '报废'}): ${ret.productName} × ${ret.quantity}`,
+        detail: `退货审核通过(${disposition === 'SELLABLE' ? '可再售' : '报废'}): ${ret.productName} × ${ret.quantity}${creditNoteRefs ? ` · 草稿贷记单 ${creditNoteRefs}` : ''}`,
       })
 
-      return NextResponse.json(serializeApi({ message: '已批准该退货申请', orderReturn: updated }))
+      return NextResponse.json(serializeApi({ message: '已批准该退货申请', orderReturn: result.orderReturn, creditNotes: result.creditNotes }))
     } catch (error) {
       console.error('[PUT /api/order-returns/[id]/review]', error)
       return NextResponse.json({ error: '退货审核失败' }, { status: 500 })

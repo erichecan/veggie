@@ -916,6 +916,7 @@ model OrderLine {
   id                String    @id @default(cuid())
   orderId           String
   order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  goodsReturns      OrderReturn[]
   productId         String
   product           Product?  @relation(fields: [productId], references: [id])
   productName       String
@@ -1173,20 +1174,24 @@ enum GoodsReturnDisposition {
 /// 日销售中心「退货登记」手动入口专用（20261027）。司机现场上报的退货仍走
 /// Trip.restaurants[].returns（ReturnItem），两套互不迁移、互不冲突；operator/inventory 的
 /// 「退换货」统一看板会同时查两边、共用 lib/returns-engine.ts 同一套核实/审核/处置函数。
-/// 与 Trip 版本相比直接挂 orderId，不用再按 restaurantId+productId 反查订单。
+/// 与 Trip 版本相比直接挂 orderId，并关联具体 orderLine，避免同商品不同销售单位混用数量。
 model OrderReturn {
-  id                      String                   @id @default(cuid())
+  id                      String                  @id @default(cuid())
   orderId                 String
-  order                   Order                    @relation(fields: [orderId], references: [id])
+  order                   Order                   @relation(fields: [orderId], references: [id])
+  /// 精确关联本次退货对应的销售行，避免同一商品以不同销售单位出现时混淆数量。
+  /// 历史退货记录为空，接口按 orderId+productId 保守兼容。
+  orderLineId             String?
+  orderLine               OrderLine?              @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
   productId               String
   productName             String
-  quantity                Decimal                  @db.Decimal(12, 3)
+  quantity                Decimal                 @db.Decimal(12, 3)
   reason                  String?
   /// return=退货 / exchange=换货（换货一律新开单，不在本记录里维护第二套商品明细，
   /// 对齐 ReturnItem.exchangeOrderId 的既有拍板）
-  actionType              String                   @default("return")
+  actionType              String                  @default("return")
   exchangeOrderId         String?
-  status                  GoodsReturnStatus        @default(WAREHOUSE_PENDING)
+  status                  GoodsReturnStatus       @default(WAREHOUSE_PENDING)
   /// 审批通过时必填：货物去向。SELLABLE=可再售(回补库存)，SCRAP=报废(计入损耗)。审批前为空
   disposition             GoodsReturnDisposition?
   /// 报废去向对应的批次消耗，便于批次追溯反查
@@ -1204,46 +1209,47 @@ model OrderReturn {
   settledAt               DateTime?
   registeredById          String
   registeredByName        String?
-  createdAt               DateTime                 @default(now())
+  createdAt               DateTime                @default(now())
 
   @@index([orderId])
+  @@index([orderLineId])
   @@index([status])
 }
 
 model Invoice {
-  id                String                 @id @default(cuid())
-  name              String
-  customerId        String
-  customerName      String
-  saleOrderIds      String[]
-  lines             Json                   @default("[]")
-  subtotalExTax     Decimal                @default(0) @db.Decimal(12, 2)
-  totalTax          Decimal                @default(0) @db.Decimal(12, 2)
-  totalIncTax       Decimal                @default(0) @db.Decimal(12, 2)
+  id                  String                 @id @default(cuid())
+  name                String
+  customerId          String
+  customerName        String
+  saleOrderIds        String[]
+  lines               Json                   @default("[]")
+  subtotalExTax       Decimal                @default(0) @db.Decimal(12, 2)
+  totalTax            Decimal                @default(0) @db.Decimal(12, 2)
+  totalIncTax         Decimal                @default(0) @db.Decimal(12, 2)
   /// 已收款（Σ Payment，含预收款冲抵）。缓存值，只由 lib/finance/invoice-balance.ts 重算写入
-  amountPaid        Decimal                @default(0) @db.Decimal(12, 2)
+  amountPaid          Decimal                @default(0) @db.Decimal(12, 2)
   /// 已用贷记单抵扣（Σ CreditNoteAllocation）。缓存值，同上 —— 20261014
-  amountCredited    Decimal                @default(0) @db.Decimal(12, 2)
+  amountCredited      Decimal                @default(0) @db.Decimal(12, 2)
   /// 期初已收：复式改造前（Odoo 导入等）就记在发票上、但没有 Payment 明细的已收金额。
   /// 由 20261014 迁移一次性算出，之后不再变。amountPaid = openingPaid + Σ Payment
-  openingPaid       Decimal                @default(0) @db.Decimal(12, 2)
+  openingPaid         Decimal                @default(0) @db.Decimal(12, 2)
   /// 期初已冲减：同上，Odoo 里用退款单冲掉、但本系统没有抵扣明细的部分。
   /// amountCredited = openingCredited + Σ CreditNoteAllocation
-  openingCredited   Decimal                @default(0) @db.Decimal(12, 2)
+  openingCredited     Decimal                @default(0) @db.Decimal(12, 2)
   /// 未付 = totalIncTax − amountPaid − amountCredited。缓存值，同上
-  amountDue         Decimal                @default(0) @db.Decimal(12, 2)
-  status            InvoiceStatus          @default(DRAFT)
-  paymentTerms      String                 @default("monthly")
-  dueDate           String?
-  createdAt         DateTime               @default(now())
-  postedAt          String?
-  paidAt            String?
-  payments          Payment[]
-  creditAllocations CreditNoteAllocation[]
+  amountDue           Decimal                @default(0) @db.Decimal(12, 2)
+  status              InvoiceStatus          @default(DRAFT)
+  paymentTerms        String                 @default("monthly")
+  dueDate             String?
+  createdAt           DateTime               @default(now())
+  postedAt            String?
+  paidAt              String?
+  payments            Payment[]
+  creditAllocations   CreditNoteAllocation[]
   /// 换开新发票时指回被取代的旧票（20261028 M8）。@unique：一张旧票只能被换开一次
-  supersedesInvoiceId String?              @unique
-  supersedesInvoice   Invoice?             @relation("InvoiceSupersession", fields: [supersedesInvoiceId], references: [id])
-  supersededBy        Invoice?             @relation("InvoiceSupersession")
+  supersedesInvoiceId String?                @unique
+  supersedesInvoice   Invoice?               @relation("InvoiceSupersession", fields: [supersedesInvoiceId], references: [id])
+  supersededBy        Invoice?               @relation("InvoiceSupersession")
 
   @@unique([name])
   @@index([customerId])
@@ -1881,26 +1887,26 @@ model Notification {
 
 /// 财务对账单（P1-1：按客户、周期汇总应收应付）
 model Statement {
-  id             String    @id @default(cuid())
-  tenantId       String    @default("test-company")
-  customerId     String
-  customerName   String
-  periodStart    DateTime  @db.Date
-  periodEnd      DateTime  @db.Date
-  openingBalance Decimal   @default(0) @db.Decimal(12, 2)
-  totalSales     Decimal   @default(0) @db.Decimal(12, 2)
-  totalPayments  Decimal   @default(0) @db.Decimal(12, 2)
-  totalCredits   Decimal   @default(0) @db.Decimal(12, 2)
-  closingBalance Decimal   @default(0) @db.Decimal(12, 2)
-  orderIds       String[]  @default([])
-  invoiceIds     String[]  @default([])
-  creditNoteIds  String[]  @default([])
+  id              String    @id @default(cuid())
+  tenantId        String    @default("test-company")
+  customerId      String
+  customerName    String
+  periodStart     DateTime  @db.Date
+  periodEnd       DateTime  @db.Date
+  openingBalance  Decimal   @default(0) @db.Decimal(12, 2)
+  totalSales      Decimal   @default(0) @db.Decimal(12, 2)
+  totalPayments   Decimal   @default(0) @db.Decimal(12, 2)
+  totalCredits    Decimal   @default(0) @db.Decimal(12, 2)
+  closingBalance  Decimal   @default(0) @db.Decimal(12, 2)
+  orderIds        String[]  @default([])
+  invoiceIds      String[]  @default([])
+  creditNoteIds   String[]  @default([])
   /// 生成时发票号/开票日期快照；草稿重出时刷新，已确认/发送单据保持原样
-  invoiceSnapshot Json     @default("[]")
+  invoiceSnapshot Json      @default("[]")
   /// 状态：draft / confirmed / sent
-  status         String    @default("draft")
-  createdAt      DateTime  @default(now())
-  sentAt         DateTime?
+  status          String    @default("draft")
+  createdAt       DateTime  @default(now())
+  sentAt          DateTime?
 
   @@index([customerId])
   @@index([status])
@@ -1981,6 +1987,8 @@ model CreditNoteLine {
   sourceOrderId  String?
   /// 来源行程 ID
   sourceTripId   String?
+  /// 来源退换货记录的稳定键；唯一约束确保审核重试不会重复生成贷记单
+  sourceReturnId String?    @unique
   sequence       Int        @default(0)
   createdAt      DateTime   @default(now())
 

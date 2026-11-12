@@ -131,6 +131,8 @@ export async function postReturnStockMoves(
 export interface OrderLineReduction {
   orderId: string
   productId: string
+  /** Exact line for OrderReturn; Trip returns without line linkage still match by product. */
+  orderLineId?: string | null
   reduceQty: number
 }
 
@@ -144,7 +146,9 @@ export async function applyReturnOrderLineReduction(
 ): Promise<string[]> {
   for (const upd of updates) {
     const line = await tx.orderLine.findFirst({
-      where: { orderId: upd.orderId, productId: upd.productId },
+      where: upd.orderLineId
+        ? { id: upd.orderLineId, orderId: upd.orderId, productId: upd.productId }
+        : { orderId: upd.orderId, productId: upd.productId },
       select: { id: true, deliveredQty: true },
     })
     if (line) {

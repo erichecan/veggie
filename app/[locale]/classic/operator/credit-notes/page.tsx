@@ -20,12 +20,20 @@ type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
 interface CreditNoteLine {
   id: string
+  productId: string
   productName: string
   quantity: number
   unitPrice: number
   taxRate: number
+  subtotalExTax: number
+  taxAmount: number
   subtotalIncTax: number
   reason?: string | null
+  sourceOrderId?: string | null
+  sourceTripId?: string | null
+  sourceReturnId?: string | null
+  sourceOrderCode?: string | null
+  sequence?: number
 }
 
 interface CreditNote {
@@ -88,6 +96,10 @@ export default function CreditNotesPage() {
   const [page, setPage] = useState(1)
   const [detail, setDetail] = useState<CreditNote | null>(null)
   const [busy, setBusy] = useState(false)
+  const [editingDraft, setEditingDraft] = useState(false)
+  const [draftLines, setDraftLines] = useState<CreditNoteLine[]>([])
+  const [draftNotes, setDraftNotes] = useState('')
+  const [draftDate, setDraftDate] = useState('')
 
   const load = useCallback(() => {
     apiGet<CreditNote[]>('/api/credit-notes')
@@ -162,6 +174,40 @@ export default function CreditNotesPage() {
     }
   }
 
+  function openDetail(cn: CreditNote) {
+    setDetail(cn)
+    setEditingDraft(false)
+    setDraftLines(cn.lines.map(line => ({ ...line })))
+    setDraftNotes(cn.notes ?? '')
+    setDraftDate(cn.creditDate.slice(0, 10))
+  }
+
+  async function saveDraftEdits() {
+    if (!detail) return
+    setBusy(true)
+    try {
+      await apiPut(`/api/credit-notes/${detail.id}`, {
+        creditDate: draftDate,
+        notes: draftNotes,
+        lines: draftLines.map(({ productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence }) => ({
+          productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence,
+        })),
+      })
+      const updated = await apiGet<CreditNote>(`/api/credit-notes/${detail.id}`)
+      setDetail(updated)
+      setDraftLines(updated.lines)
+      setDraftNotes(updated.notes ?? '')
+      setDraftDate(updated.creditDate.slice(0, 10))
+      setEditingDraft(false)
+      load()
+      toast.success(isEn ? 'Draft updated' : '草稿已更新')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update draft' : '更新草稿失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // 扫描含「已批准退货」的行程,一键生成信用票
   async function generateFromReturns() {
     setBusy(true)
@@ -195,7 +241,7 @@ export default function CreditNotesPage() {
       <OdooControlPanel
         breadcrumb={isEn ? ['Finance', 'Credit Notes'] : ['财务', '信用票']}
         permanentActions={[
-          { label: isEn ? 'Generate from Returns' : '从退货生成', onClick: generateFromReturns, primary: true },
+          { label: isEn ? 'Backfill legacy returns' : '补生成旧退货贷记单', onClick: generateFromReturns, primary: true },
           exportAction,
         ]}
         searchValue={search}
@@ -238,13 +284,13 @@ export default function CreditNotesPage() {
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-gray-400">
                     {isEn
-                      ? 'No credit notes · approve returns on the Returns page, then click "Generate from Returns"'
-                      : '暂无信用票 · 在退换货页批准退货后,点击「从退货生成」'}
+                      ? 'No credit notes · approved return decisions now create draft credit notes automatically'
+                      : '暂无贷记单 · 退换货审核通过后会自动生成草稿贷记单'}
                   </td>
                 </tr>
               )}
               {pageRows.map(cn => (
-                <tr key={cn.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setDetail(cn)}>
+                <tr key={cn.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDetail(cn)}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{cn.name}</td>
                   <td className="px-4 py-3 text-gray-800">{cn.customerName}</td>
                   <td className="px-4 py-3 text-center">
@@ -281,9 +327,11 @@ export default function CreditNotesPage() {
               </DialogHeader>
 
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between text-gray-600">
+                <div className="flex flex-wrap justify-between gap-2 text-gray-600">
                   <span>{isEn ? 'Customer' : '客户'}：<b className="text-gray-900">{detail.customerName}</b></span>
-                  <span>{isEn ? 'Refund Date' : '退款日期'}：{new Date(detail.creditDate).toLocaleDateString('en-GB')}</span>
+                  {editingDraft ? (
+                    <label className="flex items-center gap-2">{isEn ? 'Credit note date' : '贷记单日期'}<input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-gray-900" /></label>
+                  ) : <span>{isEn ? 'Credit Note Date' : '贷记单日期'}：{new Date(detail.creditDate).toLocaleDateString('en-GB')}</span>}
                 </div>
 
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -298,27 +346,29 @@ export default function CreditNotesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {detail.lines.map(l => (
+                      {(editingDraft ? draftLines : detail.lines).map((l, index) => (
                         <tr key={l.id}>
                           <td className="px-3 py-2 text-gray-800">{l.productName}</td>
-                          <td className="px-3 py-2 text-right">{Number(l.quantity)}</td>
-                          <td className="px-3 py-2 text-right">€{Number(l.unitPrice).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-medium">€{Number(l.subtotalIncTax).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-gray-500">{l.reason ?? '—'}</td>
+                          <td className="px-3 py-2 text-right">{editingDraft ? <input aria-label={isEn ? 'Quantity' : '数量'} type="number" min="0.001" step="0.001" value={l.quantity} onChange={e => setDraftLines(rows => rows.map((row, i) => i === index ? { ...row, quantity: Number(e.target.value) } : row))} className="w-20 rounded border border-gray-300 px-1 py-1 text-right" /> : Number(l.quantity)}</td>
+                          <td className="px-3 py-2 text-right">{editingDraft ? <input aria-label={isEn ? 'Unit price' : '单价'} type="number" min="0" step="0.01" value={l.unitPrice} onChange={e => setDraftLines(rows => rows.map((row, i) => i === index ? { ...row, unitPrice: Number(e.target.value) } : row))} className="w-24 rounded border border-gray-300 px-1 py-1 text-right" /> : `€${Number(l.unitPrice).toFixed(2)}`}</td>
+                          <td className="px-3 py-2 text-right font-medium">€{(editingDraft ? Number(l.quantity) * Number(l.unitPrice) * (1 + Number(l.taxRate)) : Number(l.subtotalIncTax)).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-gray-500">{[l.reason, l.sourceOrderCode ? `${isEn ? 'Order' : '订单'} ${l.sourceOrderCode}` : null].filter(Boolean).join(' · ') || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot className="bg-gray-50 border-t border-gray-200">
                       <tr>
                         <td colSpan={3} className="px-3 py-2 font-medium text-gray-600">{isEn ? 'Total' : '合计'}</td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-900">€{Number(detail.totalIncTax).toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-900">€{(editingDraft ? draftLines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice) * (1 + Number(line.taxRate)), 0) : Number(detail.totalIncTax)).toFixed(2)}</td>
                         <td />
                       </tr>
                     </tfoot>
                   </table>
                 </div>
 
-                {detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes' : '备注'}：{detail.notes}</p>}
+                {editingDraft ? (
+                  <label className="block text-xs text-gray-500">{isEn ? 'Reason / Notes' : '原因 / 备注'}<textarea value={draftNotes} onChange={e => setDraftNotes(e.target.value)} maxLength={1000} rows={2} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800" /></label>
+                ) : detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes' : '备注'}：{detail.notes}</p>}
 
                 <CreditNoteAllocations
                   key={detail.id}
@@ -335,6 +385,12 @@ export default function CreditNotesPage() {
               <DialogFooter className="gap-2">
                 {detail.status === 'DRAFT' && (
                   <>
+                    {editingDraft ? (
+                      <>
+                        <Button variant="outline" disabled={busy} onClick={() => { setEditingDraft(false); setDraftLines(detail.lines); setDraftNotes(detail.notes ?? ''); setDraftDate(detail.creditDate.slice(0, 10)) }}>{isEn ? 'Discard edits' : '放弃修改'}</Button>
+                        <Button variant="outline" disabled={busy} onClick={saveDraftEdits}>{isEn ? 'Save draft' : '保存草稿'}</Button>
+                      </>
+                    ) : <Button variant="outline" disabled={busy} onClick={() => setEditingDraft(true)}>{isEn ? 'Edit draft' : '编辑草稿'}</Button>}
                     <Button variant="outline" disabled={busy} onClick={() => removeDraft(detail)}>{isEn ? 'Delete' : '删除'}</Button>
                     <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废', 'Cancelled')}>{isEn ? 'Cancel' : '作废'}</Button>
                     <Button disabled={busy} onClick={() => changeStatus(detail, 'CONFIRMED', '已确认', 'Confirmed')}>{isEn ? 'Confirm' : '确认'}</Button>

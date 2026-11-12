@@ -60,14 +60,16 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
   async function review(action: 'approve' | 'reject') {
     setSaving(true)
     try {
-      await apiPut(`/api/order-returns/${item.id}/review`, {
+      const result = await apiPut<{ creditNotes?: Array<{ name: string }> }>(`/api/order-returns/${item.id}/review`, {
         action,
         disposition: action === 'approve' ? disposition : undefined,
         scrapReason: action === 'approve' && disposition === 'SCRAP' ? scrapReason : undefined,
         note: note.trim() || undefined,
       })
       toast.success(action === 'approve'
-        ? (isEn ? 'Return approved' : '已批准')
+        ? (result.creditNotes?.length
+          ? (isEn ? `Approved · draft credit note ${result.creditNotes.map(cn => cn.name).join(', ')} created` : `已批准，草稿贷记单 ${result.creditNotes.map(cn => cn.name).join(', ')} 已生成`)
+          : (isEn ? 'Return approved' : '已批准'))
         : (isEn ? 'Return rejected' : '已拒绝'))
       onSaved()
       onClose()

@@ -66,16 +66,25 @@ function unitLabel(line: Pick<ReportLine, 'uomName'>) {
   return line.uomName || '—'
 }
 
-function summarizeProductUnits(lines: ReportLine[]) {
-  const groups = new Map<string, { name: string; unit: string; qty: number; amount: number }>()
+function summarizeProducts(lines: ReportLine[]) {
+  const groups = new Map<string, { name: string; specs: Set<string>; units: Map<string, { label: string; qty: number }>; amount: number }>()
   for (const line of lines) {
-    const key = `${line.productId || line.productName}\u0000${line.uomName.trim().toLocaleLowerCase()}`
-    const group = groups.get(key) ?? { name: line.productName, unit: unitLabel(line), qty: 0, amount: 0 }
-    group.qty += line.qty
+    const key = line.productId || line.productName
+    const group = groups.get(key) ?? { name: line.productName, specs: new Set<string>(), units: new Map<string, { label: string; qty: number }>(), amount: 0 }
+    if (line.spec) group.specs.add(line.spec)
+    const unitKey = line.uomName.trim().toLocaleLowerCase()
+    const unit = group.units.get(unitKey) ?? { label: unitLabel(line), qty: 0 }
+    unit.qty += line.qty
+    group.units.set(unitKey, unit)
     group.amount += line.amount
     groups.set(key, group)
   }
-  return [...groups.values()]
+  return [...groups.values()].map(group => ({
+    name: group.name,
+    spec: [...group.specs].join(' / '),
+    unitQuantities: [...group.units.values()].sort((a, b) => a.label.localeCompare(b.label)).map(unit => `${fmtQty(unit.qty)} ${unit.label}`).join(' + '),
+    amount: group.amount,
+  }))
 }
 
 function summarizeUnitQuantities(lines: ReportLine[]) {
@@ -106,58 +115,37 @@ function OrderBatchCells({ l }: { l: ReportLine }) {
   )
 }
 
-/** 按客户查看的列数（默认分组视图）：商品 规格 订单号 批次 司机 AM/PM 数量 单价 金额 */
-const CUSTOMER_VIEW_COLS = 9
+/** 按客户默认汇总视图：商品、规格、各销售单位数量、金额 */
+const CUSTOMER_GROUP_COLS = 4
+/** 按客户点列排序后的订单明细列数 */
+const CUSTOMER_DETAIL_COLS = 10
 
-// 按客户查看：单个日期分组（日期头 → 客户 → 商品行 → 日小计）
+// 按客户查看：单个日期分组（日期头 → 客户 → 每商品一行的单位汇总 → 日小计）
 function FragmentRows({ day, isEn }: { day: { date: string; dateQty: number; dateAmt: number; customers: ReportLine[][] }; isEn: boolean }) {
   return (
     <>
       <tr className="bg-gray-100">
-        <td colSpan={CUSTOMER_VIEW_COLS} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
+        <td colSpan={CUSTOMER_GROUP_COLS} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
       </tr>
       {day.customers.map(custLines => (
         <Fragment key={day.date + custLines[0].customerId}>
           <tr className="bg-gray-50/60">
-            <td colSpan={CUSTOMER_VIEW_COLS} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
+            <td colSpan={CUSTOMER_GROUP_COLS} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
           </tr>
-          <tr className="bg-purple-50/50 text-[#875A7B]">
-            <td colSpan={CUSTOMER_VIEW_COLS} className="px-8 py-1 text-[11px] font-medium">
-              {isEn ? 'Unit totals by product' : '按商品和销售单位汇总'}
-            </td>
-          </tr>
-          {summarizeProductUnits(custLines).map((summary, i) => (
+          {summarizeProducts(custLines).map((summary, i) => (
             <tr key={`unit-summary-${i}`} className="bg-purple-50/30 border-b border-purple-100">
-              <td className="px-4 py-1 pl-10 text-gray-700">{summary.name} · {summary.unit}</td>
-              <td className="px-3 py-1 text-gray-400">{isEn ? 'Subtotal' : '小计'}</td>
-              <td colSpan={4} />
-              <td className="px-4 py-1 text-right tabular-nums font-semibold text-gray-700">{fmtQty(summary.qty)}</td>
-              <td />
+              <td className="px-4 py-1 pl-8 text-gray-700">{summary.name}</td>
+              <td className="px-4 py-1 text-gray-500">{summary.spec}</td>
+              <td className="px-4 py-1 text-gray-700">{summary.unitQuantities}</td>
               <td className="px-4 py-1 text-right tabular-nums text-gray-700">{eur(summary.amount)}</td>
-            </tr>
-          ))}
-          <tr className="border-b border-gray-100">
-            <td colSpan={CUSTOMER_VIEW_COLS} className="px-8 py-1 text-[11px] font-medium text-gray-400">
-              {isEn ? 'Order line details' : '订单明细'}
-            </td>
-          </tr>
-          {custLines.map((l, i) => (
-            <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
-              <td className="px-4 py-1.5 pl-8 text-gray-700">{l.productName} <span className="text-gray-500">· {unitLabel(l)}</span></td>
-              <td className="px-4 py-1.5 text-gray-500">{l.spec}</td>
-              <OrderBatchCells l={l} />
-              <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(2)}</td>
-              <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(l.unitPrice)}</td>
-              <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(l.amount)}</td>
             </tr>
           ))}
         </Fragment>
       ))}
       <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
         <td className="px-4 py-1.5">{isEn ? `Subtotal ${day.date}` : `小计 ${day.date}`}</td>
-        <td colSpan={5} />
-        <td className="px-4 py-1.5 text-right tabular-nums">{summarizeUnitQuantities(day.customers.flat())}</td>
         <td />
+        <td className="px-4 py-1.5 tabular-nums">{summarizeUnitQuantities(day.customers.flat())}</td>
         <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
       </tr>
     </>
@@ -169,7 +157,7 @@ function FlatDayRows({ day, isEn }: { day: { date: string; dateQty: number; date
   return (
     <>
       <tr className="bg-gray-100">
-        <td colSpan={CUSTOMER_VIEW_COLS + 1} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
+        <td colSpan={CUSTOMER_DETAIL_COLS} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
       </tr>
       {day.lines.map((l, i) => (
         <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
@@ -435,19 +423,23 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // 查看方式②：按商品（跨区间聚合）
   const productReport = useMemo(() => {
-    const m = new Map<string, { productId: string; name: string; uomId: string; uomName: string; qty: number; amount: number; customers: Set<string>; specs: Set<string>; sequence: number }>()
+    const m = new Map<string, { productId: string; name: string; qty: number; amount: number; customers: Set<string>; specs: Set<string>; units: Map<string, { label: string; qty: number }>; sequence: number }>()
     for (const l of reportLines) {
-      const key = `${l.productId || l.productName}\u0000${l.uomName.trim().toLocaleLowerCase()}`
-      const e = m.get(key) ?? { productId: l.productId, name: l.productName, uomId: l.uomId, uomName: l.uomName, qty: 0, amount: 0, customers: new Set<string>(), specs: new Set<string>(), sequence: l.sequence }
+      const key = l.productId || l.productName
+      const e = m.get(key) ?? { productId: l.productId, name: l.productName, qty: 0, amount: 0, customers: new Set<string>(), specs: new Set<string>(), units: new Map<string, { label: string; qty: number }>(), sequence: l.sequence }
       e.qty += l.qty
       e.amount += l.amount
       e.customers.add(l.customerId)
       if (l.spec) e.specs.add(l.spec)
+      const unitKey = l.uomName.trim().toLocaleLowerCase()
+      const unit = e.units.get(unitKey) ?? { label: unitLabel(l), qty: 0 }
+      unit.qty += l.qty
+      e.units.set(unitKey, unit)
       m.set(key, e)
     }
     return [...m.values()]
-      .map(v => ({ productId: v.productId, name: v.name, unit: unitLabel(v), spec: [...v.specs].join(' / '), qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence, uomName: v.uomName }))
-      .sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) || a.unit.localeCompare(b.unit) : b.amount - a.amount)
+      .map(v => ({ productId: v.productId, name: v.name, unitQuantities: [...v.units.values()].sort((a, b) => a.label.localeCompare(b.label)).map(unit => `${fmtQty(unit.qty)} ${unit.label}`).join(' + '), spec: [...v.specs].join(' / '), amount: v.amount, customerCount: v.customers.size, sequence: v.sequence }))
+      .sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.amount - a.amount)
   }, [reportLines, sortBySequence])
 
   // 查看方式③：按分类（分类 → 商品，带 Forecast Quantity）—— 调度备货
@@ -878,29 +870,49 @@ ${catsHtml}
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-white shadow-sm">
                     <tr className="border-b border-gray-200">
-                      {custSortKey && th(null, isEn ? 'Customer' : '客户', 'text-left')}
-                      {th('product', isEn ? 'Product' : '产品', 'text-left')}
-                      {th(null, isEn ? 'Spec / Description' : '规格 / 描述', 'text-left')}
-                      {th('order', isEn ? 'Order No.' : '订单号', 'text-left')}
-                      {th('batch', isEn ? 'Batch' : '批次', 'text-left')}
-                      {th('driver', isEn ? 'Driver' : '司机', 'text-left')}
-                      {th('time', 'AM/PM', 'text-left')}
-                      {th('qty', isEn ? 'Qty' : '数量', 'text-right w-20')}
-                      {th(null, isEn ? 'Unit Price' : '单价', 'text-right w-20')}
-                      {th('amount', isEn ? 'Amount' : '金额', 'text-right w-24')}
+                      {custSortKey ? (
+                        <>
+                          {th(null, isEn ? 'Customer' : '客户', 'text-left')}
+                          {th('product', isEn ? 'Product' : '产品', 'text-left')}
+                          {th(null, isEn ? 'Spec / Description' : '规格 / 描述', 'text-left')}
+                          {th('order', isEn ? 'Order No.' : '订单号', 'text-left')}
+                          {th('batch', isEn ? 'Batch' : '批次', 'text-left')}
+                          {th('driver', isEn ? 'Driver' : '司机', 'text-left')}
+                          {th('time', 'AM/PM', 'text-left')}
+                          {th('qty', isEn ? 'Qty' : '数量', 'text-right w-20')}
+                          {th(null, isEn ? 'Unit Price' : '单价', 'text-right w-20')}
+                          {th('amount', isEn ? 'Amount' : '金额', 'text-right w-24')}
+                        </>
+                      ) : (
+                        <>
+                          {th('product', isEn ? 'Product' : '商品', 'text-left')}
+                          {th(null, isEn ? 'Spec / Description' : '规格 / 描述', 'text-left')}
+                          {th(null, isEn ? 'Sales unit quantities' : '销售单位数量', 'text-left')}
+                          {th(null, isEn ? 'Total Amount' : '金额合计', 'text-right w-24')}
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {custSortKey
                       ? flatReport.map(day => <FlatDayRows key={day.date} day={day} isEn={isEn} />)
                       : groupedReport.map(day => <FragmentRows key={day.date} day={day} isEn={isEn} />)}
-                    <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
-                      <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
-                      <td className="px-4 py-2" colSpan={custSortKey ? 6 : 5} />
-                      <td className="px-4 py-2 text-right tabular-nums">{summarizeUnitQuantities(reportLines)}</td>
-                      <td className="px-4 py-2" />
-                      <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
-                    </tr>
+                    {custSortKey ? (
+                      <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                        <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
+                        <td className="px-4 py-2" colSpan={6} />
+                        <td className="px-4 py-2 text-right tabular-nums">{summarizeUnitQuantities(reportLines)}</td>
+                        <td />
+                        <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
+                      </tr>
+                    ) : (
+                      <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                        <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
+                        <td />
+                        <td className="px-4 py-2">{summarizeUnitQuantities(reportLines)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               )
@@ -912,22 +924,20 @@ ${catsHtml}
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr className="border-b border-gray-200">
-                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product · Sales Unit' : '商品 · 销售单位'}</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product' : '商品'}</th>
                   <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Spec / Description' : '规格 / 描述'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'Customers' : '客户数'}</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Total Qty' : '数量合计'}</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Avg Price' : '均价'}</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Sales unit quantities' : '销售单位数量'}</th>
                   <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">{isEn ? 'Total Amount' : '金额合计'}</th>
                 </tr>
               </thead>
               <tbody>
                 {productReport.map(p => (
-                  <tr key={`${p.productId}-${p.unit}`} className="border-b border-gray-50 hover:bg-purple-50/30">
-                    <td className="px-4 py-1.5 text-gray-700">{p.name} <span className="text-gray-500">· {p.unit}</span></td>
+                  <tr key={p.productId || p.name} className="border-b border-gray-50 hover:bg-purple-50/30">
+                    <td className="px-4 py-1.5 text-gray-700">{p.name}</td>
                     <td className="px-4 py-1.5 text-gray-500">{p.spec}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{p.customerCount}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{p.qty.toFixed(2)}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(p.avgPrice)}</td>
+                    <td className="px-4 py-1.5 text-gray-700">{p.unitQuantities}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(p.amount)}</td>
                   </tr>
                 ))}
@@ -935,8 +945,7 @@ ${catsHtml}
                   <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2" />
-                  <td className="px-4 py-2 text-right tabular-nums">{summarizeUnitQuantities(reportLines)}</td>
-                  <td className="px-4 py-2" />
+                  <td className="px-4 py-2">{summarizeUnitQuantities(reportLines)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
                 </tr>
               </tbody>

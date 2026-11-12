@@ -4,7 +4,7 @@ import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { syncOrderStock } from '@/lib/order-stock'
 import { toNum, round2 } from '@/lib/decimal-helpers'
-import { removeOrderFromAllWaves } from '@/lib/wave-assign'
+import { assignOrderToWave, removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
       const before = await prisma.order.findMany({
         where: { id: { in: ids } },
-        select: { id: true, status: true, restaurantName: true, deliveryDate: true, returnStatus: true },
+        select: { id: true, status: true, restaurantName: true, deliveryDate: true, returnStatus: true, driverSlotId: true },
       })
       if (before.length === 0) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
@@ -266,6 +266,28 @@ export async function POST(req: Request) {
           where: { id: { in: pendingIds } },
           data: { status: 'CONFIRMED', confirmationDate: new Date() },
         })
+        try {
+          // Driver assignments stored while the quotation was pending become
+          // real dispatch-wave membership as part of confirmation.
+          for (const order of pendingOrders) {
+            if (!order.driverSlotId) continue
+            const assignment = await assignOrderToWave(order.id, order.driverSlotId)
+            if (!assignment) throw new Error(`订单 ${order.id} 的司机时段不存在`)
+          }
+        } catch (error) {
+          // No stock sync has run yet. Remove any wave memberships created for
+          // this bulk operation, then restore every selected quotation.
+          for (const order of pendingOrders) {
+            await removeOrderFromAllWaves(order.id).catch(() => {})
+          }
+          await prisma.order.updateMany({
+            where: { id: { in: pendingIds } },
+            data: { status: 'PENDING', confirmationDate: null },
+          })
+          return NextResponse.json({
+            error: `批量确认失败，订单已恢复为报价单：${error instanceof Error ? error.message : '司机波次分配失败'}`,
+          }, { status: 409 })
+        }
         // 库存占用与单单确认走同一个函数（lib/order-stock.ts）
         for (const ordId of pendingIds) {
           await prisma.$transaction(tx => syncOrderStock(tx, ordId, {

@@ -39,6 +39,7 @@ import type { $Enums } from '@/lib/generated/prisma/client'
 import { nextOrderCode } from '@/lib/order-code'
 import { syncOrderStock } from '@/lib/order-stock'
 import { notifyLowStockAfterConfirm } from '@/lib/notify'
+import { assignOrderToWave } from '@/lib/wave-assign'
 
 const PAYMENT_METHODS = new Set<$Enums.PaymentMethod>(['ONLINE', 'CASH'])
 
@@ -433,6 +434,30 @@ export async function POST(req: Request) {
       }
       if (!order) {
         throw lastErr ?? new Error('生成订单编号失败')
+      }
+
+      // Place Order can create a confirmed order directly. When a customer
+      // default or submitted driver slot exists, confirmation must also create
+      // its dispatch wave and pallet membership.
+      if (order.status === 'CONFIRMED' && order.driverSlotId) {
+        try {
+          const assignment = await assignOrderToWave(order.id, order.driverSlotId)
+          if (!assignment) throw new Error('订单或司机时段不存在')
+        } catch (error) {
+          // Keep the order as a quotation if dispatch assignment failed; release
+          // any stock reservation performed in the create transaction.
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { status: 'PENDING', confirmationDate: null },
+          })
+          await prisma.$transaction(tx => syncOrderStock(tx, order!.id, {
+            reason: '司机波次分配失败，撤销订单确认', userId: user.userId, createdBy: user.name ?? user.email,
+          }), { maxWait: 10000, timeout: 60000 })
+          return NextResponse.json({
+            error: `订单已保存为报价单，但未能确认：${error instanceof Error ? error.message : '司机波次分配失败'}`,
+            orderId: order.id,
+          }, { status: 409 })
+        }
       }
 
       // 直接确认的单：补上 PUT 确认时会做的送货单与低库存提醒（以前这条路径都漏了）

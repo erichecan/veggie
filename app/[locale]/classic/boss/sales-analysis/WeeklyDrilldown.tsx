@@ -1,5 +1,5 @@
 'use client'
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet } from '@/lib/api'
 import { eur, fmtMoney } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
@@ -168,8 +168,13 @@ export default function WeeklyDrilldown({
     + (customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : '')
     + (productIds ? `&productId=${encodeURIComponent(productIds)}` : '')
 
-  const load = useCallback(() => {
-    setError(null)
+  /**
+   * 顶层实际拉取数据用的 [from, to]——跟 load() 里算的必须是同一份逻辑。
+   * 20261029：之前 toggleTop/toggleWeekRow 展开子行时各自直接用 isoWeekRange/monthRange
+   * 的"自然边界"去查，没有跟这个范围取交集，导致筛了单日却在展开周行时把同一周里
+   * 其他日期（含还没过完的今天）的单子也带出来——用 intersectRange 裁掉就是这个范围。
+   */
+  const effectiveRange = useMemo((): { from: string; to: string } => {
     let from: string
     let to: string
     if (customRangeActive) {
@@ -191,10 +196,16 @@ export default function WeeklyDrilldown({
       from = fmtYMD(rawFrom < floor ? floor : rawFrom)
       to = fmtYMD(today)
     }
+    return { from, to }
+  }, [customRangeActive, customFrom, customTo, topLevel, monthsBack, weeksBack])
+
+  const load = useCallback(() => {
+    setError(null)
+    const { from, to } = effectiveRange
     apiGet<BucketPayload>(`/api/analytics/margin?groupBy=${topLevel}&from=${from}&to=${to}${extraFilterQs}`)
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-  }, [topLevel, weeksBack, monthsBack, extraFilterQs, customRangeActive, customFrom, customTo])
+  }, [topLevel, effectiveRange, extraFilterQs])
 
   useEffect(() => { load() }, [load])
 
@@ -220,8 +231,9 @@ export default function WeeklyDrilldown({
     const willExpand = !expandedTop[row.key]
     setExpandedTop((prev) => ({ ...prev, [row.key]: willExpand }))
     if (!willExpand || childrenByTop[row.key]) return
-    const range = topLevel === 'month' ? monthRange(row.key) : isoWeekRange(row.key)
-    if (!range) return
+    const rawRange = topLevel === 'month' ? monthRange(row.key) : isoWeekRange(row.key)
+    if (!rawRange) return
+    const range = intersectRange(rawRange, effectiveRange)
     const childGroupBy = topLevel === 'month' ? 'week' : 'day'
     setChildrenByTop((prev) => ({ ...prev, [row.key]: 'loading' }))
     apiGet<BucketPayload>(`/api/analytics/margin?groupBy=${childGroupBy}&from=${range.from}&to=${range.to}${extraFilterQs}`)
@@ -237,7 +249,7 @@ export default function WeeklyDrilldown({
     if (!willExpand || daysByWeek[rowKey]) return
     const wr = isoWeekRange(weekKey)
     if (!wr) return
-    const range = intersectRange(wr, monthRange(monthKey))
+    const range = intersectRange(intersectRange(wr, monthRange(monthKey)), effectiveRange)
     setDaysByWeek((prev) => ({ ...prev, [rowKey]: 'loading' }))
     apiGet<BucketPayload>(`/api/analytics/margin?groupBy=day&from=${range.from}&to=${range.to}${extraFilterQs}`)
       .then((payload) => setDaysByWeek((prev) => ({ ...prev, [rowKey]: payload.rows })))

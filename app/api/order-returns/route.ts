@@ -38,7 +38,7 @@ export async function GET(req: Request) {
         prisma.orderReturn.findMany({
           where,
           orderBy: { createdAt: 'desc' },
-          take: RETURNS_LIST_CAP,
+          take: orderId ? undefined : RETURNS_LIST_CAP,
           include: {
             order: { select: { code: true, restaurantId: true, restaurantName: true } },
           },
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/order-returns]', error)
       return NextResponse.json({ error: '获取退货列表失败' }, { status: 500 })
     }
-  }, { require: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review'] })
+  }, { require: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review', 'dispatch.goods_return.register'] })
 }
 
 /**
@@ -68,6 +68,7 @@ export async function GET(req: Request) {
  * 请求体:
  *   {
  *     orderId: string,
+ *     orderLineId: string,
  *     productId: string,
  *     quantity: number,
  *     reason?: string,
@@ -79,8 +80,9 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json()
-      const { orderId, productId, quantity, reason, actionType, exchangeOrderId } = body as {
+      const { orderId, orderLineId, productId, quantity, reason, actionType, exchangeOrderId } = body as {
         orderId?: string
+        orderLineId?: string
         productId?: string
         quantity?: number
         reason?: string
@@ -88,58 +90,85 @@ export async function POST(req: Request) {
         exchangeOrderId?: string
       }
 
-      if (!orderId || !productId || !quantity || quantity <= 0) {
+      if (!orderId || !orderLineId || !productId || !Number.isFinite(quantity) || !quantity || quantity <= 0) {
         return NextResponse.json(
-          { error: '缺少必填字段: orderId, productId, quantity(>0)' },
+          { error: '缺少必填字段: orderId, orderLineId, productId, quantity(>0)' },
           { status: 400 },
         )
       }
 
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { id: true, status: true },
-      })
-      if (!order) {
-        return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      }
-      if (!ALLOWED_ORDER_STATUSES.includes(String(order.status))) {
-        return NextResponse.json(
-          { error: `订单状态 ${order.status} 还没送达，不能登记退货` },
-          { status: 400 },
-        )
-      }
+      const result = await prisma.$transaction(async tx => {
+        // Serialize registrations per order so simultaneous requests cannot
+        // both pass the remaining-quantity check.
+        await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          select: { id: true, status: true },
+        })
+        if (!order) return { error: '订单不存在', status: 404 as const }
+        if (!ALLOWED_ORDER_STATUSES.includes(String(order.status))) {
+          return { error: `订单状态 ${order.status} 还没送达，不能登记退货`, status: 400 as const }
+        }
 
-      const line = await prisma.orderLine.findFirst({
-        where: { orderId, productId },
-        select: { productName: true },
-      })
-      if (!line) {
-        return NextResponse.json({ error: '该订单下未找到此商品' }, { status: 404 })
-      }
+        const line = await tx.orderLine.findFirst({
+          where: { id: orderLineId, orderId, productId },
+          select: { id: true, productName: true, deliveredQty: true },
+        })
+        if (!line) return { error: '订单商品行不存在或与商品不匹配', status: 404 as const }
 
-      const created = await prisma.orderReturn.create({
-        data: {
-          orderId,
-          productId,
-          productName: line.productName,
-          quantity,
-          reason: reason?.trim() || undefined,
-          actionType: actionType ?? 'return',
-          exchangeOrderId: actionType === 'exchange' ? exchangeOrderId?.trim() || undefined : undefined,
-          registeredById: user.userId,
-          registeredByName: user.name,
-        },
+        const priorReturns = await tx.orderReturn.findMany({
+          where: {
+            orderId,
+            productId,
+            status: { in: ['WAREHOUSE_PENDING', 'PENDING_REVIEW'] },
+            OR: [{ orderLineId: line.id }, { orderLineId: null }],
+          },
+          select: { quantity: true },
+        })
+        const alreadyReserved = priorReturns.reduce((sum, row) => sum + Number(row.quantity), 0)
+        const delivered = Number(line.deliveredQty)
+        const remaining = Math.max(0, delivered - alreadyReserved)
+        if (quantity > remaining + 0.000001) {
+          return {
+            error: `退货数量超过可登记数量。已送达 ${delivered}，已登记 ${alreadyReserved}，本次最多可登记 ${remaining}`,
+            status: 400 as const,
+          }
+        }
+
+        const created = await tx.orderReturn.create({
+          data: {
+            orderId,
+            orderLineId: line.id,
+            productId,
+            productName: line.productName,
+            quantity,
+            reason: reason?.trim() || undefined,
+            actionType: actionType ?? 'return',
+            exchangeOrderId: actionType === 'exchange' ? exchangeOrderId?.trim() || undefined : undefined,
+            registeredById: user.userId,
+            registeredByName: user.name,
+          },
+        })
+        return { created, remaining: remaining - quantity }
       })
+
+      if ('error' in result) {
+        return NextResponse.json({ error: result.error }, { status: result.status })
+      }
+      const { created } = result
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'order_return', resourceId: created.id,
-        detail: `退货登记: 订单 ${orderId} — ${line.productName} × ${quantity}`,
+        detail: `退货登记: 订单 ${orderId} — ${created.productName} × ${quantity}`,
       })
 
-      return NextResponse.json(serializeApi(created))
+      return NextResponse.json(serializeApi({ ...created, remainingQuantity: result.remaining }))
     } catch (error) {
       console.error('[POST /api/order-returns]', error)
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2034') {
+        return NextResponse.json({ error: '退货登记正在被其他操作更新，请刷新后重试' }, { status: 409 })
+      }
       return NextResponse.json({ error: '登记退货失败' }, { status: 500 })
     }
   }, { require: 'dispatch.goods_return.register' })

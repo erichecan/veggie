@@ -53,6 +53,7 @@ export async function POST(req: Request) {
           reason: string | null
           sourceOrderId: string | null
           sourceTripId: string | null
+          sourceReturnId: string | null
         }>
       }>()
 
@@ -62,6 +63,20 @@ export async function POST(req: Request) {
         restaurants: TripRestaurant[]
       }> = []
 
+      // New approvals create a draft automatically. Keep this legacy manual action
+      // from generating a second, confirmed note for those same return records.
+      const tripSourceIds = trips.flatMap(trip => {
+        const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
+        return restaurants.flatMap(restaurant => (restaurant.returns ?? []).flatMap((ret, returnIndex) =>
+          ret.status === 'APPROVED'
+            ? [`TRIP:${trip.id}:${ret.id ?? `${restaurant.restaurantId}:${returnIndex}:${ret.productId}`}`]
+            : []))
+      })
+      const existingTripLines = tripSourceIds.length ? await prisma.creditNoteLine.findMany({
+        where: { sourceReturnId: { in: tripSourceIds } }, select: { sourceReturnId: true },
+      }) : []
+      const existingSourceIds = new Set(existingTripLines.map(line => line.sourceReturnId))
+
       for (const trip of trips) {
         const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
         let tripModified = false
@@ -70,7 +85,9 @@ export async function POST(req: Request) {
           const returns = restaurant.returns ?? []
           for (let i = 0; i < returns.length; i++) {
             const ret = returns[i]
-            if (ret.status !== 'APPROVED') continue
+            if (ret.status !== 'APPROVED' || (ret.refundAmount != null && toNum(ret.refundAmount) <= 0.005)) continue
+            const sourceReturnId = `TRIP:${trip.id}:${ret.id ?? `${restaurant.restaurantId}:${i}:${ret.productId}`}`
+            if (sourceReturnId && existingSourceIds.has(sourceReturnId)) continue
 
             const customerId = restaurant.restaurantId
             if (!customerReturns.has(customerId)) {
@@ -88,6 +105,7 @@ export async function POST(req: Request) {
               reason: ret.reason ?? null,
               sourceOrderId: restaurant.orderIds?.[0] ?? null,
               sourceTripId: trip.id,
+              sourceReturnId,
             })
 
             // 标记为 SETTLED
@@ -111,22 +129,28 @@ export async function POST(req: Request) {
           where: { id: { in: orderReturnIds }, status: 'APPROVED' },
           include: { order: { select: { restaurantId: true, restaurantName: true } } },
         })
-        const orderIds = [...new Set(orderReturns.map(r => r.orderId))]
-        const productIds = [...new Set(orderReturns.map(r => r.productId))]
+        const orderSourceIds = orderReturns.map(ret => `ORDER_RETURN:${ret.id}`)
+        const existingOrderLines = orderSourceIds.length ? await prisma.creditNoteLine.findMany({
+          where: { sourceReturnId: { in: orderSourceIds } }, select: { sourceReturnId: true },
+        }) : []
+        for (const line of existingOrderLines) existingSourceIds.add(line.sourceReturnId)
+        const pendingOrderReturns = orderReturns.filter(ret => !existingSourceIds.has(`ORDER_RETURN:${ret.id}`))
+        const orderIds = [...new Set(pendingOrderReturns.map(r => r.orderId))]
+        const productIds = [...new Set(pendingOrderReturns.map(r => r.productId))]
         const priceLines = orderIds.length > 0 ? await prisma.orderLine.findMany({
           where: { orderId: { in: orderIds }, productId: { in: productIds } },
           select: { orderId: true, productId: true, unitPrice: true },
         }) : []
         const priceMap = new Map(priceLines.map(l => [`${l.orderId}:${l.productId}`, l.unitPrice]))
 
-        const unpriced = orderReturns.filter(ret => !priceMap.has(`${ret.orderId}:${ret.productId}`))
+        const unpriced = pendingOrderReturns.filter(ret => !priceMap.has(`${ret.orderId}:${ret.productId}`))
         if (unpriced.length > 0) {
           return NextResponse.json({
             error: `以下退货记录在原订单里找不到对应商品行，无法确定单价，已中止生成：${unpriced.map(r => r.id).join(', ')}`,
           }, { status: 400 })
         }
 
-        for (const ret of orderReturns) {
+        for (const ret of pendingOrderReturns) {
           const customerId = ret.order.restaurantId
           if (!customerReturns.has(customerId)) {
             customerReturns.set(customerId, {
@@ -142,6 +166,7 @@ export async function POST(req: Request) {
             reason: ret.reason ?? null,
             sourceOrderId: ret.orderId,
             sourceTripId: null,
+            sourceReturnId: `ORDER_RETURN:${ret.id}`,
           })
           settledOrderReturnIds.push(ret.id)
         }
@@ -206,6 +231,7 @@ export async function POST(req: Request) {
               reason: l.reason,
               sourceOrderId: l.sourceOrderId,
               sourceTripId: l.sourceTripId,
+              sourceReturnId: l.sourceReturnId,
               sequence: idx,
             }
           })
