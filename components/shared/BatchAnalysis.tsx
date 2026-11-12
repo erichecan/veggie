@@ -333,7 +333,7 @@ export default function BatchAnalysis() {
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-6">
+      <div className="w-full px-6 py-6 space-y-6">
         {/* ═══ MISSING COORDS BANNER ═══ */}
         {missingCoords.length > 0 && (
           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5">

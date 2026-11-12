@@ -88,7 +88,7 @@ export default function ShopPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="sticky top-0 z-30 border-b bg-white shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="w-full px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-lg font-bold" style={{ color: PURPLE }}>🥬 {isEn ? 'Wholesale Vegetables' : '蔬菜批发商城'}</span>
           <div className="flex items-center gap-2">
             <LocaleSwitcher />
@@ -103,7 +103,7 @@ export default function ShopPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
+      <main className="w-full px-4 py-6 space-y-4">
         <div className="lg:flex lg:gap-4 lg:items-start">
           <CategorySidebar categories={categories} activeCategoryId={categoryId === 'all' ? null : categoryId} onSelect={id => setCategoryId(id ?? 'all')} isEn={isEn} />
           <div className="min-w-0 flex-1">
@@ -111,7 +111,7 @@ export default function ShopPage() {
               <div className="text-center py-20 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
             ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
                   {products.map(p => (
                     <div key={p.id} className="rounded-xl border bg-white p-3 flex flex-col gap-2" style={{ borderColor: '#eee' }}>
                       <div className="w-full aspect-square rounded-lg bg-gray-50 flex items-center justify-center overflow-hidden">

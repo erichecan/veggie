@@ -43,7 +43,7 @@ function InventoryPageInner() {
   const [tab, setTab] = useState<TabKey>(ANALYTICS_TABS.some(t => t.k === initialTab) ? initialTab : 'overview')
 
   return (
-    <div className="p-5 max-w-[1320px] mx-auto">
+    <div className="w-full p-5">
       {/* 分析入口（同页切换，不跳转） */}
       <div className="flex gap-2 mb-4 flex-wrap">
         {ANALYTICS_TABS.map(l => {

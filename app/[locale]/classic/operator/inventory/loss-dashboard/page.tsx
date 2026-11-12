@@ -107,7 +107,7 @@ export default function LossDashboardPage() {
   const stageInferred = stages.reduce((s2, r) => s2 + r.inferredQty, 0)
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
+    <div className="w-full p-6 space-y-5">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => router.push(`${prefix}/classic/operator/inventory`)} className="hover:underline">

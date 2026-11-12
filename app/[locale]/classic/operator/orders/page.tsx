@@ -155,6 +155,9 @@ export default function ClassicOrdersPage() {
   // 编辑模式下司机批次的本地暂存(orderId → slotId,'' 为取消分配),点「保存」统一提交
   const [pendingBatch, setPendingBatch] = useState<Record<string, string>>({})
   const [savingBatch, setSavingBatch] = useState(false)
+  const [editInternalNoteId, setEditInternalNoteId] = useState<string | null>(null)
+  const [editInternalNoteVal, setEditInternalNoteVal] = useState('')
+  const [savingInternalNoteId, setSavingInternalNoteId] = useState<string | null>(null)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
   const [searchDriverNames, setSearchDriverNames] = useState<string[]>([])
 
@@ -538,6 +541,26 @@ export default function ClassicOrdersPage() {
     setEditBatchId(null)
   }
 
+  async function saveInternalNote(orderId: string, value: string) {
+    if (savingInternalNoteId) return
+    const order = orders.find(item => item.id === orderId)
+    if ((order?.internalNote ?? '') === value) {
+      setEditInternalNoteId(null)
+      return
+    }
+    setSavingInternalNoteId(orderId)
+    try {
+      await apiPut(`/api/orders/${orderId}`, { internalNote: value })
+      setEditInternalNoteId(null)
+      refresh()
+      toast.success(isEn ? 'Internal note updated' : '内部备注已更新')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update internal note' : '更新内部备注失败'))
+    } finally {
+      setSavingInternalNoteId(null)
+    }
+  }
+
   const pendingCount = Object.keys(pendingBatch).length
 
   async function saveAllBatches() {
@@ -577,6 +600,7 @@ export default function ClassicOrdersPage() {
       : `有 ${pendingCount} 项未保存的司机批次修改,放弃并退出编辑?`)) return
     setIsReadMode(true)
     setEditBatchId(null)
+    setEditInternalNoteId(null)
     setPendingBatch({})
   }
 
@@ -730,7 +754,38 @@ export default function ClassicOrdersPage() {
           </div>
         </td>
         {/* Internal Notes */}
-        <td className="hidden xl:table-cell px-1.5 py-2 text-base text-gray-700 truncate" title={getField(o, 'internalNote')}>{getField(o, 'internalNote')}</td>
+        <td className="hidden xl:table-cell px-1.5 py-2 text-base text-gray-700" onClick={e => e.stopPropagation()}>
+          {!isReadMode ? (
+            editInternalNoteId === o.id ? (
+              <input
+                autoFocus
+                value={editInternalNoteVal}
+                disabled={savingInternalNoteId === o.id}
+                onChange={e => setEditInternalNoteVal(e.target.value)}
+                onBlur={() => void saveInternalNote(o.id, editInternalNoteVal)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
+                className="w-full min-w-20 rounded border border-purple-400 bg-white px-1.5 py-0.5 text-base focus:outline-none focus:ring-1 focus:ring-purple-300 disabled:opacity-60"
+                aria-label={isEn ? 'Edit internal note' : '编辑内部备注'}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditInternalNoteId(o.id)
+                  setEditInternalNoteVal(getField(o, 'internalNote'))
+                }}
+                className="block w-full truncate text-left hover:text-purple-700 hover:underline"
+                title={isEn ? 'Click to edit internal note' : '点击编辑内部备注'}
+              >
+                {getField(o, 'internalNote') || '—'}
+              </button>
+            )
+          ) : (
+            <span className="block truncate" title={getField(o, 'internalNote')}>{getField(o, 'internalNote')}</span>
+          )}
+        </td>
         {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
         <td className="px-1.5 py-2 text-base text-gray-700 truncate" title={getField(o, 'salesman') || '—'}>{getField(o, 'salesman') || '—'}</td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
@@ -799,7 +854,11 @@ export default function ClassicOrdersPage() {
         onSearch={v => { setServerSearch(v) }}
         onSearchSubmit={() => {}}
         facetFields={localizeFacetFields(SALES_ORDER_FACET_FIELDS, isEn)}
-        smartSearchFacet={query => parseDriverDispatchSearch(query, searchDriverNames) ? 'dispatchAssignment' : null}
+        smartSearchFacet={query => {
+          if (parseDriverDispatchSearch(query, searchDriverNames)) return 'dispatchAssignment'
+          if (/^(am|pm|morning|afternoon|上午|早上|下午)$/i.test(query.trim())) return 'dispatchShift'
+          return null
+        }}
         onFacetAdd={addFacet}
         filterOptions={[
           { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },

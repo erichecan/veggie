@@ -114,7 +114,7 @@ export default function BulkProductImagesPage() {
   }
 
   return (
-    <div className="p-4 max-w-5xl mx-auto">
+    <div className="w-full p-4">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-semibold">{isEn ? 'Bulk Upload Product Images' : '批量上传商品图片'}</h1>
         <button

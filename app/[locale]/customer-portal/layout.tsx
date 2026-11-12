@@ -39,7 +39,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="sticky top-0 z-30 border-b bg-white shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="w-full px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-6">
             <span className="text-lg font-bold" style={{ color: PURPLE }}>🥬 {isEn ? 'Order Vegetables' : '蔬菜订购'}</span>
             <nav className="flex gap-1">
@@ -68,7 +68,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
           </div>
         </div>
       </header>
-      <main className="max-w-5xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full px-4 py-6">{children}</main>
     </div>
   )
 }

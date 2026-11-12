@@ -49,7 +49,7 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Finance' : '财务'} menuItems={LINKS} session={session} />
-      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full max-w-none px-4 py-6">{children}</main>
     </div>
   )
 }

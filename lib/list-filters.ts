@@ -41,9 +41,10 @@ export const ORDER_FACET_FIELDS: FacetFieldDef[] = [
 
 /** 销售单专属的配送波次搜索维度；与 Driver facet 组合可筛选某司机某时段/批次的订单。 */
 export const SALES_ORDER_FACET_FIELDS: FacetFieldDef[] = [
-  ...ORDER_FACET_FIELDS,
+  ...ORDER_FACET_FIELDS.filter(field => field.key !== 'all'),
   { key: 'dispatchAssignment', label: '司机 + 批次 + 时段', labelEn: 'Driver + Batch + Shift' },
   { key: 'dispatchBatch', label: '批次/时段', labelEn: 'Batch / Shift' },
+  { key: 'dispatchShift', label: '时段', labelEn: 'Shift' },
 ]
 
 /**

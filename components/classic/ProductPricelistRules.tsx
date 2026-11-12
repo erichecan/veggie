@@ -84,7 +84,7 @@ export default function ProductPricelistRules({ productId, prefix, isEn }: { pro
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs max-w-5xl">
+          <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-gray-500 border-b border-gray-200">
                 <th className="py-1.5 pr-3 font-semibold">{isEn ? 'Pricelist' : '价格表'}</th>
@@ -144,7 +144,7 @@ export default function ProductPricelistRules({ productId, prefix, isEn }: { pro
           data.history.length === 0 ? (
             <p className="mt-1 text-xs text-gray-400">{isEn ? 'No pricelist price changes recorded yet.' : '还没有价格表改价记录。'}</p>
           ) : (
-            <ul className="mt-2 space-y-1.5 max-w-5xl">
+            <ul className="mt-2 space-y-1.5">
               {data.history.map(h => (
                 <li key={h.id} className="text-xs text-gray-600">
                   <span className="text-gray-400">{formatDateTime(h.createdAt)}</span>

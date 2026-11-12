@@ -626,7 +626,7 @@ ${catsHtml}
   const selectCls = 'border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white'
 
   return (
-    <div className="max-w-4xl space-y-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div className="w-full max-w-none space-y-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
 
       {/* ── 筛选栏 ── */}
       <div className="p-5 border-b border-gray-200 space-y-3">

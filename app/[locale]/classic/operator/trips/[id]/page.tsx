@@ -424,7 +424,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         pageSize={1}
       />
 
-      <div className="p-4 max-w-3xl space-y-6">
+      <div className="w-full p-4 space-y-6">
 
         {/* ── 行程概览 card ────────────────────────────────────────────────── */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">

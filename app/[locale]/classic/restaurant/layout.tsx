@@ -32,7 +32,7 @@ export default function ClassicRestaurantLayout({ children }: { children: React.
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Shopping' : '采购'} menuItems={LINKS} session={session} />
-      <main className="max-w-5xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full max-w-none px-4 py-6">{children}</main>
     </div>
   )
 }

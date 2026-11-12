@@ -136,7 +136,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="w-full max-w-none">
       <div className="flex gap-2 mb-4">
         <input
           value={query}

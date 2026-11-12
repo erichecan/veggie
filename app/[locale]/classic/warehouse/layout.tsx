@@ -32,7 +32,7 @@ export default function ClassicWarehouseLayout({ children }: { children: React.R
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Inventory' : '库存'} menuItems={LINKS} session={session} />
-      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full max-w-none px-4 py-6">{children}</main>
     </div>
   )
 }

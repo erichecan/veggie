@@ -272,7 +272,7 @@ export default function DriversPage() {
     })
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-4">
+    <div className="w-full p-6 space-y-4">
       {/* 页头 */}
       <div className="flex items-center justify-between">
         <div>

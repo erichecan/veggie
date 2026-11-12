@@ -205,7 +205,7 @@ export default function VendorBillDetailPage() {
   const fmtTime = (v?: string | null) => (v ? new Date(v).toLocaleString('en-GB') : '—')
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
+    <div className="w-full p-4">
       {/* 顶部操作栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex flex-wrap items-center gap-3">

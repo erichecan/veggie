@@ -283,7 +283,7 @@ export default function LotsPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
+    <div className="w-full p-6 space-y-4">
       <div className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => router.push(`${prefix}/classic/operator/inventory`)} className="hover:underline">
           {isEn ? 'Inventory' : '库存管理'}
