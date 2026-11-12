@@ -4,7 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
-import type { Order, OrderReturn } from '@/lib/types'
+import type { Order } from '@/lib/types'
 
 /**
  * 退货/报废整合 M3：日销售中心「退货登记」tab（跟打印中心/缺货处理平级，不嵌进缺货处理——
@@ -21,6 +21,13 @@ interface RegisterForm {
   exchangeOrderId: string
 }
 
+interface RegisteredReturn {
+  orderLineId: string | null
+  productId: string
+  quantity: number
+  status: string
+}
+
 const EMPTY_FORM: RegisterForm = { quantity: '', reason: '', actionType: 'return', exchangeOrderId: '' }
 
 export default function ReturnRegistration({ refreshKey }: { refreshKey: number }) {
@@ -34,7 +41,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
   const [activeLineId, setActiveLineId] = useState<string | null>(null)
   const [form, setForm] = useState<RegisterForm>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
-  const [existingReturns, setExistingReturns] = useState<OrderReturn[]>([])
+  const [registeredReturns, setRegisteredReturns] = useState<RegisteredReturn[]>([])
 
   async function runSearch() {
     const q = query.trim()
@@ -64,12 +71,27 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
     setSelected(o)
     setActiveLineId(null)
     setForm(EMPTY_FORM)
+    setRegisteredReturns([])
     try {
-      const data = await apiGet<{ returns: OrderReturn[] }>(`/api/order-returns?orderId=${encodeURIComponent(o.id)}`)
-      setExistingReturns(data.returns ?? [])
-    } catch {
-      setExistingReturns([])
+      const result = await apiGet<{ returns: RegisteredReturn[] }>(`/api/order-returns?orderId=${encodeURIComponent(o.id)}`)
+      setRegisteredReturns(result.returns.filter(row => row.status === 'WAREHOUSE_PENDING' || row.status === 'PENDING_REVIEW'))
+    } catch (err) {
+      setSelected(null)
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Could not load registered returns' : '读取已有退货登记失败'))
     }
+  }
+
+  function reservedReturnQty(line: NonNullable<Order['lines']>[number]) {
+    // Unlinked historical records (created before line-level linkage) are
+    // conservatively attributed by order + product.
+    const reserved = registeredReturns
+      .filter(row => row.productId === line.productId && (!row.orderLineId || row.orderLineId === line.id))
+      .reduce((sum, row) => sum + Number(row.quantity), 0)
+    return reserved
+  }
+
+  function returnableQty(line: NonNullable<Order['lines']>[number]) {
+    return Math.max(0, Number(line.deliveredQty ?? 0) - reservedReturnQty(line))
   }
 
   function openLine(lineId: string) {
@@ -82,30 +104,28 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
     const line = selected.lines?.find(l => l.id === activeLineId)
     if (!line) return
     const quantity = Number(form.quantity)
-    const reserved = existingReturns
-      .filter(r => r.orderLineId === line.id && ['WAREHOUSE_PENDING', 'PENDING_REVIEW'].includes(r.status))
-      .reduce((sum, r) => sum + Number(r.quantity), 0)
-    const remaining = Math.max(0, Number(line.deliveredQty ?? 0) - reserved)
     if (!quantity || quantity <= 0) {
       toast.error(isEn ? 'Enter a quantity > 0' : '请填写大于 0 的数量')
       return
     }
-    if (quantity > remaining) {
-      toast.error(isEn ? `Maximum return quantity is ${remaining}` : `最多还能登记 ${remaining}`)
+    const remaining = returnableQty(line)
+    if (quantity > remaining + 0.000001) {
+      toast.error(isEn ? `Only ${remaining} ${line.uomName ?? ''} remains returnable` : `该商品最多还能登记 ${remaining} ${line.uomName ?? ''}`)
       return
     }
     setSubmitting(true)
     try {
-      await apiPost('/api/order-returns', {
+      const created = await apiPost<RegisteredReturn>('/api/order-returns', {
         orderId: selected.id,
         orderLineId: line.id,
+        productId: line.productId,
         quantity,
         reason: form.reason.trim() || undefined,
         actionType: form.actionType,
         exchangeOrderId: form.actionType === 'exchange' ? form.exchangeOrderId.trim() || undefined : undefined,
       })
       toast.success(isEn ? 'Return registered' : '登记成功，待仓库核实')
-      setExistingReturns(prev => [...prev, { id: `pending-${Date.now()}`, orderId: selected.id, orderLineId: line.id, productId: line.productId, productName: line.productName, quantity, actionType: form.actionType, status: 'WAREHOUSE_PENDING', registeredById: '', createdAt: new Date().toISOString() }])
+      setRegisteredReturns(prev => [...prev, created])
       setActiveLineId(null)
       setForm(EMPTY_FORM)
     } catch (err) {
@@ -170,20 +190,16 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
           </div>
           <div className="divide-y divide-gray-50">
             {(selected.lines ?? []).map(line => (
-              (() => {
-                const reserved = existingReturns
-                  .filter(r => r.orderLineId === line.id && ['WAREHOUSE_PENDING', 'PENDING_REVIEW'].includes(r.status))
-                  .reduce((sum, r) => sum + Number(r.quantity), 0)
-                const remaining = Math.max(0, Number(line.deliveredQty ?? 0) - reserved)
-                return (
               <div key={line.id} className="px-4 py-2.5">
                 <div className="flex items-center gap-3">
                   <span className="flex-1 text-sm text-gray-800">{line.productName}</span>
-                  <span className="text-xs text-gray-400 w-24 text-right">
-                    {isEn ? 'Delivered' : '已送达'} {line.deliveredQty} {line.uomName ?? ''}
+                  <span className="text-xs text-gray-400 w-44 text-right">
+                    {isEn ? 'Delivered' : '已送达'} {line.deliveredQty} · {isEn ? 'Returnable' : '可登记'} {returnableQty(line)} {line.uomName ?? ''}
                   </span>
-                  {remaining <= 0 ? (
-                    <span className="text-xs text-green-600 w-16 text-right">{isEn ? 'Registered' : '已登记'}</span>
+                  {returnableQty(line) <= 0 ? (
+                    <span className={`text-xs w-20 text-right ${reservedReturnQty(line) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                      {reservedReturnQty(line) > 0 ? (isEn ? 'Registered' : '已登记') : (isEn ? 'No delivered qty' : '无已送达数量')}
+                    </span>
                   ) : (
                     <button
                       onClick={() => openLine(line.id)}
@@ -199,13 +215,16 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
                       <label className="text-xs text-gray-500 w-20">{isEn ? 'Quantity' : '数量'}</label>
                       <input
                         type="number"
-                        min={0}
-                        max={remaining}
+                        min={0.001}
+                        max={returnableQty(line)}
                         step="0.01"
                         value={form.quantity}
-                        onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+                        onChange={e => {
+                          const next = e.target.value
+                          if (next === '' || Number(next) <= returnableQty(line)) setForm(f => ({ ...f, quantity: next }))
+                        }}
                         className="w-28 px-2 py-1 border border-gray-300 rounded text-sm"
-                        placeholder={String(remaining)}
+                        placeholder={String(returnableQty(line))}
                       />
                       <span className="text-xs text-gray-400">{line.uomName ?? ''}</span>
                     </div>
@@ -243,7 +262,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
                     <div className="flex gap-2 mt-1">
                       <button
                         onClick={submit}
-                        disabled={submitting}
+                        disabled={submitting || returnableQty(line) <= 0}
                         className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-50"
                         style={{ background: '#875A7B' }}
                       >
@@ -259,8 +278,6 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
                   </div>
                 )}
               </div>
-                )
-              })()
             ))}
             {(selected.lines ?? []).length === 0 && (
               <p className="px-4 py-3 text-sm text-gray-400">{isEn ? 'No lines on this order' : '该订单没有商品行'}</p>

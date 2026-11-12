@@ -130,7 +130,7 @@ export async function postReturnStockMoves(
 
 export interface OrderLineReduction {
   orderId: string
-  orderLineId?: string
+  orderLineId?: string | null
   productId: string
   reduceQty: number
 }

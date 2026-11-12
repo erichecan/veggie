@@ -1994,6 +1994,8 @@ model CreditNoteLine {
   sourceOrderId  String?
   /// 来源行程 ID
   sourceTripId   String?
+  /// 来源退换货记录的稳定键；唯一约束确保审核重试不会重复生成贷记单
+  sourceReturnId String?    @unique
   sequence       Int        @default(0)
   createdAt      DateTime   @default(now())
 

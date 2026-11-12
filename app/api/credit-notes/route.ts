@@ -46,9 +46,15 @@ export async function GET(req: Request) {
           by: ['creditNoteId'], where: { creditNoteId: { in: creditNotes.map(c => c.id) } }, _sum: { amount: true },
         })
       : []
+    const sourceOrderIds = [...new Set(creditNotes.flatMap(c => c.lines.map(line => line.sourceOrderId).filter((id): id is string => Boolean(id))))]
+    const sourceOrders = sourceOrderIds.length ? await prisma.order.findMany({
+      where: { id: { in: sourceOrderIds } }, select: { id: true, code: true },
+    }) : []
+    const orderCodeById = new Map(sourceOrders.map(order => [order.id, order.code]))
     const used = new Map(sums.map(s => [s.creditNoteId, toNum(s._sum.amount ?? 0)]))
     return NextResponse.json(serializeApi(creditNotes.map(c => ({
       ...c,
+      lines: c.lines.map(line => ({ ...line, sourceOrderCode: line.sourceOrderId ? orderCodeById.get(line.sourceOrderId) ?? null : null })),
       amountAllocated: round2(used.get(c.id) ?? 0),
       amountRemaining: round2(toNum(c.totalIncTax) - (used.get(c.id) ?? 0)),
     }))))

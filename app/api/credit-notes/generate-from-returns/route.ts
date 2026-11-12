@@ -53,6 +53,7 @@ export async function POST(req: Request) {
           reason: string | null
           sourceOrderId: string | null
           sourceTripId: string | null
+          sourceReturnId: string | null
         }>
       }>()
 
@@ -62,6 +63,23 @@ export async function POST(req: Request) {
         restaurants: TripRestaurant[]
       }> = []
       const settledOrderReturnIds: string[] = []
+      const legacyTripReturns = trips.flatMap(trip => {
+        const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
+        return restaurants.flatMap(restaurant => (restaurant.returns ?? []).flatMap((ret, index) =>
+          ret.status === 'APPROVED'
+            ? [`TRIP:${trip.id}:${ret.id ?? `${restaurant.restaurantId}:${index}:${ret.productId}`}`]
+            : []))
+      })
+      const requestedOrderReturnIds = orderReturnIds.map(id => `ORDER_RETURN:${id}`)
+      const tripOrderReturns = trips.length > 0 ? await prisma.orderReturn.findMany({
+        where: { sourceTripId: { in: trips.map(trip => trip.id) }, status: 'APPROVED' },
+        select: { id: true },
+      }) : []
+      const sourceIdsToCheck = [...legacyTripReturns, ...requestedOrderReturnIds, ...tripOrderReturns.map(row => `ORDER_RETURN:${row.id}`)]
+      const existingSourceLines = sourceIdsToCheck.length > 0 ? await prisma.creditNoteLine.findMany({
+        where: { sourceReturnId: { in: sourceIdsToCheck } }, select: { sourceReturnId: true },
+      }) : []
+      const existingSourceIds = new Set(existingSourceLines.map(line => line.sourceReturnId))
 
       for (const trip of trips) {
         const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
@@ -72,6 +90,8 @@ export async function POST(req: Request) {
           for (let i = 0; i < returns.length; i++) {
             const ret = returns[i]
             if (ret.status !== 'APPROVED') continue
+            const sourceReturnId = `TRIP:${trip.id}:${ret.id ?? `${restaurant.restaurantId}:${i}:${ret.productId}`}`
+            if (existingSourceIds.has(sourceReturnId)) continue
 
             const customerId = restaurant.restaurantId
             if (!customerReturns.has(customerId)) {
@@ -89,6 +109,7 @@ export async function POST(req: Request) {
               reason: ret.reason ?? null,
               sourceOrderId: restaurant.orderIds?.[0] ?? null,
               sourceTripId: trip.id,
+              sourceReturnId,
             })
 
             // 标记为 SETTLED
@@ -103,6 +124,8 @@ export async function POST(req: Request) {
           include: { order: { select: { restaurantId: true, restaurantName: true, code: true } } },
         })
         for (const ret of canonicalReturns) {
+          const sourceReturnId = `ORDER_RETURN:${ret.id}`
+          if (existingSourceIds.has(sourceReturnId)) continue
           if (!customerReturns.has(ret.order.restaurantId)) {
             customerReturns.set(ret.order.restaurantId, { customerName: ret.order.restaurantName, lines: [] })
           }
@@ -114,6 +137,7 @@ export async function POST(req: Request) {
             reason: ret.reason ?? null,
             sourceOrderId: ret.orderId,
             sourceTripId: trip.id,
+            sourceReturnId,
           })
           settledOrderReturnIds.push(ret.id)
         }
@@ -132,14 +156,15 @@ export async function POST(req: Request) {
           where: { id: { in: orderReturnIds, notIn: settledOrderReturnIds }, status: 'APPROVED' },
           include: { order: { select: { restaurantId: true, restaurantName: true } } },
         })
-        const orderIds = [...new Set(orderReturns.map(r => r.orderId))]
-        const lineIds = [...new Set(orderReturns.map(r => r.orderLineId).filter((v): v is string => Boolean(v)))]
+        const uncreditedOrderReturns = orderReturns.filter(ret => !existingSourceIds.has(`ORDER_RETURN:${ret.id}`))
+        const orderIds = [...new Set(uncreditedOrderReturns.map(r => r.orderId))]
+        const lineIds = [...new Set(uncreditedOrderReturns.map(r => r.orderLineId).filter((v): v is string => Boolean(v)))]
         const priceLines = lineIds.length > 0 ? await prisma.orderLine.findMany({
           where: { id: { in: lineIds } },
           select: { id: true, orderId: true, productId: true, unitPrice: true },
         }) : []
         const priceMap = new Map(priceLines.map(l => [l.id, l.unitPrice]))
-        const legacyPriceLines = orderReturns.filter(r => !r.orderLineId)
+        const legacyPriceLines = uncreditedOrderReturns.filter(r => !r.orderLineId)
         const legacyPrices = legacyPriceLines.length > 0 ? await prisma.orderLine.findMany({
           where: { orderId: { in: [...new Set(legacyPriceLines.map(r => r.orderId))] }, productId: { in: [...new Set(legacyPriceLines.map(r => r.productId))] } },
           select: { orderId: true, productId: true, unitPrice: true },
@@ -149,14 +174,14 @@ export async function POST(req: Request) {
         const getPrice = (ret: typeof orderReturns[number]) => ret.unitPrice ?? (ret.orderLineId
           ? priceMap.get(ret.orderLineId)
           : legacyPriceMap.get(`${ret.orderId}:${ret.productId}`))
-        const unpriced = orderReturns.filter(ret => getPrice(ret) == null)
+        const unpriced = uncreditedOrderReturns.filter(ret => getPrice(ret) == null)
         if (unpriced.length > 0) {
           return NextResponse.json({
             error: `以下退货记录在原订单里找不到对应商品行，无法确定单价，已中止生成：${unpriced.map(r => r.id).join(', ')}`,
           }, { status: 400 })
         }
 
-        for (const ret of orderReturns) {
+        for (const ret of uncreditedOrderReturns) {
           const customerId = ret.order.restaurantId
           if (!customerReturns.has(customerId)) {
             customerReturns.set(customerId, {
@@ -172,6 +197,7 @@ export async function POST(req: Request) {
             reason: ret.reason ?? null,
             sourceOrderId: ret.orderId,
             sourceTripId: ret.sourceTripId,
+            sourceReturnId: `ORDER_RETURN:${ret.id}`,
           })
           settledOrderReturnIds.push(ret.id)
         }
@@ -236,6 +262,7 @@ export async function POST(req: Request) {
               reason: l.reason,
               sourceOrderId: l.sourceOrderId,
               sourceTripId: l.sourceTripId,
+              sourceReturnId: l.sourceReturnId,
               sequence: idx,
             }
           })

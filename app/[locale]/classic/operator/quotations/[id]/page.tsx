@@ -566,7 +566,12 @@ export default function QuotationDetailPage() {
     if (!order || confirming) return
     setConfirming(true)
     try {
-      await apiPut(`/api/orders/${order.id}`, { status: 'CONFIRMED' })
+      // Confirm and submit the currently selected driver together. The backend
+      // also falls back to the persisted slot for callers that omit this field.
+      await apiPut(`/api/orders/${order.id}`, {
+        status: 'CONFIRMED',
+        driverSlotId: driverSlotId || null,
+      })
       toast.success('Quotation confirmed')
       router.push(`${prefix}/classic/operator/orders/${order.id}`)
     } catch (e) {

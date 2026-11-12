@@ -141,8 +141,8 @@ async function submitReview(
     refundNote?: string
     exchangeOrderId?: string
   },
-) {
-  await apiPut(`/api/trips/${item.tripId}/returns`, {
+): Promise<{ creditNotes?: Array<{ name: string }> }> {
+  return apiPut(`/api/trips/${item.tripId}/returns`, {
     reviews: [{
       restaurantId: item.restaurantId,
       productId: item.productId,
@@ -199,7 +199,7 @@ export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readO
   async function act(action: 'approve' | 'reject') {
     setSaving(true)
     try {
-      await submitReview(item, action, action === 'approve' ? {
+      const result = await submitReview(item, action, action === 'approve' ? {
         disposition,
         scrapReason: disposition === 'SCRAP' ? scrapReason : undefined,
         refundMode: mode,
@@ -211,7 +211,9 @@ export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readO
         refundNote: reviewNote,
       })
       toast.success(action === 'approve'
-        ? (isEn ? 'Return approved' : '已批准')
+        ? (result.creditNotes?.length
+          ? (isEn ? `Approved · draft credit note ${result.creditNotes.map(cn => cn.name).join(', ')} created` : `已批准，草稿贷记单 ${result.creditNotes.map(cn => cn.name).join(', ')} 已生成`)
+          : (isEn ? 'Return approved' : '已批准'))
         : (isEn ? 'Return rejected' : '已拒绝'))
       onSaved()
       onClose()
@@ -546,7 +548,7 @@ export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readO
         )}
         {item.status === 'APPROVED' && (
           <span className="text-xs text-gray-400 self-center">
-            {isEn ? 'To settle, go to Finance → Generate Credit Note' : '结算请前往「财务 → 生成贷记单」'}
+            {isEn ? 'A draft credit note is created automatically for accounting review.' : '退换货审核通过后会自动生成贷记单草稿，交由财务核对。'}
           </span>
         )}
       </DialogFooter>

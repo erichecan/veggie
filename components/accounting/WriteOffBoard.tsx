@@ -1,5 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import Link from 'next/link'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
 import type { Order } from '@/lib/types'
@@ -27,6 +30,14 @@ interface ReturnsSummary {
 }
 
 interface ReturnsResponse { today: string; floor: string; rows: ReturnRow[]; summary: ReturnsSummary }
+interface DraftCreditNoteRow {
+  id: string
+  name: string
+  customerName: string
+  totalIncTax: number | string
+  createdAt: string
+  lines: Array<{ sourceOrderCode?: string | null }>
+}
 
 const isCash = (r: { paymentMethod: string }) => r.paymentMethod.toUpperCase() === 'CASH'
 
@@ -42,8 +53,12 @@ const isCash = (r: { paymentMethod: string }) => r.paymentMethod.toUpperCase() =
  */
 export function WriteOffBoard({ businessDate }: { businessDate: string | null }) {
   const [tab, setTab] = useState<'open' | 'returned'>('open')
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   return (
     <div className="space-y-4">
+      <DraftCreditNotesPanel isEn={isEn} href={`${prefix}/classic/operator/credit-notes`} />
       <div className="flex gap-1 border-b border-gray-200">
         {([['open', '待核销'], ['returned', '已核销']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} data-testid={`writeoff-tab-${k}`}
@@ -55,6 +70,58 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
       </div>
       {tab === 'open' ? <OpenReturns businessDate={businessDate} /> : <ReturnedList />}
     </div>
+  )
+}
+
+function DraftCreditNotesPanel({ isEn, href }: { isEn: boolean; href: string }) {
+  const [notes, setNotes] = useState<DraftCreditNoteRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const load = useCallback(async () => {
+    try {
+      setNotes(await apiGet<DraftCreditNoteRow[]>('/api/credit-notes?status=DRAFT'))
+    } catch {
+      // The main order write-off flow remains available if the user lacks credit-note access.
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
+  }, [load])
+
+  if (loading || notes.length === 0) return null
+  const drafts = notes.slice(0, 6)
+  return (
+    <section className="rounded border border-amber-200 bg-amber-50 px-4 py-3" data-testid="draft-credit-notes">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="font-semibold text-amber-900">{isEn ? `Draft credit notes to review (${notes.length})` : `待会计处理的草稿贷记单（${notes.length}）`}</h2>
+          <p className="mt-0.5 text-xs text-amber-800">{isEn ? 'Approved return/exchange decisions create drafts automatically. Review and confirm them before applying the credit.' : '退换货审核通过后自动生成草稿；财务核对确认后再抵扣订单或退款。'}</p>
+        </div>
+        <Link href={href} className="rounded border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100">
+          {isEn ? 'Review credit notes' : '查看并处理'} →
+        </Link>
+      </div>
+      <div className="mt-3 divide-y divide-amber-200/70">
+        {drafts.map(note => {
+          const orderCodes = [...new Set(note.lines.map(line => line.sourceOrderCode).filter(Boolean))]
+          return (
+            <div key={note.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+              <div className="min-w-0">
+                <span className="font-mono font-medium text-amber-950">{note.name}</span>
+                <span className="mx-2 text-amber-700">{note.customerName}</span>
+                {orderCodes.length > 0 && <span className="text-xs text-amber-800">{isEn ? 'Order' : '订单'} {orderCodes.join(', ')}</span>}
+              </div>
+              <span className="font-semibold text-amber-950">€{Number(note.totalIncTax).toFixed(2)}</span>
+            </div>
+          )
+        })}
+        {notes.length > drafts.length && <div className="pt-2 text-xs text-amber-800">{isEn ? `and ${notes.length - drafts.length} more…` : `另有 ${notes.length - drafts.length} 张…`}</div>}
+      </div>
+    </section>
   )
 }
 

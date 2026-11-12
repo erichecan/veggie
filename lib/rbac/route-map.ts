@@ -207,7 +207,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 与司机入口共用 OrderReturn 原订单行账本及 lib/returns-engine.ts 的处置规则，
   // 权限点各自独立（见 lib/rbac/catalog.ts dispatch.goods_return 模块说明）。
   // 列表不单设 read 权限点（DEV-PLAN 路由清单原文）：谁能核实或审核，就能看列表。
-  { pattern: '/api/order-returns', methods: R, permission: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review'] },
+  { pattern: '/api/order-returns', methods: R, permission: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review', 'dispatch.goods_return.register'] },
   { pattern: '/api/order-returns', methods: ['POST'], permission: 'dispatch.goods_return.register' },
   { pattern: '/api/order-returns/*/warehouse-verify', methods: ['PUT'], permission: 'dispatch.goods_return.warehouse_verify' },
   { pattern: '/api/order-returns/*/review', methods: ['PUT'], permission: 'dispatch.goods_return.review' },
@@ -475,6 +475,8 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   // 单开这条子路径，两个权限点任一即可，不把整个运营后台（客户/商品/采购等）
   // 一并开给财务。
   { pattern: '/classic/operator/orders/**', permission: ['page.operator.access', 'page.finance.access'] },
+  // 财务人员从核销页进入贷记单草稿处理；页面仍挂在 operator 路由下。
+  { pattern: '/classic/operator/credit-notes/**', permission: ['page.operator.access', 'page.finance.access'] },
   // 20261027（退货/报废整合 M1/M2）：operator/inventory 的「退换货」tab 合并了
   // warehouse/returns 的三段审核看板，WAREHOUSE 角色原本就在管这段流程
   // （page.warehouse.access），不能因为页面挂在 operator 模块下就把人挡在外面。
