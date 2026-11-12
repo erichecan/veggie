@@ -24,6 +24,7 @@ export interface InvoiceBalanceInput {
   /** 期初（复式改造前导入、没有明细）的已收 / 已冲减，见 schema Invoice.openingPaid */
   openingPaid?: number
   openingCredited?: number
+  writeOffAmount?: number
 }
 
 export interface InvoiceBalance {
@@ -36,7 +37,7 @@ export interface InvoiceBalance {
 export function computeInvoiceBalance(input: InvoiceBalanceInput): InvoiceBalance {
   const amountPaid = round2((input.openingPaid ?? 0) + input.payments.reduce((s, a) => s + a, 0))
   const amountCredited = round2((input.openingCredited ?? 0) + input.creditAllocations.reduce((s, a) => s + a, 0))
-  const raw = round2(input.totalIncTax - amountPaid - amountCredited)
+  const raw = round2(input.totalIncTax - amountPaid - amountCredited - (input.writeOffAmount ?? 0))
   return { amountPaid, amountCredited, amountDue: Math.max(0, raw), settled: raw <= EPS }
 }
 
@@ -53,7 +54,7 @@ type Db = any
 export async function readInvoiceBalance(db: Db, invoiceId: string): Promise<(InvoiceBalance & { status: string; totalIncTax: number; paidAt: string | null }) | null> {
   const invoice = await db.invoice.findUnique({
     where: { id: invoiceId },
-    select: { id: true, status: true, totalIncTax: true, paidAt: true, openingPaid: true, openingCredited: true },
+    select: { id: true, status: true, totalIncTax: true, paidAt: true, openingPaid: true, openingCredited: true, writeOffAmount: true },
   })
   if (!invoice) return null
   const [payments, allocations] = await Promise.all([
@@ -65,6 +66,7 @@ export async function readInvoiceBalance(db: Db, invoiceId: string): Promise<(In
     totalIncTax,
     openingPaid: toNum(invoice.openingPaid),
     openingCredited: toNum(invoice.openingCredited),
+    writeOffAmount: toNum(invoice.writeOffAmount),
     payments: payments.map((p: { amount: unknown }) => toNum(p.amount)),
     creditAllocations: allocations.map((a: { amount: unknown }) => toNum(a.amount)),
   })

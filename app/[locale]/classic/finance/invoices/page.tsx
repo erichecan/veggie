@@ -14,6 +14,7 @@ import {
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { invoiceExportColumns } from '@/lib/export/columns/invoices'
+import { downloadAuthedFile } from '@/lib/print/open-pdf'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets } from '@/lib/facet-client'
 import { INVOICE_FACET_DEFS, fieldsOf } from '@/lib/facets/client-defs'
@@ -125,11 +126,13 @@ function normalizeInvoice(inv: Record<string, unknown>): Invoice {
   }
 }
 
-function InvoiceRow({ inv, locale, isEn, onClick }: {
+function InvoiceRow({ inv, locale, isEn, onClick, selected, onSelect }: {
   inv: Invoice
   locale: string
   isEn: boolean
   onClick: () => void
+  selected: boolean
+  onSelect: (checked: boolean) => void
 }) {
   const [hover, setHover] = useState(false)
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
@@ -141,6 +144,9 @@ function InvoiceRow({ inv, locale, isEn, onClick }: {
       onMouseLeave={() => setHover(false)}
       onClick={onClick}
     >
+      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+        <input type="checkbox" checked={selected} onChange={e => onSelect(e.target.checked)} aria-label={`${isEn ? 'Select' : '选择'} ${inv.name}`} />
+      </td>
       <td className="px-4 py-3 font-mono font-medium" style={{ color: '#875A7B' }}>
         {inv.name}
       </td>
@@ -202,6 +208,13 @@ export default function ClassicInvoicesPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [statusFilter, setStatusFilter] = useState<Invoice['status'] | ''>('')
   const [groupBy, setGroupBy] = useState('')
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchPayOpen, setBatchPayOpen] = useState(false)
+  const [batchPayNote, setBatchPayNote] = useState('')
+  const [batchPayJournal, setBatchPayJournal] = useState('BANK')
+  const [batchPayJournals, setBatchPayJournals] = useState<Array<{ code: string; name: string }>>([])
+  const [sageExporting, setSageExporting] = useState(false)
 
   async function load() {
     try {
@@ -347,6 +360,19 @@ export default function ClassicInvoicesPage() {
     filenameEn: 'Invoices',
   })
 
+  async function exportForSage() {
+    if (sageExporting) return
+    setSageExporting(true)
+    try {
+      await downloadAuthedFile('/api/invoices/sage-export', 'Sage_Invoices.csv')
+      toast.success(isEn ? 'Sage invoice export downloaded' : 'Sage 发票数据已导出')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (isEn ? 'Sage export failed' : 'Sage 导出失败'))
+    } finally {
+      setSageExporting(false)
+    }
+  }
+
   const INVOICE_GB_FIELD: Record<string, keyof Invoice> = {
     customer: 'customerName',
     status: 'status',
@@ -355,6 +381,39 @@ export default function ClassicInvoicesPage() {
 
   const PAGE_SIZE = 20
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const selectedInvoices = invoices.filter(inv => selectedInvoiceIds.has(inv.id))
+  const selectedDrafts = selectedInvoices.filter(inv => inv.status === 'draft')
+  const canBatchPay = selectedInvoices.length >= 2 && selectedInvoices.every(inv => inv.status === 'posted' && inv.amountDue > 0 && inv.customerId === selectedInvoices[0].customerId)
+
+  async function batchPost() {
+    const ids = selectedDrafts.map(inv => inv.id)
+    if (!ids.length) return
+    if (!confirm(isEn ? `Post ${ids.length} draft invoice(s)? All selected invoices will post together or none will post.` : `确认批量过账 ${ids.length} 张草稿发票？整批要么全部成功，要么全部不执行。`)) return
+    setBatchBusy(true)
+    try {
+      await apiPost('/api/invoices/batch-post', { invoiceIds: ids })
+      toast.success(isEn ? `${ids.length} invoices posted` : `${ids.length} 张发票已批量过账`)
+      setSelectedInvoiceIds(new Set())
+      await load()
+    } catch (error) { toast.error(error instanceof Error ? error.message : (isEn ? 'Batch post failed' : '批量过账失败')) }
+    finally { setBatchBusy(false) }
+  }
+
+  async function batchPay() {
+    if (!canBatchPay) return
+    setBatchBusy(true)
+    try {
+      await apiPost('/api/payments/batch', { invoiceIds: selectedInvoices.map(inv => inv.id), paymentJournalCode: batchPayJournal, note: batchPayNote || undefined })
+      toast.success(isEn ? `${selectedInvoices.length} invoices settled with one receipt` : `已用一笔收款结清 ${selectedInvoices.length} 张发票`)
+      setBatchPayOpen(false); setBatchPayNote(''); setSelectedInvoiceIds(new Set())
+      await load()
+    } catch (error) { toast.error(error instanceof Error ? error.message : (isEn ? 'Combined payment failed' : '合并收款失败')) }
+    finally { setBatchBusy(false) }
+  }
+
+  useEffect(() => {
+    apiGet<Array<{ code: string; name: string }>>('/api/payments?journals=1').then(setBatchPayJournals).catch(() => {})
+  }, [])
 
   return (
     <div>
@@ -362,6 +421,9 @@ export default function ClassicInvoicesPage() {
         breadcrumb={isEn ? ['Finance', 'Invoices'] : ['财务', '发票']}
         permanentActions={[
           { label: isEn ? 'New' : '新建', onClick: () => { setGenOpen(true); setSelectedCustomerId(''); setSelectedOrderIds([]) }, primary: true },
+          ...(selectedDrafts.length ? [{ label: batchBusy ? (isEn ? 'Posting…' : '过账中…') : (isEn ? `Post selected (${selectedDrafts.length})` : `批量过账（${selectedDrafts.length}）`), onClick: batchPost, disabled: batchBusy }] : []),
+          ...(canBatchPay ? [{ label: isEn ? `Settle selected (${selectedInvoices.length})` : `合并收款（${selectedInvoices.length}）`, onClick: () => setBatchPayOpen(true), disabled: batchBusy }] : []),
+          { label: sageExporting ? (isEn ? 'Exporting Sage…' : 'Sage 导出中…') : (isEn ? 'Export for Sage' : '导出到 Sage'), onClick: exportForSage, disabled: sageExporting },
           exportAction,
         ]}
         searchValue={searchInput}
@@ -406,6 +468,7 @@ export default function ClassicInvoicesPage() {
           <table className="w-full text-sm">
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
+                <th className="px-3 py-3"><input type="checkbox" checked={pageRows.length > 0 && pageRows.every(inv => selectedInvoiceIds.has(inv.id))} onChange={e => setSelectedInvoiceIds(prev => { const next = new Set(prev); for (const inv of pageRows) e.target.checked ? next.add(inv.id) : next.delete(inv.id); return next })} aria-label={isEn ? 'Select current page' : '选择当前页'} /></th>
                 <SortTh sk="name" cur={sortKey} dir={sortDir} label={isEn ? 'Invoice No.' : '发票号'} onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Sales Orders' : '销售单号'}</th>
                 <SortTh sk="customerName" cur={sortKey} dir={sortDir} label={isEn ? 'Customer' : '客户'} onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
@@ -420,7 +483,7 @@ export default function ClassicInvoicesPage() {
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-400">
+                  <td colSpan={10} className="text-center py-12 text-gray-400">
                     {isEn ? 'No invoices yet. Click "New" to generate one from completed orders.' : '暂无发票，点击「生成发票」从已完成订单创建'}
                   </td>
                 </tr>
@@ -429,7 +492,7 @@ export default function ClassicInvoicesPage() {
                 const field = INVOICE_GB_FIELD[groupBy]
                 if (!groupBy || !field || pageRows.length === 0) {
                   return pageRows.map(inv => (
-                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)} />
+                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} selected={selectedInvoiceIds.has(inv.id)} onSelect={checked => setSelectedInvoiceIds(prev => { const next = new Set(prev); checked ? next.add(inv.id) : next.delete(inv.id); return next })} onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)} />
                   ))
                 }
                 const groups = new Map<string, Invoice[]>()
@@ -440,7 +503,7 @@ export default function ClassicInvoicesPage() {
                 }
                 return Array.from(groups.entries()).flatMap(([key, groupInvs]) => [
                   <tr key={`__group__${key}`} style={{ background: '#f5f0f7', borderBottom: '2px solid #d4b8d0' }}>
-                    <td colSpan={9} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
+                    <td colSpan={10} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
                       {groupBy === 'status' ? STATUS_LABEL[key as Invoice['status']] ?? key
                         : groupBy === 'paymentTerms' ? PAYMENT_LABELS[key] ?? key
                         : key || (isEn ? '(empty)' : '（空）')}
@@ -448,7 +511,7 @@ export default function ClassicInvoicesPage() {
                     </td>
                   </tr>,
                   ...groupInvs.map(inv => (
-                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)} />
+                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} selected={selectedInvoiceIds.has(inv.id)} onSelect={checked => setSelectedInvoiceIds(prev => { const next = new Set(prev); checked ? next.add(inv.id) : next.delete(inv.id); return next })} onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)} />
                   )),
                 ])
               })()}
@@ -519,6 +582,27 @@ export default function ClassicInvoicesPage() {
             >
               {generating ? (isEn ? 'Generating…' : '生成中…') : (isEn ? 'Generate Invoice' : '生成发票')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchPayOpen} onOpenChange={setBatchPayOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{isEn ? `One receipt for ${selectedInvoices.length} invoices` : `合并结清 ${selectedInvoices.length} 张发票`}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">{selectedInvoices[0]?.customerName} · {isEn ? 'Total due' : '应收合计'}: €{selectedInvoices.reduce((sum, inv) => sum + inv.amountDue, 0).toFixed(2)}</p>
+            <div className="max-h-40 overflow-y-auto rounded border divide-y">
+              {selectedInvoices.map(inv => <div key={inv.id} className="flex justify-between px-3 py-2 text-sm"><span>{inv.name} · {inv.saleOrderCodes?.join(', ')}</span><span>€{inv.amountDue.toFixed(2)}</span></div>)}
+            </div>
+            <select value={batchPayJournal} onChange={e => setBatchPayJournal(e.target.value)} className="w-full border rounded px-3 py-2 text-sm">
+              {batchPayJournals.map(j => <option key={j.code} value={j.code}>{j.name}</option>)}
+            </select>
+            <input value={batchPayNote} onChange={e => setBatchPayNote(e.target.value)} placeholder={isEn ? 'Receipt reference / note (optional)' : '收款参考号 / 备注（可选）'} className="w-full border rounded px-3 py-2 text-sm" />
+            <p className="text-xs text-gray-500">{isEn ? 'One receipt record is allocated to each invoice under a shared payment batch, and one journal entry is posted for the total.' : '系统会建立一笔合并收款，按各发票余额分配，并生成一张合计凭证。'}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchPayOpen(false)} disabled={batchBusy}>{isEn ? 'Cancel' : '取消'}</Button>
+            <Button onClick={batchPay} disabled={batchBusy || !batchPayJournal} style={{ background: '#875A7B' }} className="text-white">{batchBusy ? (isEn ? 'Processing…' : '处理中…') : (isEn ? 'Confirm receipt' : '确认收款')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

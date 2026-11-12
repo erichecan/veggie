@@ -74,7 +74,11 @@ export default function ClassicInvoiceDetailPage() {
   const [payAmount, setPayAmount] = useState('')
   const [payJournalCode, setPayJournalCode] = useState('BANK')
   const [payNote, setPayNote] = useState('')
+  const [markPaidInFull, setMarkPaidInFull] = useState(false)
   const [payBusy, setPayBusy] = useState(false)
+  const [editingLines, setEditingLines] = useState(false)
+  const [editLines, setEditLines] = useState<Array<Record<string, unknown>>>([])
+  const [editBusy, setEditBusy] = useState(false)
 
   async function load() {
     try {
@@ -99,7 +103,7 @@ export default function ClassicInvoiceDetailPage() {
   // 的快捷小表单，load() 只换 inv/payments 不碰这几个 state，不会被背景刷新冲掉
   useRefetchOnFocus([load])
 
-  async function addPayment(amount: number) {
+  async function addPayment(amount: number, settleInvoice = false) {
     if (!inv) return
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error(isEn ? 'Please enter a valid payment amount' : '请输入有效的收款金额')
@@ -109,6 +113,7 @@ export default function ClassicInvoiceDetailPage() {
     try {
       await apiPost('/api/payments', {
         invoiceId: inv.id, amount, paymentJournalCode: payJournalCode, note: payNote || undefined,
+        ...(settleInvoice ? { markPaidInFull: true } : {}),
       })
       toast.success(isEn ? `Payment of €${amount.toFixed(2)} recorded` : `已登记收款 €${amount.toFixed(2)}`)
       setPayAmount(''); setPayNote('')
@@ -146,12 +151,33 @@ export default function ClassicInvoiceDetailPage() {
     if (!confirm(isEn ? 'Confirm cancelling this invoice?' : '确认取消此发票？')) return
     const updated: Invoice = { ...inv, status: 'cancelled' }
     try {
-      await apiPut(`/api/invoices/${inv.id}`, { ...updated, status: 'cancelled' })
+      await apiPut(`/api/invoices/${inv.id}`, { status: 'cancelled' })
       setInv(updated)
       toast.success(isEn ? 'Invoice cancelled' : '发票已取消')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : (isEn ? 'Operation failed' : '操作失败'))
     }
+  }
+
+  async function handleResetToDraft() {
+    if (!inv || !confirm(isEn ? 'Reset this unpaid invoice to draft? Its posted journal entry will be reversed.' : '将这张未收款发票退回草稿？系统会保留原凭证并生成一张冲销凭证。')) return
+    try {
+      await apiPost(`/api/invoices/${inv.id}/reset-to-draft`, {})
+      toast.success(isEn ? 'Invoice reset to draft' : '发票已退回草稿')
+      await load()
+    } catch (err) { toast.error(err instanceof Error ? err.message : (isEn ? 'Reset failed' : '退回草稿失败')) }
+  }
+
+  async function saveDraftLines() {
+    if (!inv) return
+    setEditBusy(true)
+    try {
+      await apiPut(`/api/invoices/${inv.id}`, { lines: editLines })
+      setEditingLines(false)
+      toast.success(isEn ? 'Invoice lines saved' : '发票明细已保存')
+      await load()
+    } catch (err) { toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败')) }
+    finally { setEditBusy(false) }
   }
 
   if (!inv) {
@@ -197,6 +223,11 @@ export default function ClassicInvoiceDetailPage() {
           </Link>
           {inv.status === 'draft' && (
             <>
+              {!editingLines && <Button variant="outline" onClick={() => { setEditLines(inv.lines.map(line => ({ ...line } as unknown as Record<string, unknown>))); setEditingLines(true) }}>{isEn ? 'Edit lines' : '编辑明细'}</Button>}
+              {editingLines && <>
+                <Button variant="outline" disabled={editBusy} onClick={() => setEditingLines(false)}>{isEn ? 'Discard changes' : '放弃修改'}</Button>
+                <Button disabled={editBusy} onClick={saveDraftLines} style={{ background: PURPLE }} className="text-white">{editBusy ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save lines' : '保存明细')}</Button>
+              </>}
               <Button variant="outline" onClick={handleCancel} className="text-red-600 border-red-200">
                 {isEn ? 'Cancel invoice' : '取消发票'}
               </Button>
@@ -210,14 +241,10 @@ export default function ClassicInvoiceDetailPage() {
             </>
           )}
           {inv.status === 'posted' && (
-            <Button
-              onClick={handlePay}
-              disabled={payBusy}
-              style={{ background: PURPLE, borderColor: PURPLE }}
-              className="text-white hover:opacity-90"
-            >
-              {isEn ? 'Pay in full' : '全额收款'}
-            </Button>
+            <>
+              <Button variant="outline" onClick={handleResetToDraft} disabled={payBusy || Number(inv.amountPaid) > 0 || Number(inv.amountCredited) > 0}>{isEn ? 'Reset to draft' : '退回草稿'}</Button>
+              <Button onClick={handlePay} disabled={payBusy} style={{ background: PURPLE, borderColor: PURPLE }} className="text-white hover:opacity-90">{isEn ? 'Pay in full' : '全额收款'}</Button>
+            </>
           )}
         </div>
       </div>
@@ -255,7 +282,12 @@ export default function ClassicInvoiceDetailPage() {
           )}
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide">{isEn ? 'Related Orders' : '关联订单'}</p>
-            <p className="mt-1 text-gray-600 text-sm">{isEn ? `${inv.saleOrderIds.length} order(s)` : `${inv.saleOrderIds.length} 个订单`}</p>
+            <div className="mt-1 text-gray-600 text-sm">
+              {(inv.saleOrderCodes?.length ? inv.saleOrderCodes : inv.saleOrderIds).map((code, index) => (
+                <span key={`${code}-${index}`} className="mr-2 inline-block font-mono">{code}</span>
+              ))}
+              {inv.saleOrderIds.length === 0 && (isEn ? 'No linked orders' : '无关联订单')}
+            </div>
           </div>
         </div>
       </div>
@@ -278,10 +310,30 @@ export default function ClassicInvoiceDetailPage() {
                 <th className="text-right px-4 py-2 font-medium">{isEn ? 'Tax Amount' : '税额'}</th>
               </>}
               <th className="text-right px-4 py-2 font-medium">{orderBased ? (isEn ? 'Amount' : '金额') : (isEn ? 'Subtotal (incl. tax)' : '含税小计')}</th>
+              {editingLines && <th className="px-2 py-2 font-medium">{isEn ? 'Actions' : '操作'}</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {lineViews.map((line, i) => (
+            {editingLines ? editLines.map((line, i) => (
+              <tr key={`edit-${i}`}>
+                <td className="px-3 py-2">
+                  {orderBased ? <span className="font-mono">{String(line.orderCode ?? line.orderId ?? '')}</span> : <>
+                    <input value={String(line.productName ?? '')} onChange={e => setEditLines(rows => rows.map((row, index) => index === i ? { ...row, productName: e.target.value } : row))} placeholder={isEn ? 'Product name' : '商品名称'} className="w-full border rounded px-2 py-1" />
+                    <input value={String(line.spec ?? '')} onChange={e => setEditLines(rows => rows.map((row, index) => index === i ? { ...row, spec: e.target.value } : row))} placeholder={isEn ? 'Specification' : '规格'} className="mt-1 w-full border rounded px-2 py-1 text-xs" />
+                  </>}
+                </td>
+                {!orderBased && <>
+                  <td className="px-2 py-2"><input type="number" min="0.001" step="0.001" value={String(line.qty ?? 1)} onChange={e => setEditLines(rows => rows.map((row, index) => index === i ? { ...row, qty: Number(e.target.value) } : row))} className="w-20 border rounded px-2 py-1 text-right" /></td>
+                  <td className="px-2 py-2"><input type="number" min="0" step="0.01" value={String(line.unitPrice ?? 0)} onChange={e => setEditLines(rows => rows.map((row, index) => index === i ? { ...row, unitPrice: Number(e.target.value) } : row))} className="w-24 border rounded px-2 py-1 text-right" /></td>
+                  <td className="px-2 py-2"><input type="number" min="0" max="100" step="0.1" value={String(Number(line.taxRate ?? 0) <= 1 ? Number(line.taxRate ?? 0) * 100 : line.taxRate)} onChange={e => setEditLines(rows => rows.map((row, index) => index === i ? { ...row, taxRate: Number(e.target.value) / 100 } : row))} className="w-20 border rounded px-2 py-1 text-right" /></td>
+                  <td className="px-3 py-2 text-right text-xs text-gray-500">€{(Number(line.qty ?? 0) * Number(line.unitPrice ?? 0)).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right text-xs text-gray-500">{isEn ? 'Recalculated' : '自动计算'}</td>
+                  <td className="px-3 py-2 text-right font-medium">€{(Number(line.qty ?? 0) * Number(line.unitPrice ?? 0) * (1 + (Number(line.taxRate ?? 0) > 1 ? Number(line.taxRate) / 100 : Number(line.taxRate ?? 0)))).toFixed(2)}</td>
+                </>}
+                {orderBased && <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={String(line.amount ?? 0)} onChange={e => setEditLines(rows => rows.map((row, index) => index === i ? { ...row, amount: Number(e.target.value) } : row))} className="w-28 border rounded px-2 py-1 text-right" /></td>}
+                <td className="px-2 py-2 text-center"><button type="button" onClick={() => setEditLines(rows => rows.filter((_, index) => index !== i))} className="text-red-600">{isEn ? 'Remove' : '删除'}</button></td>
+              </tr>
+            )) : lineViews.map((line, i) => (
               <tr key={i} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <p className="font-medium text-gray-800">{line.title}</p>
@@ -299,6 +351,7 @@ export default function ClassicInvoiceDetailPage() {
             ))}
           </tbody>
         </table>
+        {editingLines && !orderBased && <div className="border-t px-4 py-2"><button type="button" onClick={() => setEditLines(rows => [...rows, { productId: '', productName: '', spec: '', qty: 1, unitPrice: 0, taxRate: 0 }])} className="text-sm" style={{ color: PURPLE }}>+ {isEn ? 'Add a line' : '增加明细行'}</button></div>}
       </div>
 
       {/* 汇总 */}
@@ -326,6 +379,12 @@ export default function ClassicInvoiceDetailPage() {
             <div className="flex justify-between text-sm text-blue-600">
               <span>{isEn ? 'Credit notes applied' : '贷记单抵扣'}</span>
               <span>€{Number(inv.amountCredited ?? 0).toFixed(2)}</span>
+            </div>
+          )}
+          {Number(inv.writeOffAmount ?? 0) > 0 && (
+            <div className="flex justify-between text-sm text-amber-700">
+              <span>{isEn ? 'Cash rounding write-off' : '收款抹零'}</span>
+              <span>€{Number(inv.writeOffAmount).toFixed(2)}</span>
             </div>
           )}
           <div className={`flex justify-between text-base font-bold ${Number(inv.amountDue ?? 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>
@@ -426,8 +485,13 @@ export default function ClassicInvoiceDetailPage() {
               placeholder={isEn ? 'Note (optional)' : '备注(可选)'}
               className="flex-1 min-w-32 border border-amber-300 rounded px-2 py-1 text-sm"
             />
-            <Button size="sm" disabled={payBusy} onClick={() => addPayment(Number(payAmount))}>{isEn ? 'Record' : '登记'}</Button>
+            <label className="flex items-center gap-1.5 text-xs text-amber-800 whitespace-nowrap">
+              <input type="checkbox" checked={markPaidInFull} onChange={e => setMarkPaidInFull(e.target.checked)} />
+              {isEn ? 'Mark as paid in full' : '标记为全额结清'}
+            </label>
+            <Button size="sm" disabled={payBusy} onClick={() => addPayment(Number(payAmount), markPaidInFull)}>{isEn ? 'Record' : '登记'}</Button>
             <span className="text-[11px] text-amber-600">{isEn ? 'Auto-marks as "Paid" once fully settled' : '付清后自动转「已付款」'}</span>
+            {markPaidInFull && <span className="w-full text-[11px] text-amber-700">{isEn ? 'A short collection is posted as a rounding write-off (reason required); any excess is recorded as customer prepayment.' : '少收部分将记为抹零（需填写原因）；多收部分记为客户预收款。'}</span>}
             {payJournalCode === 'DIRECT_DEBIT' && (
               <span className="w-full text-[11px] text-amber-700">
                 {isEn ? 'Record this only after the SEPA debit has actually been collected; this does not initiate a debit or create a mandate.' : '请在 SEPA 扣款实际到账后登记；此操作不会发起扣款或创建授权书。'}

@@ -340,6 +340,8 @@ export interface Customer {
   specialPrices?: CustomerSpecialPrice[]
   /** 关联业务员用户 ID（写入用） */
   salesUserId?: string | null
+  /** Sage 会计系统中的客户编码；仅财务/管理权限接口返回 */
+  sageAccount?: string | null
   /** 关联业务员姓名（只读展示，由 API 从 salesUserId 关联展平） */
   salesman?: string
   /** 自由标签（Odoo res.partner.category 简化版） */
@@ -356,6 +358,7 @@ export interface Customer {
 
 // ─── 订单 ───────────────────────────────────────────────────────────────────
 export type OrderStatus = 'pending' | 'confirmed' | 'wave_assigned' | 'in_delivery' | 'completed' | 'locked' | 'cancelled'
+export type OrderDisplayStatus = OrderStatus | 'picking'
 export type PaymentMethod = 'online' | 'cash'
 
 export interface OrderItem {
@@ -449,6 +452,10 @@ export interface Order {
   /** 税后总额（派生，财务/对账「销售额」用；无行的历史订单退回 totalAmount，见 B-1） */
   totalAmountIncTax?: number
   status: OrderStatus
+  /** 销售单列表展示状态：由拣货锁推导，不写回订单业务状态。 */
+  displayStatus?: OrderDisplayStatus
+  /** API 只读展示元数据：订单是否属于仍锁定且未出发/未完成的配送波次。 */
+  isPickingLocked?: boolean
   paymentMethod: PaymentMethod
   createdAt: string
   /** 下单时快照客户的价格表 ID（对应 Odoo sale.order.pricelist_id） */
@@ -914,6 +921,7 @@ export interface Invoice {
   /** 贷记单抵扣合计（20261014 L1） */
   amountCredited?: number
   amountDue: number
+  writeOffAmount?: number
   status: InvoiceStatus
   paymentTerms: 'cash' | 'weekly' | 'monthly'
   /** 详情接口附带：贷记单抵扣明细（负数 = 撤销） */

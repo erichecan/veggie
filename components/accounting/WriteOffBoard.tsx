@@ -142,10 +142,11 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   const [scanSearching, setScanSearching] = useState(false)
   const [scanMsg, setScanMsg] = useState<{ type: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [sortKey, setSortKey] = useState<SortKey>('deliveryDate')
+  const [sortKey, setSortKey] = useState<SortKey>('scanOrder')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [flashId, setFlashId] = useState<string | null>(null)
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
+  const [driverSummaryExpanded, setDriverSummaryExpanded] = useState(false)
   const [issueMode, setIssueMode] = useState<'batch' | string | null>(null)
   const [issueNote, setIssueNote] = useState('')
   const [qtyEditRow, setQtyEditRow] = useState<ReturnRow | null>(null)
@@ -326,7 +327,16 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   }
 
   const withScan = useMemo(() => visible.map(o => ({ ...o, scanOrder: scanSeq[o.id] })), [visible, scanSeq])
-  const sorted = sortRows(withScan, sortKey, sortDir)
+  const sorted = sortKey === 'scanOrder'
+    ? [...withScan].sort((a, b) => {
+        const aScanned = a.scanOrder != null
+        const bScanned = b.scanOrder != null
+        if (aScanned !== bScanned) return aScanned ? -1 : 1
+        if (aScanned && bScanned && a.scanOrder !== b.scanOrder) return a.scanOrder! - b.scanOrder!
+        const dateCompare = String(a.deliveryDate ?? '').localeCompare(String(b.deliveryDate ?? ''))
+        return dateCompare || String(a.code ?? '').localeCompare(String(b.code ?? ''))
+      })
+    : sortRows(withScan, sortKey, sortDir)
 
   function toggleSort(k: SortKey) {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -362,8 +372,13 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
 
       {s && s.byDriver.length > 0 && (
         <div className="bg-white rounded border border-gray-200 shadow-sm px-5 py-3" data-testid="open-by-driver">
-          <div className="text-xs font-semibold text-gray-600 mb-2">按司机：还没回来核销的单（点一下只看这位司机）</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="text-xs font-semibold text-gray-600">按司机：还没回来核销的单（点一下只看这位司机）</div>
+            <button type="button" className="text-xs text-purple-700 hover:underline" onClick={() => setDriverSummaryExpanded(v => !v)} aria-expanded={driverSummaryExpanded}>
+              {driverSummaryExpanded ? '收起' : `展开（${s.byDriver.length} 位司机）`}
+            </button>
+          </div>
+          {driverSummaryExpanded && <div className="flex flex-wrap gap-2">
             {s.byDriver.map(d => (
               <button key={d.driver} onClick={() => { setFilterDriver(prev => prev === d.driver ? '' : d.driver); setActiveCard(null) }}
                 className={`text-xs px-2.5 py-1.5 rounded border ${filterDriver === d.driver ? 'bg-purple-50' : 'bg-white hover:bg-gray-50'}`}
@@ -375,7 +390,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
                 {d.oldestDays > 0 && <span className="ml-1.5 text-amber-600">最久 {d.oldestDays} 天</span>}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       )}
 

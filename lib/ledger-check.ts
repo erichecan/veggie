@@ -60,17 +60,17 @@ const invoiceBalance: Check = async () => {
            i."amountPaid"::float AS cached_paid, (i."openingPaid" + COALESCE(p.s, 0))::float AS ledger_paid,
            i."amountCredited"::float AS cached_credited, (i."openingCredited" + COALESCE(a.s, 0))::float AS ledger_credited,
            i."amountDue"::float AS cached_due,
-           GREATEST(0, i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0))::float AS ledger_due
+           GREATEST(0, i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0) - i."writeOffAmount")::float AS ledger_due
     FROM "Invoice" i LEFT JOIN p ON p."invoiceId" = i.id LEFT JOIN a ON a."invoiceId" = i.id
     WHERE i.status IN ('POSTED', 'PAID') AND (
       ABS(i."amountPaid" - i."openingPaid" - COALESCE(p.s, 0)) > 0.005
       OR ABS(i."amountCredited" - i."openingCredited" - COALESCE(a.s, 0)) > 0.005
-      OR ABS(i."amountDue" - GREATEST(0, i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0))) > 0.005
-      OR (i.status = 'PAID' AND i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0) > 0.005)
+      OR ABS(i."amountDue" - GREATEST(0, i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0) - i."writeOffAmount")) > 0.005
+      OR (i.status = 'PAID' AND i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0) - i."writeOffAmount" > 0.005)
     )
     ORDER BY i."createdAt" DESC`)
   return {
-    key: 'invoice_balance', label: '发票余额 = 期初 + 收款 + 贷记单抵扣', labelEn: 'Invoice balance = opening + payments + credit notes',
+    key: 'invoice_balance', label: '发票余额 = 期初 + 收款 + 贷记单抵扣 + 抹零', labelEn: 'Invoice balance = opening + payments + credit notes + write-offs',
     severity: 'error', diffCount: rows.length,
     amount: rows.reduce((s, r) => s + Math.abs(num(r.cached_due) - num(r.ledger_due)), 0),
     samples: cleanSamples(rows),

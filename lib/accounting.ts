@@ -497,6 +497,7 @@ export const STANDARD_ACCOUNTS: Array<{ code: string; name: string; nameZh: stri
   { code: '2150', name: 'Goods Received Not Invoiced', nameZh: '已收货未开票', type: 'LIABILITY' },
   { code: '5100', name: 'Cost of Goods Sold',  nameZh: '销售成本', type: 'EXPENSE' },
   { code: '5200', name: 'Inventory Loss',      nameZh: '存货损耗', type: 'EXPENSE' },
+  { code: '6990', name: 'Cash Rounding Write-offs', nameZh: '收款抹零', type: 'EXPENSE' },
 ]
 
 // 保持 PrismaClient 类型引用以避免 tsc "unused import" 提示

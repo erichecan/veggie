@@ -46,8 +46,8 @@ export default function AccountingPage() {
         )}
       </div>
 
-      <DriverCashBoard onBusinessDate={setBusinessDate} />
       <WriteOffBoard businessDate={businessDate} />
+      <DriverCashBoard onBusinessDate={setBusinessDate} />
     </div>
   )
 }

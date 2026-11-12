@@ -1243,6 +1243,8 @@ model Invoice {
   /// 期初已冲减：同上，Odoo 里用退款单冲掉、但本系统没有抵扣明细的部分。
   /// amountCredited = openingCredited + Σ CreditNoteAllocation
   openingCredited   Decimal                @default(0) @db.Decimal(12, 2)
+  /// Amount explicitly written off to mark a cash-rounded invoice fully settled.
+  writeOffAmount    Decimal                @default(0) @db.Decimal(12, 2)
   /// 未付 = totalIncTax − amountPaid − amountCredited。缓存值，同上
   amountDue         Decimal                @default(0) @db.Decimal(12, 2)
   status            InvoiceStatus          @default(DRAFT)
@@ -1275,6 +1277,8 @@ model Payment {
   /// 预收款登记（source=PREPAYMENT_RECEIVED）时没有对应发票，此时为 null
   invoiceId        String?
   invoice          Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  paymentBatchId   String?
+  paymentBatch     PaymentBatch?   @relation(fields: [paymentBatchId], references: [id], onDelete: SetNull)
   customerId       String
   /// Customer incoming-payment journal selected in the Register Payment flow.
   paymentJournalId String?
@@ -1295,6 +1299,24 @@ model Payment {
   @@index([paidAt])
   @@index([source])
   @@index([paymentJournalId])
+  @@index([paymentBatchId])
+}
+
+/// One customer receipt allocated across several invoices in one accounting transaction.
+model PaymentBatch {
+  id               String         @id @default(cuid())
+  customerId       String
+  paymentJournalId String
+  paymentJournal   PaymentJournal @relation(fields: [paymentJournalId], references: [id], onDelete: Restrict)
+  amount           Decimal        @db.Decimal(12, 2)
+  method           String         @default("transfer")
+  paidAt           DateTime       @default(now())
+  note             String?
+  createdBy        String?
+  createdAt        DateTime       @default(now())
+  payments         Payment[]
+
+  @@index([customerId, paidAt])
 }
 
 /**
@@ -1712,6 +1734,7 @@ model PaymentJournal {
   active         Boolean            @default(true)
   createdAt      DateTime           @default(now())
   payments       Payment[]
+  paymentBatches PaymentBatch[]
   journalEntries JournalEntry[]
 
   @@index([active, sequence])

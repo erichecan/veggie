@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { postPaymentToJournal } from '@/lib/accounting'
+import { postPaymentToJournal, postJournalEntry } from '@/lib/accounting'
 import { recordPrepaymentReceived } from '@/lib/prepayments'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
@@ -61,6 +61,7 @@ export async function POST(req: Request) {
       const data = await req.json()
       const source = String(data.source ?? 'CASH').toUpperCase()
       const amount = round2(Number(data.amount))
+      const markPaidInFull = data.markPaidInFull === true
       const requestedCode = String(data.paymentJournalCode ?? '').trim().toUpperCase()
       const requestedMethod = String(data.method ?? 'transfer').toLowerCase()
       const journalConfig = requestedCode
@@ -107,6 +108,79 @@ export async function POST(req: Request) {
 
       const invoiceId = String(data.invoiceId ?? '').trim()
       if (!invoiceId) return NextResponse.json({ error: 'invoiceId 必填' }, { status: 400 })
+
+      if (markPaidInFull) {
+        const result = await prisma.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${invoiceId} FOR UPDATE`
+          const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } })
+          if (!invoice) throw Object.assign(new Error('发票不存在'), { status: 404 })
+          if (invoice.status !== 'POSTED') throw Object.assign(new Error('只有未结清的已过账发票可以标记为全额结清'), { status: 400 })
+          const due = toNum(invoice.amountDue)
+          if (due <= 0) throw Object.assign(new Error('发票已经结清'), { status: 400 })
+          const appliedAmount = round2(Math.min(amount, due))
+          const writeOffAmount = round2(Math.max(0, due - appliedAmount))
+          const excessAmount = round2(Math.max(0, amount - due))
+          if (writeOffAmount > 0 && !String(data.note ?? '').trim()) {
+            throw Object.assign(new Error('少收并标记全额结清时，请填写抹零原因'), { status: 400 })
+          }
+
+          let payment: unknown = null
+          if (appliedAmount > 0) {
+            payment = await tx.payment.create({
+              data: {
+                invoiceId, customerId: invoice.customerId, amount: appliedAmount,
+                paymentJournalId: paymentJournal.id, method,
+                paidAt: data.paidAt ? new Date(data.paidAt) : new Date(),
+                note: data.note ? String(data.note).trim().slice(0, 500) : 'Marked paid in full',
+                createdBy: user.name ?? user.email,
+              },
+            })
+            const paymentEntry = await postPaymentToJournal(tx as never, {
+              id: (payment as { id: string }).id, invoiceName: invoice.name,
+              customerId: invoice.customerId, amount: appliedAmount,
+              paymentJournalId: paymentJournal.id, method,
+            }, user.userId)
+            if (!paymentEntry) throw Object.assign(new Error('收款凭证未能生成，结清操作已取消'), { status: 503 })
+          }
+
+          let writeOffEntry: unknown = null
+          if (writeOffAmount > 0) {
+            await tx.invoice.update({ where: { id: invoiceId }, data: { writeOffAmount: { increment: writeOffAmount } } })
+            writeOffEntry = await postJournalEntry(tx as never, {
+              narration: `Cash rounding write-off for ${invoice.name}: ${String(data.note).trim().slice(0, 200)}`,
+              sourceType: 'invoice_writeoff', sourceId: invoiceId,
+              lines: [
+                { code: '6990', debit: writeOffAmount, description: `Cash rounding write-off - ${invoice.name}` },
+                { code: '1100', credit: writeOffAmount, description: `AR write-off - ${invoice.name}`, partnerId: invoice.customerId },
+              ],
+            }, user.userId)
+            if (!writeOffEntry) throw Object.assign(new Error('抹零会计科目未配置，未能结清发票'), { status: 503 })
+          }
+
+          let excessPrepayment: unknown = null
+          if (excessAmount > 0) {
+            const prepaymentResult = await recordPrepaymentReceived(tx, {
+              customerId: invoice.customerId, amount: excessAmount,
+              method, paymentJournalId: paymentJournal.id,
+              note: `Excess collected on ${invoice.name}${data.note ? ` · ${String(data.note).trim().slice(0, 200)}` : ''}`,
+              actor: { userId: user.userId, name: user.name, email: user.email },
+            })
+            if (!prepaymentResult.journalEntry) throw Object.assign(new Error('多收金额的预收款凭证未能生成，结清操作已取消'), { status: 503 })
+            excessPrepayment = prepaymentResult.payment
+          }
+
+          const updatedInvoice = await recomputeInvoiceBalance(tx, invoiceId)
+          if (Number(updatedInvoice.amountDue) > 0.005) throw new Error('Invoice balance did not settle')
+          return { payment, invoice: updatedInvoice, writeOffEntry, excessPrepayment, appliedAmount, writeOffAmount, excessAmount }
+        })
+
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'CREATE', resource: 'payment', resourceId: invoiceId,
+          detail: `发票 ${result.invoice.name} 标记全额结清：收款 €${amount.toFixed(2)}，抹零 €${result.writeOffAmount.toFixed(2)}，转预收款 €${result.excessAmount.toFixed(2)}`,
+        })
+        return NextResponse.json(serializeApi(result), { status: 201 })
+      }
 
       const result = await prisma.$transaction(async tx => {
         // 行锁：同一张发票的并发收款排队，否则都读到同一个未付额，超额校验会同时通过
