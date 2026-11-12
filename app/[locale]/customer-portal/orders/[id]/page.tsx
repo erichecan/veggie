@@ -8,7 +8,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { formatDateOnly } from '@/lib/format-date'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 
 const STATUS_MAP_ZH: Record<string, { label: string; color: string; bg: string }> = {
   PENDING:        { label: '待确认', color: '#b45309', bg: '#fef3c7' },
@@ -93,7 +93,7 @@ export default function CustomerOrderDetailPage() {
   return (
     <div className="space-y-5">
       <Link href={`${prefix}/customer-portal/orders`}
-        className="inline-flex items-center gap-1 text-sm hover:underline" style={{ color: PURPLE }}>
+        className="inline-flex items-center gap-1 text-sm hover:underline" style={{ color: PRIMARY }}>
         ← {isEn ? 'Back to Orders' : '返回订单列表'}
       </Link>
 
@@ -116,7 +116,7 @@ export default function CustomerOrderDetailPage() {
           </div>
           <div className="text-right">
             <p className="text-sm text-gray-400">{orderTax > 0 ? (isEn ? 'Total (incl. tax)' : '含税应付') : (isEn ? 'Order Total' : '订单金额')}</p>
-            <p className="text-2xl font-bold" style={{ color: PURPLE }}>
+            <p className="text-2xl font-bold" style={{ color: PRIMARY }}>
               €{(Number(order.totalAmount) + orderTax).toFixed(2)}
             </p>
             {orderTax > 0 && (
@@ -146,7 +146,7 @@ export default function CustomerOrderDetailPage() {
 
       <div className="bg-white rounded-xl border overflow-hidden">
         <div className="px-5 py-3 border-b">
-          <h2 className="font-bold text-sm" style={{ color: PURPLE }}>{isEn ? 'Order Lines' : '商品明细'}</h2>
+          <h2 className="font-bold text-sm" style={{ color: PRIMARY }}>{isEn ? 'Order Lines' : '商品明细'}</h2>
         </div>
         {/* 20261026：overflow-hidden 会把窄屏下撑不开的列直接裁掉且不可滚动看到，
             改成内层 overflow-x-auto + 表格最小宽度，窄屏横向滚动就能看到完整金额列 */}
@@ -197,7 +197,7 @@ export default function CustomerOrderDetailPage() {
                 </tr>
                 <tr>
                   <td colSpan={4} className="text-right px-3 py-3 font-bold">{isEn ? 'Total (incl. tax)' : '含税应付'}</td>
-                  <td className="text-right px-5 py-3 font-bold" style={{ color: PURPLE }}>
+                  <td className="text-right px-5 py-3 font-bold" style={{ color: PRIMARY }}>
                     €{(Number(order.totalAmount) + orderTax).toFixed(2)}
                   </td>
                 </tr>

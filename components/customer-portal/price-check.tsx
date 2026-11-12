@@ -6,7 +6,7 @@ import { eur } from '@/lib/format-money'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toPercent, type CartItem } from './cart-utils'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 
 export interface PriceCheckSourceLine {
   productId: string
@@ -142,7 +142,7 @@ export function usePriceCheck(isEn: boolean) {
           <button onClick={close} className="px-4 py-2 rounded-lg text-sm border">
             {isEn ? 'Cancel' : '取消'}
           </button>
-          <button onClick={handleConfirmClick} className="px-4 py-2 rounded-lg text-sm text-white font-medium" style={{ background: PURPLE }}>
+          <button onClick={handleConfirmClick} className="px-4 py-2 rounded-lg text-sm text-white font-medium" style={{ background: PRIMARY }}>
             {isEn ? 'Add selected to cart' : '确认加入购物车'}
           </button>
         </DialogFooter>

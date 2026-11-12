@@ -5,7 +5,7 @@ import { Pagination } from '@/components/ui/pagination'
 import type { CartItem } from './cart-utils'
 import type { Product } from './product-types'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 
 export function ProductGrid({
   products, cart, addToCart, setQty,
@@ -86,7 +86,7 @@ export function ProductGrid({
                   {p.promoLabel && p.originalPrice != null && p.customerPrice != null && p.originalPrice !== p.customerPrice && (
                     <span className="text-xs text-gray-400 line-through">{eur(p.originalPrice)}</span>
                   )}
-                  <span className="text-lg font-bold" style={{ color: PURPLE }}>
+                  <span className="text-lg font-bold" style={{ color: PRIMARY }}>
                     {effectivePrice != null ? eur(effectivePrice) : (isEn ? 'Price on request' : '询价')}
                   </span>
                 </span>
@@ -109,7 +109,7 @@ export function ProductGrid({
                   ) : (
                     <button onClick={() => addToCart(activeUnit ? { ...p, uomId: activeUnit.uomId, uomName: activeUnit.uomName, customerPrice: activeUnit.price } : p)}
                       className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-colors"
-                      style={{ background: PURPLE }}>
+                      style={{ background: PRIMARY }}>
                       {isEn ? 'Add to Cart' : '加入购物车'}
                     </button>
                   )

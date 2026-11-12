@@ -7,7 +7,7 @@ import { formatDateOnly } from '@/lib/format-date'
 import { usePriceCheck } from './price-check'
 import type { CartItem } from './cart-utils'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 const RECENT_COUNT = 5
 
 interface RecentOrderLine {
@@ -83,7 +83,7 @@ export function RecentOrdersPanel({ onReorder, isEn }: { onReorder: (items: Cart
             onClick={() => handleReorderClick(o)}
             disabled={checking && checkingId === o.id}
             className="flex-none px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
-            style={{ background: PURPLE }}
+            style={{ background: PRIMARY }}
           >
             {checking && checkingId === o.id ? (isEn ? 'Checking...' : '核对中...') : (isEn ? 'Reorder' : '再来一单')}
           </button>

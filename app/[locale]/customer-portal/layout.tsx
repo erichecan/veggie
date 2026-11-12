@@ -7,7 +7,7 @@ import { routing } from '@/i18n/routing'
 import Link from 'next/link'
 import { LocaleSwitcher } from '@/components/shared/locale-switcher'
 
-const PURPLE = '#875A7B'
+const PRIMARY = 'var(--portal-primary)'
 
 export default function CustomerPortalLayout({ children }: { children: React.ReactNode }) {
   const [userName, setUserName] = useState('')
@@ -37,11 +37,17 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="sticky top-0 z-30 border-b bg-white shadow-sm">
+    <div className="min-h-screen" style={{
+      '--portal-primary': '#356b2f',
+      '--portal-primary-hover': '#285623',
+      '--portal-surface': '#f7faf6',
+      '--portal-border': '#dce7d9',
+      background: 'var(--portal-surface)',
+    } as React.CSSProperties}>
+      <header className="sticky top-0 z-30 border-b bg-white shadow-sm" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="w-full px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-6">
-            <span className="text-lg font-bold" style={{ color: PURPLE }}>🥬 {isEn ? 'Order Vegetables' : '蔬菜订购'}</span>
+            <span className="text-lg font-bold" style={{ color: PRIMARY }}>🥬 {isEn ? 'Order Vegetables' : '蔬菜订购'}</span>
             <nav className="flex gap-1">
               {nav.map(n => {
                 const active = n.href === `${prefix}/customer-portal`
@@ -50,7 +56,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
                 return (
                   <Link key={n.href} href={n.href}
                     className="min-h-11 inline-flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                    style={active ? { background: PURPLE, color: 'white' } : { color: '#555' }}
+                    style={active ? { background: PRIMARY, color: 'white' } : { color: '#3f513c' }}
                   >
                     {n.icon} {n.label}
                   </Link>

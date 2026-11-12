@@ -2,7 +2,7 @@
 import { eur } from '@/lib/format-money'
 import type { FrequentCard } from './product-types'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 
 /** 常购单品——按历史下单次数排序的单品快捷复购，跟"最近订单"（整单维度）互补 */
 export function FrequentTab({ frequent, onReorder, isEn }: { frequent: FrequentCard[]; onReorder: (p: FrequentCard, qty: number) => void; isEn: boolean }) {
@@ -25,7 +25,7 @@ export function FrequentTab({ frequent, onReorder, isEn }: { frequent: FrequentC
             </p>
           </div>
           <div className="flex items-center justify-between mt-2">
-            <span className="text-sm font-bold" style={{ color: PURPLE }}>{eur(p.customerPrice ?? 0)}</span>
+            <span className="text-sm font-bold" style={{ color: PRIMARY }}>{eur(p.customerPrice ?? 0)}</span>
             {p.outOfStock ? (
               <button disabled className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-200 text-gray-500 cursor-not-allowed">
                 {isEn ? 'Out of stock' : '暂时缺货'}
@@ -33,7 +33,7 @@ export function FrequentTab({ frequent, onReorder, isEn }: { frequent: FrequentC
             ) : (
               <button onClick={() => onReorder(p, p.lastQuantity)}
                 className="px-2.5 py-1 rounded-lg text-xs font-medium text-white transition-colors"
-                style={{ background: PURPLE }}>
+                style={{ background: PRIMARY }}>
                 {isEn ? 'Reorder' : '一键复购'}
               </button>
             )}

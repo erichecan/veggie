@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { usePriceCheck } from './price-check'
 import type { CartItem } from './cart-utils'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 const FAVORITES_KEY = 'veggie_favorite_lists'
 
 interface FavoriteList {
@@ -83,7 +83,7 @@ export function FavoritesPanel({ cart, onApply, isEn }: { cart: CartItem[]; onAp
             className="flex-1 border rounded-lg px-3 py-1.5 text-sm"
             autoFocus
           />
-          <button onClick={saveCurrentCart} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: PURPLE }}>
+          <button onClick={saveCurrentCart} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: PRIMARY }}>
             {isEn ? 'Save' : '保存'}
           </button>
           <button onClick={() => { setNaming(false); setNewName('') }} className="px-2 py-1.5 text-xs text-gray-400">
@@ -114,7 +114,7 @@ export function FavoritesPanel({ cart, onApply, isEn }: { cart: CartItem[]; onAp
                 </p>
               </div>
               <div className="flex-none flex items-center gap-1.5">
-                <button onClick={() => apply(l)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: PURPLE }}>
+                <button onClick={() => apply(l)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: PRIMARY }}>
                   {isEn ? 'Add to cart' : '一键下单'}
                 </button>
                 <button onClick={() => remove(l.id)} className="text-red-400 hover:text-red-600 text-xs px-1.5">✕</button>

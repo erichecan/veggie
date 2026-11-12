@@ -3,7 +3,7 @@ import { eur } from '@/lib/format-money'
 import { DatePicker } from '@/components/ui/date-picker'
 import type { CartItem } from './cart-utils'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 
 export function CartPanel({
   cart, cartTotal, cartTax, setQty, removeFromCart,
@@ -30,7 +30,7 @@ export function CartPanel({
 }) {
   return (
     <div className="bg-white rounded-xl shadow-lg border p-5 space-y-4">
-      <h2 className="font-bold text-lg" style={{ color: PURPLE }}>🛒 {isEn ? 'Cart' : '购物车'}</h2>
+      <h2 className="font-bold text-lg" style={{ color: PRIMARY }}>🛒 {isEn ? 'Cart' : '购物车'}</h2>
       {cart.length === 0 ? (
         <p className="text-gray-400 text-sm py-4 text-center">{isEn ? 'Your cart is empty. Add some products first.' : '购物车为空，请先添加商品'}</p>
       ) : (
@@ -61,7 +61,7 @@ export function CartPanel({
           <div className="border-t pt-3 space-y-3">
             <div className="flex justify-between font-bold text-lg">
               <span>{isEn ? 'Subtotal (excl. tax)' : '合计（不含税）'}</span>
-              <span style={{ color: PURPLE }}>{eur(cartTotal)}</span>
+              <span style={{ color: PRIMARY }}>{eur(cartTotal)}</span>
             </div>
             {cartTax > 0 && (
               <div className="flex items-center justify-between text-xs text-gray-500 pb-2">
@@ -72,7 +72,7 @@ export function CartPanel({
             {cartTax > 0 && (
               <div className="flex items-center justify-between text-sm font-bold pb-3">
                 <span>{isEn ? 'Total (incl. tax)' : '含税应付'}</span>
-                <span style={{ color: PURPLE }}>{eur(cartTotal + cartTax)}</span>
+                <span style={{ color: PRIMARY }}>{eur(cartTotal + cartTax)}</span>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -104,7 +104,7 @@ export function CartPanel({
             </div>
             <button onClick={placeOrder} disabled={submitting || cart.length === 0}
               className="w-full py-3 rounded-lg text-white font-medium disabled:opacity-50 transition-colors"
-              style={{ background: PURPLE }}>
+              style={{ background: PRIMARY }}>
               {submitting ? (isEn ? 'Submitting...' : '提交中...') : (isEn ? `Place Order (${eur(cartTotal + cartTax)})` : `确认下单 (${eur(cartTotal + cartTax)})`)}
             </button>
           </div>

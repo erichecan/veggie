@@ -8,7 +8,7 @@ import { routing } from '@/i18n/routing'
 import { formatDateOnly } from '@/lib/format-date'
 import { Pagination } from '@/components/ui/pagination'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 
 const STATUS_MAP_ZH: Record<string, { label: string; color: string; bg: string }> = {
   PENDING:        { label: '待确认', color: '#b45309', bg: '#fef3c7' },
@@ -92,7 +92,7 @@ export default function CustomerOrdersPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold" style={{ color: PURPLE }}>{isEn ? 'My Orders' : '我的订单'}</h1>
+      <h1 className="text-xl font-bold" style={{ color: PRIMARY }}>{isEn ? 'My Orders' : '我的订单'}</h1>
 
       {/* Status tabs */}
       <div className="flex gap-2 flex-wrap">
@@ -101,7 +101,7 @@ export default function CustomerOrdersPage() {
             onClick={() => { setStatusFilter(s); setPage(1) }}
             className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
             style={statusFilter === s
-              ? { background: PURPLE, color: 'white', borderColor: PURPLE }
+              ? { background: PRIMARY, color: 'white', borderColor: PRIMARY }
               : { borderColor: '#ddd', color: '#666' }
             }>
             {s === 'ALL' ? (isEn ? 'All' : '全部') : STATUS_MAP[s]?.label || s}
@@ -144,7 +144,7 @@ export default function CustomerOrdersPage() {
                       <span> · {order.paymentMethod === 'CASH' ? (isEn ? 'Cash' : '现金') : (isEn ? 'Online Payment' : '在线支付')}</span>
                     </p>
                   </div>
-                  <span className="text-lg font-bold" style={{ color: PURPLE }}>
+                  <span className="text-lg font-bold" style={{ color: PRIMARY }}>
                     €{Number(order.totalAmount).toFixed(2)}
                   </span>
                 </div>

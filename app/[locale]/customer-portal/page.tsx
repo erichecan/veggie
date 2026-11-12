@@ -11,7 +11,7 @@ import { CategorySidebar } from '@/components/customer-portal/category-sidebar'
 import { useCustomerPortal } from '@/components/customer-portal/use-customer-portal'
 import { useState } from 'react'
 
-const PURPLE = '#875A7B'
+const PRIMARY = '#356b2f'
 const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
 const PAYMENT_LABELS_EN: Record<string, string> = { cash: 'Cash', weekly: 'Weekly', monthly: 'Monthly' }
 
@@ -42,8 +42,8 @@ export default function CustomerProductsPage() {
             <div className="flex-1 relative">
               <input type="text" value={p.searchInput} onChange={(e) => p.setSearchInput(e.target.value)}
                 placeholder={isEn ? 'Search products...' : '搜索商品名称...'}
-                className="w-full border rounded-lg px-4 py-2.5 text-sm pr-8 focus:outline-none focus:ring-2"
-                style={{ borderColor: '#ddd', focusRingColor: PURPLE } as React.CSSProperties}
+                className="w-full border rounded-lg px-4 py-2.5 text-sm pr-8 focus:outline-none focus:ring-2 focus:border-green-700 focus:ring-green-700"
+                style={{ borderColor: '#d7e1d4' }}
               />
               {p.searchInput && (
                 <button onClick={() => p.setSearchInput('')} className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600">✕</button>
@@ -51,7 +51,7 @@ export default function CustomerProductsPage() {
             </div>
             <button onClick={() => p.setShowCart(!p.showCart)}
               className="relative px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors"
-              style={{ background: PURPLE }}>
+              style={{ background: PRIMARY }}>
               🛒 {isEn ? 'Cart' : '购物车'}
               {p.cartCount > 0 && (
                 <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
@@ -63,7 +63,7 @@ export default function CustomerProductsPage() {
 
           {p.paymentTerm && (
             <p className="text-xs text-gray-500">
-              {isEn ? 'Payment Term: ' : '结算方式：'}<span className="font-medium" style={{ color: PURPLE }}>{PAYMENT_LABELS[p.paymentTerm] ?? p.paymentTerm}</span>
+              {isEn ? 'Payment Term: ' : '结算方式：'}<span className="font-medium" style={{ color: PRIMARY }}>{PAYMENT_LABELS[p.paymentTerm] ?? p.paymentTerm}</span>
             </p>
           )}
 
@@ -73,7 +73,7 @@ export default function CustomerProductsPage() {
               {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
                 <button key={t} onClick={() => setTab(t)}
                   className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  style={tab === t ? { background: PURPLE, color: 'white', borderColor: PURPLE } : { borderColor: '#ddd', color: '#666' }}>
+                  style={tab === t ? { background: PRIMARY, color: 'white', borderColor: PRIMARY } : { borderColor: '#d7e1d4', color: '#52604f' }}>
                   {TAB_LABELS[t]}
                 </button>
               ))}
