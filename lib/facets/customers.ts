@@ -12,6 +12,27 @@ const byNo = (v: string) => (/^\d{1,9}$/.test(v.trim()) ? [{ customerNo: Number(
 
 export const CUSTOMER_FACET_DEFS: FacetDef[] = [
   {
+    key: 'all',
+    label: '全部',
+    toClause: v => {
+      const numberMatches = byNo(v)
+      return {
+        OR: [
+          { name: like(v) },
+          { address: like(v) },
+          { street: like(v) },
+          { street2: like(v) },
+          { city: like(v) },
+          { phone: like(v) },
+          { mobile: like(v) },
+          { email: like(v) },
+          { vatNumber: like(v) },
+          ...numberMatches,
+        ],
+      }
+    },
+  },
+  {
     key: 'name',
     label: '名称',
     toClause: v => {
