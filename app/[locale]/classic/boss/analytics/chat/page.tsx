@@ -107,7 +107,7 @@ export default function AnalyticsChatPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col" style={{ height: 'calc(100vh - 140px)' }}>
+    <div className="w-full flex flex-col" style={{ height: 'calc(100vh - 140px)' }}>
       <h1 className="text-lg font-medium mb-3" style={{ color: '#875A7B' }}>{isEn ? 'AI Data Chat' : 'AI 问数'}</h1>
       <div className="flex-1 overflow-y-auto space-y-3 p-2 bg-gray-50 rounded border border-gray-100">
         {entries.length === 0 && (

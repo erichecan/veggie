@@ -71,7 +71,7 @@ export default function SaleUomsEditor({
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="w-full">
       {saleUoms.map((row, i) => {
         const isBase = isBaseSaleUomRow(row, baseUomId)
         // 非基础行的下拉里不能选基准单位本身——选了会因为 isBaseSaleUomRow 判断变成新的

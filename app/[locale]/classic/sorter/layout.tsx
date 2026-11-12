@@ -31,7 +31,7 @@ export default function ClassicSorterLayout({ children }: { children: React.Reac
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Warehouse' : '仓库'} menuItems={LINKS} session={session} />
-      <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full max-w-none px-4 py-6">{children}</main>
     </div>
   )
 }

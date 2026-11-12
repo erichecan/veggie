@@ -52,6 +52,7 @@ export const ORDER_FACET_DEFS: FacetDef[] = [
   { key: 'weekday',  label: '交货星期', toClause: v => weekdayClause(v) },
   { key: 'dispatchAssignment', label: '司机 + 批次 + 时段', toClause: v => dispatchAssignmentClause(v) },
   { key: 'dispatchBatch', label: '批次/时段', toClause: v => dispatchBatchClause(v) },
+  { key: 'dispatchShift', label: '时段', toClause: v => dispatchShiftClause(v) },
 ]
 
 /**
@@ -130,6 +131,24 @@ async function dispatchBatchClause(raw: string): Promise<Record<string, unknown>
       WHERE lower(w."timeOfDay") = $1`,
     shift,
   )
+  return { id: { in: rows.map(row => row.id) } }
+}
+
+/** 独立按上午/下午时段搜索，不要求用户同时输入批次或司机。 */
+async function dispatchShiftClause(raw: string): Promise<Record<string, unknown>> {
+  const value = raw.trim().toLowerCase()
+  const shift = /^(am|morning|上午|早上)$/.test(value)
+    ? 'am'
+    : /^(pm|afternoon|下午)$/.test(value)
+      ? 'pm'
+      : null
+  if (!shift) return { id: { in: [] } }
+
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT DISTINCT unnest(w."orderIds") AS id
+      FROM "PickingWave" w
+     WHERE lower(w."timeOfDay") = ${shift}
+  `
   return { id: { in: rows.map(row => row.id) } }
 }
 

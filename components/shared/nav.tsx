@@ -127,7 +127,7 @@ export default function Nav({ session, links = [], onReplayTour }: NavProps) {
   return (
     <>
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 min-w-0">
+        <div className="w-full px-4 py-3 flex items-center justify-between gap-4 min-w-0">
           <div className="flex items-center gap-4 min-w-0 flex-1">
             <Link
               href={locale === routing.defaultLocale ? '/' : `/${locale}`}

@@ -165,6 +165,9 @@ export default function ClassicQuotationsPage() {
   const [showFiltersBar, setShowFiltersBar] = useState(false)
   const [editDateId, setEditDateId] = useState<string | null>(null)
   const [editDateVal, setEditDateVal] = useState('')
+  const [editInternalNoteId, setEditInternalNoteId] = useState<string | null>(null)
+  const [editInternalNoteVal, setEditInternalNoteVal] = useState('')
+  const [savingInternalNoteId, setSavingInternalNoteId] = useState<string | null>(null)
   const [editItemsId, setEditItemsId] = useState<string | null>(null)
   const [editItemsLines, setEditItemsLines] = useState<Array<{ id?: string; productId: string; productName: string; spec: string; quantity: number; price: number; uomName?: string }>>([])
   const [savingItems, setSavingItems] = useState(false)
@@ -198,6 +201,26 @@ export default function ClassicQuotationsPage() {
       toast.error(e instanceof Error ? e.message : 'Failed to update delivery date')
     }
     setEditDateId(null)
+  }
+
+  async function saveInternalNote(orderId: string, value: string) {
+    if (savingInternalNoteId) return
+    const order = orders.find(item => item.id === orderId)
+    if ((order?.internalNote ?? '') === value) {
+      setEditInternalNoteId(null)
+      return
+    }
+    setSavingInternalNoteId(orderId)
+    try {
+      await apiPut(`/api/orders/${orderId}`, { internalNote: value })
+      setEditInternalNoteId(null)
+      refresh()
+      toast.success(isEn ? 'Internal note updated' : '内部备注已更新')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update internal note' : '更新内部备注失败'))
+    } finally {
+      setSavingInternalNoteId(null)
+    }
   }
 
   async function saveQuotationDriver(order: Order, driverSlotId: string) {
@@ -1077,7 +1100,38 @@ ${orderSections}
             )}
           </td>
           {/* Internal Notes */}
-          <td className="hidden xl:table-cell px-1.5 py-2 text-base text-gray-700 truncate" title={internalNote}>{internalNote || ''}</td>
+          <td className="hidden xl:table-cell px-1.5 py-2 text-base text-gray-700" onClick={e => e.stopPropagation()}>
+            {!isReadMode && o.status === 'pending' ? (
+              editInternalNoteId === o.id ? (
+                <input
+                  autoFocus
+                  value={editInternalNoteVal}
+                  disabled={savingInternalNoteId === o.id}
+                  onChange={e => setEditInternalNoteVal(e.target.value)}
+                  onBlur={() => void saveInternalNote(o.id, editInternalNoteVal)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                  }}
+                  className="w-full min-w-20 rounded border border-purple-400 bg-white px-1.5 py-0.5 text-base focus:outline-none focus:ring-1 focus:ring-purple-300 disabled:opacity-60"
+                  aria-label={isEn ? 'Edit internal note' : '编辑内部备注'}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditInternalNoteId(o.id)
+                    setEditInternalNoteVal(internalNote)
+                  }}
+                  className="block w-full truncate text-left hover:text-purple-700 hover:underline"
+                  title={isEn ? 'Click to edit internal note' : '点击编辑内部备注'}
+                >
+                  {internalNote || '—'}
+                </button>
+              )
+            ) : (
+              <span className="block truncate" title={internalNote}>{internalNote || ''}</span>
+            )}
+          </td>
           {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
           <td className="px-1.5 py-2 text-base text-gray-700" onClick={e => e.stopPropagation()}>
             <div className="flex min-w-0 items-center gap-1">
@@ -1281,7 +1335,7 @@ ${orderSections}
               ]
             : [
                 { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditItemsId(null) } },
+                { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditInternalNoteId(null); setEditItemsId(null) } },
               ]),
           // 20261003：阈值从 >=2 改成 >=1 —— 原来选中单条报价单时，工具栏不出现任何批量操作
           // 入口，用户看不到删除/恢复按钮，以为功能没做（单条场景没理由要求必须多选）

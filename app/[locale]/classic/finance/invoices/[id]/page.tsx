@@ -172,7 +172,7 @@ export default function ClassicInvoiceDetailPage() {
   const orderBased = isOrderBasedInvoice(inv.lines ?? [])
 
   return (
-    <div className="max-w-3xl mx-auto p-4">
+    <div className="w-full p-4">
       {/* 顶部操作栏 */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">

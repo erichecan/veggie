@@ -49,7 +49,7 @@ function DispatchConsoleInner() {
   const TABS = isEn ? TABS_EN : TABS_ZH
 
   return (
-    <div className="p-3 md:p-5 max-w-[1320px] mx-auto">
+    <div className="w-full p-3 md:p-5">
       {/* 页头（日期选择器已下移到批次管理工具栏） */}
       <div className="mb-4">
         <p className="text-xs text-gray-400">{isEn ? 'Sales / Dispatch Console' : '销售 / 配送调度中心'}</p>

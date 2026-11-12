@@ -39,7 +39,7 @@ export default function ClassicBulletinLayout({ children }: { children: React.Re
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Bulletin Board' : '信息广场'} menuItems={LINKS} session={session} />
-      <main className="max-w-3xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full max-w-none px-4 py-6">{children}</main>
     </div>
   )
 }

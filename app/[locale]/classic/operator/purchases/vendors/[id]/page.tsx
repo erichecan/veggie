@@ -270,7 +270,7 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
         {draft.pendingDraft && (
           <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
         )}
-        <div className="bg-white rounded border border-gray-200 shadow-sm p-6 max-w-2xl">
+        <div className="bg-white rounded border border-gray-200 shadow-sm p-6 w-full">
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Field label={isEn ? 'Vendor Name *' : '供应商名称 *'}>

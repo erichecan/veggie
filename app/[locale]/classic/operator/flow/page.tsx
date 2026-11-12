@@ -239,7 +239,7 @@ export default function ClassicFlowPage() {
         <p className="text-white/70 text-xs">{isEn ? 'The complete supply chain flow from order to invoice — click any step to jump to that module' : '从接单到开票的完整供应链流程 — 点击任意步骤跳转到对应模块'}</p>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
+      <div className="w-full px-6 py-8">
 
         {/* Legend */}
         <div className="flex flex-wrap gap-4 mb-8 text-xs">

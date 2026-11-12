@@ -477,7 +477,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const missingCoordsCount = trip.restaurants.length - routeMarkers.length
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-0 pb-8 pt-2 sm:px-2 sm:pt-3">
+    <div className="w-full space-y-4 px-0 pb-8 pt-2 sm:px-2 sm:pt-3">
       <div className="mb-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <div className="flex items-center gap-2 mb-1">

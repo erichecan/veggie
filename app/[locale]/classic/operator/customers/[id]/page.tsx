@@ -588,13 +588,13 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       )}
 
       {isEditing && draft.pendingDraft && (
-        <div className="mt-4 mx-auto" style={{ maxWidth: 1060 }}>
+        <div className="mt-4 w-full">
           <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
         </div>
       )}
 
       {/* ── Main card ────────────────────────────────────────────────────────── */}
-      <div className="mt-4 mx-auto bg-white rounded shadow-sm overflow-hidden" style={{ maxWidth: 1060 }}>
+      <div className="mt-4 w-full bg-white rounded shadow-sm overflow-hidden">
 
         {/* ── Card header: avatar | name area | stat badges ─────────────────── */}
         <div className="px-6 pt-5 pb-4">
@@ -915,7 +915,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
           {/* Sales */}
           {activeTab === 'sales' && (
-            <div className="max-w-xl">
+            <div className="w-full">
               <SectionTitle>Sales</SectionTitle>
               <fieldset disabled={!isEditing} className="border-0 m-0 p-0">
                 <OdooField label="Is a Customer">
@@ -1229,7 +1229,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       )}
 
       {/* ── Chatter ──────────────────────────────────────────────────────────── */}
-      <div className="mt-4 mx-auto bg-white rounded shadow-sm" style={{ maxWidth: 1060 }}>
+      <div className="mt-4 w-full bg-white rounded shadow-sm">
         {/* Chatter toolbar */}
         <div className="px-6 py-3 flex items-center justify-between border-b border-gray-100">
           <div className="flex items-center gap-4">

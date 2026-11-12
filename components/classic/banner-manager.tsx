@@ -115,7 +115,7 @@ export function BannerManager({ isEn }: { isEn: boolean }) {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="w-full p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">{isEn ? 'Customer Portal Banners' : '客户门户轮播图'}</h1>
         <button onClick={openCreate} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>

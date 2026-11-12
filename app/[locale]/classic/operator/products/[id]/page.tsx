@@ -860,7 +860,7 @@ export default function ClassicProductDetailPage() {
 
           <Section title="Basic Info">
             {editMode ? (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-3 w-full">
                 {!isNew && (
                   <Row label={isEn ? 'Product No.' : '产品编号'}>
                     <span className="text-sm text-gray-500">{tmpl.productNo ?? '—'}</span>
@@ -899,7 +899,7 @@ export default function ClassicProductDetailPage() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-2 w-full">
                 {!isNew && <ReadField label={isEn ? 'Product No.' : '产品编号'} value={tmpl.productNo} />}
                 <ReadField label="Internal Reference" value={tmpl.internalRef ? <span style={{ color: '#875A7B' }}>{tmpl.internalRef}</span> : undefined} />
                 <ReadField label="Product Type" value={TYPE_LABEL[tmpl.type] ?? tmpl.type} />
@@ -925,7 +925,7 @@ export default function ClassicProductDetailPage() {
 
           <Section title="Pricing & Tax">
             {editMode ? (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-3 w-full">
                 <Row label="Sales Price">
                   <div className="flex items-center gap-2 min-w-0">
                     <PriceInput value={tmpl.listPrice} onChange={v => setField('listPrice', v)} />
@@ -955,7 +955,7 @@ export default function ClassicProductDetailPage() {
                 </Row>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-2 w-full">
                 <ReadField label="Sales Price" value={
                   <div className="flex items-center gap-2 min-w-0">
                     <span>€{(tmpl.listPrice ?? 0).toFixed(2)}</span>
@@ -988,7 +988,7 @@ export default function ClassicProductDetailPage() {
               </div>
             )}
             {editMode ? (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-3 w-full">
                 <Row label="Unit of Measure">
                   <div>
                     <select value={tmpl.uomId ?? ''} onChange={e => setField('uomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
@@ -1047,7 +1047,7 @@ export default function ClassicProductDetailPage() {
                 </Row>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-2 w-full">
                 <ReadField label="Unit of Measure" value={
                   tmpl.uomId
                     ? (() => { const u = uoms.find(u => u.id === tmpl.uomId); return isEn ? (u?.name || u?.nameZh) : (u?.nameZh ?? u?.name) })()

@@ -120,7 +120,7 @@ export default function ClassicDriverPage() {
         page={1}
         pageSize={filtered.length || 1}
       />
-      <div className="mx-auto max-w-3xl px-0 py-2 sm:px-2 sm:py-3">
+      <div className="w-full px-0 py-2 sm:px-2 sm:py-3">
         {!loading && activeTrips.length > 0 && (
           <section role="status" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
             <h2 className="font-semibold">
