@@ -273,6 +273,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<OdooPricelistItem | null>(null)
   const [isNewItem, setIsNewItem] = useState(false)
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{
+    item: OdooPricelistItem
+    action: 'close' | 'new'
+    duplicates: OdooPricelistItem[]
+  } | null>(null)
 
   // 阶梯价格弹窗(20261026)：同一个商品+单位的多档 minQty/价格一次性编辑，不用再逐条加规则。
   const [tierDialogOpen, setTierDialogOpen] = useState(false)
@@ -551,12 +556,37 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     return ok
   }
 
-  async function saveAndNew(item: OdooPricelistItem) {
+  function findDuplicateRules(item: OdooPricelistItem): OdooPricelistItem[] {
+    if (!pl || !['product', 'variant'].includes(item.applyOn)) return []
+    const productId = scopedProductId(item)
+    if (!productId) return []
+    return pl.items.filter(existing =>
+      existing.id !== item.id
+      && ['product', 'variant'].includes(existing.applyOn)
+      && scopedProductId(existing) === productId
+      && existing.uomId === item.uomId,
+    )
+  }
+
+  async function completeItemSave(item: OdooPricelistItem, action: 'close' | 'new') {
     const ok = await saveItem(item)
     if (ok) {
-      setEditingItem(emptyItem())
-      setIsNewItem(true)
+      if (action === 'close') {
+        setDialogOpen(false)
+      } else {
+        setEditingItem(emptyItem())
+        setIsNewItem(true)
+      }
     }
+  }
+
+  function requestItemSave(item: OdooPricelistItem, action: 'close' | 'new') {
+    const duplicates = findDuplicateRules(item)
+    if (duplicates.length > 0) {
+      setDuplicatePrompt({ item, action, duplicates })
+      return
+    }
+    void completeItemSave(item, action)
   }
 
   async function handleDeleteItem(itemId: string) {
@@ -1055,8 +1085,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           key={editingItem.id}
           item={editingItem}
           onChange={setEditingItem}
-          onSaveClose={async item => { const ok = await saveItem(item); if (ok) setDialogOpen(false) }}
-          onSaveNew={item => { saveAndNew(item) }}
+          onSaveClose={item => requestItemSave(item, 'close')}
+          onSaveNew={item => requestItemSave(item, 'new')}
           onDiscard={() => setDialogOpen(false)}
           onRemove={isNewItem ? undefined : () => { handleDeleteItem(editingItem.id); setDialogOpen(false) }}
           pricelistId={id}
@@ -1069,6 +1099,73 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           scopeTitle={applyScopeTitle(editingItem, products, categories, isEn)}
           isEn={isEn}
         />
+      )}
+
+      {duplicatePrompt && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4" role="presentation">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="duplicate-pricelist-title"
+            aria-describedby="duplicate-pricelist-description"
+            className="w-full max-w-xl rounded-lg bg-white shadow-2xl"
+          >
+            <div className="border-b px-5 py-4">
+              <h2 id="duplicate-pricelist-title" className="text-base font-semibold text-gray-900">
+                {isEn ? 'Similar product and unit rules already exist' : '已有相同商品和单位的规则'}
+              </h2>
+              <p id="duplicate-pricelist-description" className="mt-2 text-sm text-gray-600">
+                {isEn
+                  ? 'You can still add this rule. Review the existing entries, then confirm to continue.'
+                  : '仍可以继续添加。请先核对已有规则，点击“确定继续”后保存。'}
+              </p>
+            </div>
+            <div className="max-h-64 space-y-2 overflow-y-auto px-5 py-4">
+              {duplicatePrompt.duplicates.map(rule => {
+                const product = products.find(p => p.id === scopedProductId(rule))
+                const price = product
+                  ? computeItemPrice(rule, product, product.listPrice ?? 0, allLists, rule.minQty || 1, undefined, 0, rule.uomId)
+                  : null
+                const dateRange = rule.dateStart || rule.dateEnd
+                  ? `${rule.dateStart || (isEn ? 'No start date' : '无开始日期')} – ${rule.dateEnd || (isEn ? 'No end date' : '无结束日期')}`
+                  : (isEn ? 'All dates' : '所有日期')
+                return (
+                  <div key={rule.id} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                    <div className="font-medium text-gray-900">
+                      {applyOnLabel(rule, allProductsForLabels, categories, uoms, isEn)}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                      <span>{isEn ? 'Min. quantity' : '最小数量'}: {rule.minQty}</span>
+                      <span>{dateRange}</span>
+                      <span>{isEn ? 'Sales Price' : '销售价'}: {price == null ? '—' : `${pl.currency} ${price.toFixed(2)}`}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex justify-end gap-2 border-t px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setDuplicatePrompt(null)}
+                className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                {isEn ? 'Cancel' : '取消'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = duplicatePrompt
+                  setDuplicatePrompt(null)
+                  void completeItemSave(pending.item, pending.action)
+                }}
+                className="rounded px-4 py-2 text-sm font-medium text-white hover:brightness-95"
+                style={{ background: PURPLE }}
+              >
+                {isEn ? 'Confirm and continue' : '确定继续'}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {/* ── Tiered pricing dialog ── */}
