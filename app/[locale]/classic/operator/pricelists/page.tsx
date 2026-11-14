@@ -556,8 +556,8 @@ export default function ClassicPricelistsPage() {
         onOpenChange={open => { if (!open) setArchiveTargets(null) }}
         title={isEn ? 'Archive selected pricelists?' : '确认归档所选价格表？'}
         description={isEn
-          ? `${archiveTargets?.length ?? 0} pricelist(s) will be archived and removed from every customer currently using them. You can restore the pricelist later, but customer links will need to be added again.`
-          : `将归档 ${archiveTargets?.length ?? 0} 个价格表，并从之前挂靠这些价格表的客户中删除关联。之后可以恢复价格表，但客户关联需要重新添加。`}
+          ? `${archiveTargets?.length ?? 0} pricelist(s) will be archived and removed from every customer currently using them. The links will no longer appear on customer records, and those customers will no longer be found by searching for these pricelists. Restoring a pricelist later will not restore customer links; add them again manually.`
+          : `将归档 ${archiveTargets?.length ?? 0} 个价格表，并从所有关联客户中删除。删除后，客户档案中不会再显示这些价格表，按这些价格表搜索也不会再找到原关联客户。之后可以恢复价格表，但客户关联需要手动重新添加。`}
         confirmLabel={isEn ? 'Archive' : '确认归档'}
         cancelLabel={isEn ? 'Cancel' : '取消'}
         destructive
@@ -569,6 +569,16 @@ export default function ClassicPricelistsPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onDone={load}
+        confirmImport={(rows) => {
+          const inactiveRows = rows.filter(row => {
+            const value = row.active?.trim().toLowerCase()
+            return value !== undefined && ['false', '0', 'no', 'n', '否', '停用', 'inactive', 'archived', 'disabled', '已归档', '归档'].includes(value)
+          })
+          if (inactiveRows.length === 0) return true
+          return confirm(isEn
+            ? `${inactiveRows.length} imported row(s) set a pricelist to Archived. Matching existing pricelists will be removed from all linked customers, and those customers will no longer appear in searches by that pricelist. Restoring a pricelist later will not restore customer links. Continue?`
+            : `导入文件中有 ${inactiveRows.length} 行会将价格表设为已归档。匹配到的现有价格表会从所有关联客户中删除；之后按这些价格表搜索也不会再找到原关联客户。恢复价格表不会恢复客户关联。仍要继续吗？`)
+        }}
         templateFileName="pricelists-import-template"
         endpoint="/api/pricelists/bulk" historyResource="pricelist"
         title={{ zh: '批量导入价格表(CSV)', en: 'Bulk Import Pricelists (CSV)' }}

@@ -21,6 +21,31 @@ function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: strin
 }
 
 /**
+ * List-only display metadata: a still-active wave lock means the assigned order is being picked.
+ * Keep Order.status untouched; this is a presentation state derived from its wave.
+ */
+async function attachPickingLockDisplay<T extends { id: string }>(orders: T[]): Promise<(T & { isPickingLocked: boolean })[]> {
+  if (orders.length === 0) return []
+  const orderIds = new Set(orders.map((order) => order.id))
+  const lockedWaves = await prisma.pickingWave.findMany({
+    where: {
+      orderIds: { hasSome: [...orderIds] },
+      pickLockedAt: { not: null },
+      dispatchedAt: null,
+      completedAt: null,
+    },
+    select: { orderIds: true },
+  })
+  const lockedOrderIds = new Set<string>()
+  for (const wave of lockedWaves) {
+    for (const orderId of wave.orderIds) {
+      if (orderIds.has(orderId)) lockedOrderIds.add(orderId)
+    }
+  }
+  return orders.map((order) => ({ ...order, isPickingLocked: lockedOrderIds.has(order.id) }))
+}
+
+/**
  * Driver sort follows the Driver column's human meaning: driver name first, then
  * time/batch as a stable secondary order. The displayed string starts with the
  * batch number, so sorting that string directly groups by batch instead.
@@ -155,8 +180,9 @@ export async function GET(req: Request) {
         sortOrdersByDriver(withWave, sortDir)
         const total = withWave.length
         const start = (page - 1) * pageSize
+        const pageOrders = await attachPickingLockDisplay(withWave.slice(start, start + pageSize))
         return NextResponse.json({
-          data: withWave.slice(start, start + pageSize),
+          data: pageOrders,
           total,
           page,
           pageSize,
@@ -182,7 +208,7 @@ export async function GET(req: Request) {
         pageSize,
         totalPages: Math.ceil(total / pageSize),
       })
-      payload.data = attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(payload.data)))
+      payload.data = await attachPickingLockDisplay(attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(payload.data))))
       return NextResponse.json(payload)
     }
 
@@ -196,7 +222,7 @@ export async function GET(req: Request) {
       take: limit,
       include,
     })
-    return NextResponse.json(attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(orders)))))
+    return NextResponse.json(await attachPickingLockDisplay(attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(orders))))))
   } catch (error) {
     console.error('[GET /api/orders]', error)
     return NextResponse.json({ error: '获取订单失败' }, { status: 500 })

@@ -48,7 +48,7 @@ export const CUSTOMER_FACET_DEFS: FacetDef[] = [
     label: '价格表',
     toClause: async v => {
       const lists = await prisma.odooPricelist.findMany({
-        where: { name: like(v) },
+        where: { active: true, name: like(v) },
         select: { id: true },
       })
       return lists.length > 0

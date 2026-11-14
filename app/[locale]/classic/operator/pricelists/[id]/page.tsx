@@ -1184,8 +1184,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         onOpenChange={setArchiveConfirmOpen}
         title={isEn ? `Archive "${pl.name}"?` : `确认归档价格表「${pl.name}」？`}
         description={isEn
-          ? 'Archiving will remove this pricelist from every customer currently using it. Restoring the pricelist later will not restore those customer links.'
-          : '归档后，会从之前挂靠这张价格表的所有客户中删除该价格表。之后恢复价格表，也不会自动恢复客户关联。'}
+          ? 'Archiving will remove this pricelist from every customer currently using it. It will no longer appear on customer records, and those customers will no longer be found by searching for this pricelist. Restoring it later will not restore customer links; add them again manually.'
+          : '归档后，会从所有关联客户中删除这张价格表。删除后，客户档案中不会再显示它，按这张价格表搜索也不会再找到原关联客户。之后恢复价格表，也不会自动恢复客户关联，需要手动重新添加。'}
         confirmLabel={isEn ? 'Archive pricelist' : '确认归档'}
         cancelLabel={isEn ? 'Cancel' : '取消'}
         destructive

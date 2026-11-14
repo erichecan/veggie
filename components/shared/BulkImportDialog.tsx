@@ -71,6 +71,8 @@ export interface BulkImportDialogProps {
   hint: { zh: string; en: string }
   /** 可选的补充说明(放在文件选择框下方，如匹配规则/特殊格式说明) */
   extraHint?: { zh: React.ReactNode; en: React.ReactNode }
+  /** 正式导入前的额外确认；试运行不触发。 */
+  confirmImport?: (rows: Record<string, string>[]) => boolean
   /** 每批提交的行数，默认 100(见 ProductImportDialog 对 Neon/nginx 超时的注释) */
   batchSize?: number
   /** 导入历史按哪个模块查(与服务端 auditLog.resource 一致，如 'product')；不传不显示历史 */
@@ -90,7 +92,7 @@ const readSheet = readImportSheet
 
 export default function BulkImportDialog({
   open, onClose, onDone, templateFileName, columns, exampleRows, endpoint, title, hint, extraHint, batchSize = 100,
-  historyResource,
+  historyResource, confirmImport,
 }: BulkImportDialogProps) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -209,6 +211,7 @@ export default function BulkImportDialog({
   }
 
   async function submit(dryRun = false) {
+    if (!dryRun && confirmImport && !confirmImport(rows)) return
     setBusy(true)
     setProgress(0)
     const total: BulkImportResult = { created: 0, updated: 0, skipped: [], failed: [], warnings: [], dryRun }

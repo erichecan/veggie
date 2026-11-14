@@ -41,7 +41,7 @@ export default function OrderMobileList({ orders, selected, loading, isEn, statu
               <input type="checkbox" aria-label={`${isEn ? 'Select' : '选择'} ${displayOrderCode(order)}`} checked={selected.has(order.id)} onChange={event => onSelect(order.id, event.target.checked)} className="w-5 h-5 accent-[#875A7B]" />
             </label>
             <button onClick={() => onOpen(order)} className="min-w-0 flex-1 text-left text-[#875A7B] font-semibold break-words min-h-11">{displayOrderCode(order)}</button>
-            <span className={`px-2 py-1 text-xs rounded shrink-0 ${statusColors[order.status] ?? 'bg-gray-100 text-gray-600'}`}>{statusLabels[order.status] ?? order.status}</span>
+            <span className={`px-2 py-1 text-xs rounded shrink-0 ${statusColors[order.displayStatus ?? order.status] ?? 'bg-gray-100 text-gray-600'}`}>{statusLabels[order.displayStatus ?? order.status] ?? order.displayStatus ?? order.status}</span>
           </div>
           <button onClick={() => onOpen(order)} className="block text-left w-full text-base font-medium break-words">{order.restaurantName}</button>
           <div className="flex flex-wrap justify-between gap-2 text-sm">

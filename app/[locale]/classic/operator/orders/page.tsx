@@ -5,7 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
-import type { Order, OrderStatus, Invoice } from '@/lib/types'
+import type { Order, OrderDisplayStatus, OrderStatus, Invoice } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import OrderMobileList from '@/components/classic/OrderMobileList'
 import { DateWithDay } from '@/components/shared/date-with-day'
@@ -28,33 +28,36 @@ import { parseDriverDispatchSearch } from '@/lib/dispatch-search'
 
 const PAGE_SIZE = 50
 
-const STATUS_LABEL_ZH: Record<OrderStatus, string> = {
+const STATUS_LABEL_ZH: Record<OrderDisplayStatus, string> = {
   pending:       '待处理',
   confirmed:     '已确认',
   wave_assigned: '司机分配结束',
   in_delivery:   '配送中',
   completed:     '完成配送',
-  locked:        '拣货中',
+  locked:        '已锁定',
+  picking:       '拣货中',
   cancelled:     '已取消',
 }
 
-const STATUS_LABEL_EN: Record<OrderStatus, string> = {
+const STATUS_LABEL_EN: Record<OrderDisplayStatus, string> = {
   pending:       'Pending',
   confirmed:     'Confirmed',
   wave_assigned: 'Driver Assigned',
   in_delivery:   'In Delivery',
   completed:     'Delivery Completed',
-  locked:        'Picking',
+  locked:        'Locked',
+  picking:       'Picking',
   cancelled:     'Cancelled',
 }
 
-const STATUS_COLOR: Record<OrderStatus, string> = {
+const STATUS_COLOR: Record<OrderDisplayStatus, string> = {
   pending:       'bg-yellow-50 text-yellow-700',
   confirmed:     'bg-blue-50 text-blue-700',
   wave_assigned: 'bg-blue-50 text-blue-700',
   in_delivery:   'bg-purple-50 text-purple-700',
   completed:     'bg-green-50 text-green-700',
   locked:        'bg-gray-200 text-gray-700',
+  picking:       'bg-blue-50 text-blue-700',
   cancelled:     'bg-red-50 text-red-600',
 }
 
@@ -455,10 +458,14 @@ export default function ClassicOrdersPage() {
   useRefetchOnFocus([fetchDriverSlots])
 
   const orders = useMemo(() =>
-    rawOrders.map(o => ({
-      ...(o as unknown as Order),
-      status: normalizeStatus(o.status as string | null | undefined),
-    })),
+    rawOrders.map(o => {
+      const status = normalizeStatus(o.status as string | null | undefined)
+      return {
+        ...(o as unknown as Order),
+        status,
+        displayStatus: o.isPickingLocked === true ? 'picking' as const : status,
+      }
+    }),
     [rawOrders],
   )
 
@@ -731,8 +738,8 @@ export default function ClassicOrdersPage() {
         </td>
         <td className="px-1.5 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-1">
-            <span className={`inline-block whitespace-nowrap px-1 py-0.5 rounded text-base ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
-              {STATUS_LABEL[o.status] ?? String(o.status)}
+            <span className={`inline-block whitespace-nowrap px-1 py-0.5 rounded text-base ${STATUS_COLOR[o.displayStatus ?? o.status] ?? 'bg-gray-100 text-gray-600'}`}>
+              {STATUS_LABEL[o.displayStatus ?? o.status] ?? String(o.displayStatus ?? o.status)}
             </span>
             {/* 回单（签收单）核销状态（20261021）：原来把 RETURNED 印成「有退货」——意思反了，
                 RETURNED 是签收单已交回会计核销；未回 / 有问题根本不显示。只对货已离仓的单显示 */}
