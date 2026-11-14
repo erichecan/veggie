@@ -229,6 +229,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
 
   // ── 财务 ────────────────────────────────────────────────────────────────
   { pattern: '/api/invoices/*/post', permission: 'finance.invoice.pay' },
+  { pattern: '/api/invoices/*/credit-note', methods: ['POST'], permission: 'finance.credit_note.create', note: '从已过账发票创建关联的草稿贷记单' },
   { pattern: '/api/invoices/*/apply-prepayment', permission: 'finance.invoice.pay' },
   { pattern: '/api/invoices/*/reissue', methods: ['POST'], permission: 'finance.invoice.create', note: '历史发票换开新发票（20261028 M8），复用开票权限' },
   { pattern: '/api/invoices/sage-export', methods: R, permission: 'finance.invoice.read', note: '导出已过账发票到 Sage 模板' },

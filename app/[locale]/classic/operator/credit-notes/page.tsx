@@ -48,6 +48,7 @@ interface CreditNote {
   notes?: string | null
   lines: CreditNoteLine[]
   createdAt: string
+  sourceInvoice?: { id: string; name: string } | null
 }
 
 interface TripForGen {
@@ -88,6 +89,7 @@ const FACET_DEFS: ClientFacetDef<CreditNote>[] = [
 export default function CreditNotesPage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
 
   const [notes, setNotes] = useState<CreditNote[]>([])
@@ -272,6 +274,7 @@ export default function CreditNotesPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'No.' : '单号'}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Customer' : '客户'}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Source Invoice' : '来源发票'}</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Amount (Inc. Tax)' : '含税金额'}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Remaining' : '剩余可用'}</th>
@@ -282,10 +285,10 @@ export default function CreditNotesPage() {
             <tbody className="divide-y divide-gray-100">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-400">
+                  <td colSpan={8} className="text-center py-12 text-gray-400">
                     {isEn
-                      ? 'No credit notes · approved return decisions now create draft credit notes automatically'
-                      : '暂无贷记单 · 退换货审核通过后会自动生成草稿贷记单'}
+                      ? 'No credit notes · create one from an invoice or approve a return to generate a draft automatically'
+                      : '暂无贷记单 · 可从发票手动创建，或在退换货审核通过后自动生成草稿'}
                   </td>
                 </tr>
               )}
@@ -293,6 +296,7 @@ export default function CreditNotesPage() {
                 <tr key={cn.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDetail(cn)}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{cn.name}</td>
                   <td className="px-4 py-3 text-gray-800">{cn.customerName}</td>
+                  <td className="px-4 py-3 text-xs">{cn.sourceInvoice ? <a className="font-mono text-[#714B67] hover:underline" href={`${prefix}/classic/finance/invoices/${cn.sourceInvoice.id}`} onClick={e => e.stopPropagation()}>{cn.sourceInvoice.name}</a> : '—'}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[cn.status]}`}>
                       {STATUS_LABEL[cn.status]}
@@ -329,6 +333,7 @@ export default function CreditNotesPage() {
               <div className="space-y-3 text-sm">
                 <div className="flex flex-wrap justify-between gap-2 text-gray-600">
                   <span>{isEn ? 'Customer' : '客户'}：<b className="text-gray-900">{detail.customerName}</b></span>
+                  {detail.sourceInvoice && <span>{isEn ? 'Source invoice' : '来源发票'}：<a className="font-mono text-[#714B67] hover:underline" href={`${prefix}/classic/finance/invoices/${detail.sourceInvoice.id}`}>{detail.sourceInvoice.name}</a></span>}
                   {editingDraft ? (
                     <label className="flex items-center gap-2">{isEn ? 'Credit note date' : '贷记单日期'}<input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-gray-900" /></label>
                   ) : <span>{isEn ? 'Credit Note Date' : '贷记单日期'}：{new Date(detail.creditDate).toLocaleDateString('en-GB')}</span>}

@@ -26,6 +26,7 @@ export async function GET(
       include: {
         lines: { orderBy: { sequence: 'asc' } },
         allocations: { orderBy: { createdAt: 'asc' }, include: { invoice: { select: { id: true, name: true } } } },
+        sourceInvoice: { select: { id: true, name: true } },
       },
     })
     if (!cn) return NextResponse.json({ error: '退款单不存在' }, { status: 404 })

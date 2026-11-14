@@ -37,7 +37,7 @@ export async function GET(req: Request) {
 
     const creditNotes = await prisma.creditNote.findMany({
       where,
-      include: { lines: { orderBy: { sequence: 'asc' } } },
+      include: { lines: { orderBy: { sequence: 'asc' } }, sourceInvoice: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     })
     // 剩余可用 = 总额 − Σ 抵扣/退款（20261014 L1），列表直接显示，不用点进详情

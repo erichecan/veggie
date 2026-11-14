@@ -1255,6 +1255,7 @@ model Invoice {
   paidAt            String?
   payments          Payment[]
   creditAllocations CreditNoteAllocation[]
+  creditNotes       CreditNote[]           @relation("InvoiceCreditNotes")
   /// 换开新发票时指回被取代的旧票（20261028 M8）。@unique：一张旧票只能被换开一次
   supersedesInvoiceId String?              @unique
   supersedesInvoice   Invoice?             @relation("InvoiceSupersession", fields: [supersedesInvoiceId], references: [id])
@@ -1962,8 +1963,12 @@ model CreditNote {
   updatedAt     DateTime               @updatedAt
   lines         CreditNoteLine[]
   allocations   CreditNoteAllocation[]
+  /// 发票详情手动创建时记录来源发票；退货自动生成的贷记单为空。
+  sourceInvoiceId String?
+  sourceInvoice   Invoice? @relation("InvoiceCreditNotes", fields: [sourceInvoiceId], references: [id], onDelete: Restrict)
 
   @@index([customerId])
+  @@index([sourceInvoiceId])
   @@index([status])
   @@index([creditDate])
 }

@@ -12,6 +12,7 @@ import { GiftAmount } from '@/components/shared/gift-amount'
 import Link from 'next/link'
 import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invoice-lines-view'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { hasPermission, useAbility } from '@/lib/permissions'
 
 const PURPLE = '#875A7B'
 
@@ -68,6 +69,8 @@ export default function ClassicInvoiceDetailPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const METHOD_LABEL = isEn ? METHOD_LABEL_EN : METHOD_LABEL_ZH
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const ability = useAbility()
+  const canCreateCreditNote = hasPermission(ability, 'finance.credit_note.create')
   const [inv, setInv] = useState<Invoice | null>(null)
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [paymentJournals, setPaymentJournals] = useState<PaymentJournalOption[]>([])
@@ -79,6 +82,7 @@ export default function ClassicInvoiceDetailPage() {
   const [editingLines, setEditingLines] = useState(false)
   const [editLines, setEditLines] = useState<Array<Record<string, unknown>>>([])
   const [editBusy, setEditBusy] = useState(false)
+  const [creditNoteBusy, setCreditNoteBusy] = useState(false)
 
   async function load() {
     try {
@@ -168,6 +172,24 @@ export default function ClassicInvoiceDetailPage() {
     } catch (err) { toast.error(err instanceof Error ? err.message : (isEn ? 'Reset failed' : '退回草稿失败')) }
   }
 
+  async function handleCreateCreditNote() {
+    if (!inv) return
+    const message = isEn
+      ? `Create a draft credit note from all lines on ${inv.name}? You can edit the draft before confirming it.`
+      : `根据发票 ${inv.name} 的明细创建一张草稿贷记单？确认前可以在贷记单页面编辑金额和明细。`
+    if (!window.confirm(message)) return
+    setCreditNoteBusy(true)
+    try {
+      const creditNote = await apiPost<{ id: string; name: string }>(`/api/invoices/${inv.id}/credit-note`, {})
+      toast.success(isEn ? `Draft credit note ${creditNote.name} created` : `已创建草稿贷记单 ${creditNote.name}`)
+      router.push(`${prefix}/classic/operator/credit-notes`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Failed to create credit note' : '创建贷记单失败'))
+    } finally {
+      setCreditNoteBusy(false)
+    }
+  }
+
   async function saveDraftLines() {
     if (!inv) return
     setEditBusy(true)
@@ -214,6 +236,11 @@ export default function ClassicInvoiceDetailPage() {
           </span>
         </div>
         <div className="flex gap-2">
+          {canCreateCreditNote && ['posted', 'paid'].includes(inv.status) && (
+            <Button variant="outline" onClick={handleCreateCreditNote} disabled={creditNoteBusy}>
+              {creditNoteBusy ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Add credit note' : '创建贷记单')}
+            </Button>
+          )}
           <Link
             href={`${prefix}/classic/finance/invoices/${inv.id}/print`}
             target="_blank"
