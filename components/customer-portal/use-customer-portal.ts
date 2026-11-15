@@ -9,6 +9,7 @@ import type { Product, FrequentCard } from './product-types'
 
 export interface PortalCategory {
   id: string
+  parentId: string | null
   name: string
   nameZh: string | null
   count: number

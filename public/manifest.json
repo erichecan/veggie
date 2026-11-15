@@ -1,6 +1,6 @@
 {
-  "name": "蔬菜批发订购",
-  "short_name": "蔬菜订购",
+  "name": "JohnstoneBros",
+  "short_name": "JohnstoneBros",
   "description": "餐厅客户在线下单专属批发价蔬菜",
   "start_url": "/customer-portal",
   "scope": "/",

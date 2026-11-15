@@ -318,7 +318,7 @@ export default function CreditNotesPage() {
       </div>
 
       <Dialog open={!!detail} onOpenChange={open => { if (!open) setDetail(null) }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(800px,calc(100vw-2rem))]">
           {detail && (
             <>
               <DialogHeader>
@@ -340,7 +340,7 @@ export default function CreditNotesPage() {
                 </div>
 
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-xs">
+                  <table className="w-full min-w-[560px] table-fixed text-xs">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Product' : '商品'}</th>

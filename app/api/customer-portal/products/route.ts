@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { loadCustomerFromRestaurantId } from '@/lib/server-pricing'
 import { buildCustomerProductCards, CUSTOMER_PRODUCT_SALE_UOM_INCLUDE } from '@/lib/customer-portal-products'
+import { getCustomerFacingCategoryScope } from '@/lib/customer-facing-categories'
 
 const DEFAULT_PAGE_SIZE = 24
 const MAX_PAGE_SIZE = 100
@@ -73,6 +74,7 @@ export async function GET(req: Request) {
       const pageSize = Math.min(MAX_PAGE_SIZE, parsePositiveInt(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE))
       const search = searchParams.get('search')?.trim()
       const categoryId = searchParams.get('categoryId')?.trim()
+      const categoryIds = categoryId ? await getCustomerFacingCategoryScope(categoryId) : null
       // 20260927（code-review 发现）：banner"跳转到商品"原来靠把商品名塞进 search 框实现，
       // 同名商品（本库有过 60+ 组重名，见 product-dedup-merge 记录）会连带搜出别的商品。
       // 精确按 id 命中，跳过名字这层不可靠的中间层。
@@ -85,7 +87,7 @@ export async function GET(req: Request) {
         // 后台取消「在客户门户显示」的商品不出现在门户目录（20261028），内部下单不受影响
         showInPortal: true,
         ...(productId ? { id: productId } : {}),
-        ...(categoryId ? { categoryId } : {}),
+        ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
         // 20260926（code-review 发现）：`spec` 是废弃字段，绝大多数商品早已清空（历史数据见
         // order-line-description.ts 的说明），客户搜索框里输入的规格文字实际来自 `saleDescription`
         // （lineDescription() 的优先取值），漏了它会导致搜规格词基本搜不到东西。

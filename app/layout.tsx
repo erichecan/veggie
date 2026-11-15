@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "蔬菜批发管理系统",
+  title: "JohnstoneBros",
   description: "从商品上架到签收回款的完整供应链管理平台",
   manifest: "/manifest.json",
   icons: {
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   appleWebApp: {
-    title: "蔬菜订购",
+    title: "JohnstoneBros",
     statusBarStyle: "default",
   },
 }

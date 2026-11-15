@@ -209,6 +209,12 @@ export default function ClassicInvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<Invoice['status'] | ''>('')
   const [groupBy, setGroupBy] = useState('')
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
+  const [invoiceDateFrom, setInvoiceDateFrom] = useState('')
+  const [invoiceDateTo, setInvoiceDateTo] = useState('')
+  const [appliedInvoiceDateRange, setAppliedInvoiceDateRange] = useState<{ from: string; to: string } | null>(null)
+  const [dateFilteredInvoices, setDateFilteredInvoices] = useState<Invoice[]>([])
+  const [dateFilterTotal, setDateFilterTotal] = useState(0)
+  const [dateFilterBusy, setDateFilterBusy] = useState(false)
   const [batchBusy, setBatchBusy] = useState(false)
   const [batchPayOpen, setBatchPayOpen] = useState(false)
   const [batchPayNote, setBatchPayNote] = useState('')
@@ -316,8 +322,50 @@ export default function ClassicInvoicesPage() {
     setGroupBy('')
     setSortKey('createdAt')
     setSortDir('desc')
+    setInvoiceDateFrom('')
+    setInvoiceDateTo('')
+    setAppliedInvoiceDateRange(null)
+    setDateFilteredInvoices([])
+    setDateFilterTotal(0)
+    setSelectedInvoiceIds(new Set())
     clearFacets()
     setPage(1)
+  }
+
+  async function applyInvoiceDateFilter(from = invoiceDateFrom, to = invoiceDateTo) {
+    if (from && to && from > to) {
+      toast.error(isEn ? 'Start date must be before end date' : '开始日期不能晚于结束日期')
+      return
+    }
+    setDateFilterBusy(true)
+    setSelectedInvoiceIds(new Set())
+    setPage(1)
+    try {
+      if (!from && !to) {
+        setAppliedInvoiceDateRange(null)
+        setDateFilteredInvoices([])
+        setDateFilterTotal(0)
+        return
+      }
+      const loadPage = async (pageNumber: number) => {
+        const params = new URLSearchParams({ page: String(pageNumber), pageSize: '200' })
+        if (from) params.set('createdFrom', from)
+        if (to) params.set('createdTo', to)
+        return apiGet<{ data: Record<string, unknown>[]; total: number }>(`/api/invoices?${params}`)
+      }
+      const first = await loadPage(1)
+      const resultLimit = Math.min(first.total ?? first.data.length, 500)
+      const pageCount = Math.ceil(resultLimit / 200)
+      const rest = await Promise.all(Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => loadPage(index + 2)))
+      const rows = [first, ...rest].flatMap(result => (result.data ?? []).map(normalizeInvoice))
+      setDateFilteredInvoices(rows)
+      setDateFilterTotal(first.total ?? rows.length)
+      setAppliedInvoiceDateRange({ from, to })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (isEn ? 'Date filter failed' : '日期筛选失败'))
+    } finally {
+      setDateFilterBusy(false)
+    }
   }
 
   // 销售单号分面（20261028）：列表只加载了最近 200 张，SO 号对应的发票可能更早——有这个维度时
@@ -330,16 +378,23 @@ export default function ClassicInvoicesPage() {
   useEffect(() => {
     if (saleOrderTerms.length === 0) { setSoResults(null); return }
     let cancelled = false
+    const params = new URLSearchParams({ page: '1', pageSize: '200', saleOrder: saleOrderTerms.join(',') })
+    if (appliedInvoiceDateRange?.from) params.set('createdFrom', appliedInvoiceDateRange.from)
+    if (appliedInvoiceDateRange?.to) params.set('createdTo', appliedInvoiceDateRange.to)
     apiGet<{ data: Record<string, unknown>[] }>(
-      `/api/invoices?page=1&pageSize=200&saleOrder=${encodeURIComponent(saleOrderTerms.join(','))}`,
+      `/api/invoices?${params}`,
     )
       .then(r => { if (!cancelled) setSoResults((r.data ?? []).map(normalizeInvoice)) })
       .catch(() => { if (!cancelled) setSoResults(null) })
     return () => { cancelled = true }
-  }, [saleOrderTerms])
+  }, [saleOrderTerms, appliedInvoiceDateRange])
+
+  const invoiceRows = saleOrderTerms.length > 0 && soResults
+    ? soResults
+    : appliedInvoiceDateRange ? dateFilteredInvoices : invoices
 
   const filtered = useMemo(() => {
-    let base = saleOrderTerms.length > 0 && soResults ? soResults : invoices
+    let base = invoiceRows
     if (statusFilter) base = base.filter(inv => inv.status === statusFilter)
     if (searchInput) base = base.filter(inv =>
       inv.name.toLowerCase().includes(searchInput.toLowerCase()) ||
@@ -349,7 +404,8 @@ export default function ClassicInvoicesPage() {
     // 分面：同维度 OR、跨维度 AND（与服务端类页面同一套语义，见 lib/facet-client.ts）
     base = filterByFacets(base, facets, INVOICE_FACET_DEFS)
     return sortRows(base, sortKey, sortDir)
-  }, [invoices, soResults, saleOrderTerms, searchInput, statusFilter, sortKey, sortDir, facets])
+  }, [invoiceRows, searchInput, statusFilter, sortKey, sortDir, facets])
+  const sageExportableFiltered = filtered.filter(inv => inv.status === 'posted' || inv.status === 'paid')
 
   // 这一页是全量拉取 + 客户端筛选，所以导出走本地模式：导的就是屏幕上这批已筛好的行。
   // 走服务端导出的话，服务端不认识这些客户端筛选条件，会变成「导出全部」。
@@ -362,10 +418,24 @@ export default function ClassicInvoicesPage() {
 
   async function exportForSage() {
     if (sageExporting) return
+    if (selectedInvoices.length === 0) {
+      toast.error(isEn ? 'Select invoices to export' : '请先勾选要导出的发票')
+      return
+    }
+    const unsupported = selectedInvoices.find(inv => inv.status !== 'posted' && inv.status !== 'paid')
+    if (unsupported) {
+      toast.error(isEn
+        ? `${unsupported.name} is not posted; Sage export only supports posted or paid invoices`
+        : `${unsupported.name} 尚未过账；Sage 导出只支持已过账或已付款发票`)
+      return
+    }
     setSageExporting(true)
     try {
-      await downloadAuthedFile('/api/invoices/sage-export', 'Sage_Invoices.csv')
-      toast.success(isEn ? 'Sage invoice export downloaded' : 'Sage 发票数据已导出')
+      await downloadAuthedFile('/api/invoices/sage-export', 'Sage_Invoices.csv', {
+        method: 'POST',
+        body: { invoiceIds: selectedInvoices.map(inv => inv.id) },
+      })
+      toast.success(isEn ? `${selectedInvoices.length} Sage invoice(s) exported` : `已导出所选 ${selectedInvoices.length} 张 Sage 发票`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : (isEn ? 'Sage export failed' : 'Sage 导出失败'))
     } finally {
@@ -381,7 +451,7 @@ export default function ClassicInvoicesPage() {
 
   const PAGE_SIZE = 20
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const selectedInvoices = invoices.filter(inv => selectedInvoiceIds.has(inv.id))
+  const selectedInvoices = invoiceRows.filter(inv => selectedInvoiceIds.has(inv.id))
   const selectedDrafts = selectedInvoices.filter(inv => inv.status === 'draft')
   const canBatchPay = selectedInvoices.length >= 2 && selectedInvoices.every(inv => inv.status === 'posted' && inv.amountDue > 0 && inv.customerId === selectedInvoices[0].customerId)
 
@@ -423,7 +493,7 @@ export default function ClassicInvoicesPage() {
           { label: isEn ? 'New' : '新建', onClick: () => { setGenOpen(true); setSelectedCustomerId(''); setSelectedOrderIds([]) }, primary: true },
           ...(selectedDrafts.length ? [{ label: batchBusy ? (isEn ? 'Posting…' : '过账中…') : (isEn ? `Post selected (${selectedDrafts.length})` : `批量过账（${selectedDrafts.length}）`), onClick: batchPost, disabled: batchBusy }] : []),
           ...(canBatchPay ? [{ label: isEn ? `Settle selected (${selectedInvoices.length})` : `合并收款（${selectedInvoices.length}）`, onClick: () => setBatchPayOpen(true), disabled: batchBusy }] : []),
-          { label: sageExporting ? (isEn ? 'Exporting Sage…' : 'Sage 导出中…') : (isEn ? 'Export for Sage' : '导出到 Sage'), onClick: exportForSage, disabled: sageExporting },
+          ...(selectedInvoiceIds.size ? [{ label: sageExporting ? (isEn ? 'Exporting Sage…' : 'Sage 导出中…') : (isEn ? `Export selected for Sage (${selectedInvoiceIds.size})` : `导出所选到 Sage（${selectedInvoiceIds.size}）`), onClick: exportForSage, disabled: sageExporting }] : []),
           exportAction,
         ]}
         searchValue={searchInput}
@@ -463,6 +533,36 @@ export default function ClassicInvoicesPage() {
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
       />
+      <div className="mx-4 mt-4 flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white px-4 py-3">
+        <div className="text-sm font-medium text-gray-700">{isEn ? 'Invoice created date' : '发票创建日期'}</div>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          {isEn ? 'From' : '从'}
+          <input type="date" value={invoiceDateFrom} onChange={e => setInvoiceDateFrom(e.target.value)} className="rounded border border-gray-300 px-2 py-1.5 text-sm" />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          {isEn ? 'To' : '至'}
+          <input type="date" value={invoiceDateTo} onChange={e => setInvoiceDateTo(e.target.value)} className="rounded border border-gray-300 px-2 py-1.5 text-sm" />
+        </label>
+        <Button onClick={() => applyInvoiceDateFilter()} disabled={dateFilterBusy}>
+          {dateFilterBusy ? (isEn ? 'Filtering…' : '筛选中…') : (isEn ? 'Filter' : '筛选')}
+        </Button>
+        {(appliedInvoiceDateRange || invoiceDateFrom || invoiceDateTo) && (
+          <Button variant="outline" onClick={() => { setInvoiceDateFrom(''); setInvoiceDateTo(''); void applyInvoiceDateFilter('', '') }} disabled={dateFilterBusy}>
+            {isEn ? 'Clear dates' : '清除日期'}
+          </Button>
+        )}
+        {appliedInvoiceDateRange && (
+          <span className="text-xs text-gray-500">
+            {isEn ? `${dateFilterTotal} invoices matched` : `筛出 ${dateFilterTotal} 张发票`}
+            {dateFilterTotal > dateFilteredInvoices.length && ` · ${isEn ? `showing ${dateFilteredInvoices.length}; narrow the range to export all` : `当前显示 ${dateFilteredInvoices.length} 张，请缩小日期范围后导出全部`}`}
+          </span>
+        )}
+        {appliedInvoiceDateRange && sageExportableFiltered.length > 0 && (
+          <Button variant="outline" onClick={() => setSelectedInvoiceIds(new Set(sageExportableFiltered.map(inv => inv.id)))}>
+            {isEn ? `Select Sage-ready invoices (${sageExportableFiltered.length})` : `全选可导出发票（${sageExportableFiltered.length}）`}
+          </Button>
+        )}
+      </div>
       <div className="p-4">
         <div className="bg-white border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">

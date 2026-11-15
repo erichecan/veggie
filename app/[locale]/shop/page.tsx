@@ -10,7 +10,7 @@ import { CategorySidebar } from '@/components/customer-portal/category-sidebar'
 
 const PURPLE = '#875A7B'
 
-type Category = { id: string; name: string; nameZh: string | null; count: number }
+type Category = { id: string; parentId: string | null; name: string; nameZh: string | null; count: number }
 type Product = { id: string; name: string; spec: string | null; saleDescription: string | null; images: string[]; categoryId: string | null }
 
 export default function ShopPage() {

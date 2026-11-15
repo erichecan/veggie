@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invoice-lines-view'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { hasPermission, useAbility } from '@/lib/permissions'
+import InvoiceCreditNotes from '@/components/classic/InvoiceCreditNotes'
 
 const PURPLE = '#875A7B'
 
@@ -420,6 +421,16 @@ export default function ClassicInvoiceDetailPage() {
           </div>
         </div>
       </div>
+
+      {inv.status === 'posted' && Number(inv.amountDue ?? 0) > 0.005 && (
+        <InvoiceCreditNotes
+          invoiceId={inv.id}
+          customerId={inv.customerId}
+          amountDue={Number(inv.amountDue)}
+          isEn={isEn}
+          onApplied={() => load()}
+        />
+      )}
 
       {/* 收款记录 */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">

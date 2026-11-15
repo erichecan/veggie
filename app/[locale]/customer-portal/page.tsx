@@ -9,7 +9,8 @@ import { ProductGrid } from '@/components/customer-portal/product-grid'
 import { BannerCarousel } from '@/components/customer-portal/banner-carousel'
 import { CategorySidebar } from '@/components/customer-portal/category-sidebar'
 import { useCustomerPortal } from '@/components/customer-portal/use-customer-portal'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { OPEN_CART_EVENT } from '@/components/customer-portal/cart-utils'
 
 const PRIMARY = '#356b2f'
 const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
@@ -31,6 +32,16 @@ export default function CustomerProductsPage() {
   const [tab, setTab] = useState<Tab>('recent')
   const p = useCustomerPortal(isEn, `${prefix}/customer-portal/orders`)
 
+  useEffect(() => {
+    const openCart = () => p.setShowCart(true)
+    window.addEventListener(OPEN_CART_EVENT, openCart)
+    if (new URLSearchParams(window.location.search).get('openCart') === '1') {
+      p.setShowCart(true)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+    return () => window.removeEventListener(OPEN_CART_EVENT, openCart)
+  }, [p.setShowCart])
+
   return (
     <div className="space-y-4">
       <BannerCarousel banners={p.banners} onBannerClick={p.handleBannerClick} />
@@ -49,16 +60,6 @@ export default function CustomerProductsPage() {
                 <button onClick={() => p.setSearchInput('')} className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600">✕</button>
               )}
             </div>
-            <button onClick={() => p.setShowCart(!p.showCart)}
-              className="relative px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors"
-              style={{ background: PRIMARY }}>
-              🛒 {isEn ? 'Cart' : '购物车'}
-              {p.cartCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {p.cartCount}
-                </span>
-              )}
-            </button>
           </div>
 
           {p.paymentTerm && (

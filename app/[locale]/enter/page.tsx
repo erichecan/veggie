@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { Eye, EyeOff } from 'lucide-react'
+import Image from 'next/image'
 import { routing } from '@/i18n/routing'
 import { getDefaultLandingPath } from '@/lib/rbac/page-guard'
 import { ROLE_HOME } from '@/lib/role-access'
@@ -86,9 +87,14 @@ export default function EnterPage() {
     <div className="min-h-screen flex items-start sm:items-center justify-center px-4 pt-12 pb-8 sm:py-8" style={{ background: '#f5f0f8' }}>
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
-          <div className="text-4xl mb-3">🟣</div>
-          <h1 className="text-2xl font-bold" style={{ color: '#4a2545' }}>蔬菜批发系统</h1>
-          <p className="text-sm mt-1" style={{ color: '#7c5a8e' }}>Odoo 风格经典界面</p>
+          <Image
+            src="/johnstonebros-logo.png"
+            alt="JohnstoneBros"
+            width={258}
+            height={38}
+            priority
+            className="mx-auto h-auto w-[258px] max-w-full"
+          />
         </div>
 
         {/*

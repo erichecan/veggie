@@ -51,7 +51,9 @@ export async function createDraftCreditNotesForReturns(
 
   for (const [customerId, rows] of groups) {
     // Serialize same-day number allocation inside this transaction.
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${datePrefix}))`
+    // The lock function returns PostgreSQL `void`; executeRaw avoids Prisma's
+    // result deserialization error while keeping the lock inside this transaction.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${datePrefix}))`
     const name = await nextSequenceName(tx, 'CreditNote', datePrefix, 4)
     let subtotalExTax = 0
     let totalTax = 0

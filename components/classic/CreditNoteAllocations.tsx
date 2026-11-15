@@ -100,7 +100,8 @@ export default function CreditNoteAllocations({ creditNoteId, isEn, onChanged }:
       </div>
 
       {data.allocations.length > 0 && (
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-xs">
           <thead className="text-gray-500">
             <tr>
               <th className="text-left py-1">{isEn ? 'Date' : '日期'}</th>
@@ -147,6 +148,7 @@ export default function CreditNoteAllocations({ creditNoteId, isEn, onChanged }:
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {usable && (
@@ -156,7 +158,8 @@ export default function CreditNoteAllocations({ creditNoteId, isEn, onChanged }:
             {data.invoiceSuggestions.length === 0 ? (
               <p className="text-xs text-gray-400">{isEn ? 'This customer has no open posted invoices.' : '该客户没有已过账的未付发票。'}</p>
             ) : (
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[500px] text-xs">
                 <tbody className="divide-y divide-gray-100">
                   {data.invoiceSuggestions.map(inv => {
                     const def = Math.min(remaining, Number(inv.amountDue)).toFixed(2)
@@ -193,11 +196,12 @@ export default function CreditNoteAllocations({ creditNoteId, isEn, onChanged }:
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-medium text-gray-600">{isEn ? 'Refund to customer' : '退款给客户'}</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="w-full font-medium text-gray-600 sm:w-auto">{isEn ? 'Refund to customer' : '退款给客户'}</span>
             <input
               type="number" step="0.01" min="0"
               className="w-24 border border-gray-300 rounded px-1 py-0.5 text-right"

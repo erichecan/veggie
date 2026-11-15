@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
 import { rateLimit } from '@/lib/rate-limit'
+import { getCustomerFacingCategoryScope } from '@/lib/customer-facing-categories'
 
 const DEFAULT_PAGE_SIZE = 24
 const MAX_PAGE_SIZE = 100
@@ -32,13 +33,14 @@ export async function GET(req: Request) {
     const pageSize = Math.min(MAX_PAGE_SIZE, parsePositiveInt(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE))
     const search = searchParams.get('search')?.trim()
     const categoryId = searchParams.get('categoryId')?.trim()
+    const categoryIds = categoryId ? await getCustomerFacingCategoryScope(categoryId) : null
 
     const where = {
       status: 'ACTIVE' as const,
       canBeSold: true,
       // 后台取消「在客户门户显示」的商品，匿名 /shop 目录同样不展示（20261028）
       showInPortal: true,
-      ...(categoryId ? { categoryId } : {}),
+      ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
       ...(search
         ? {
             OR: [

@@ -11,7 +11,7 @@ const HIDDEN_CATEGORY_NAMES = new Set([
   'all', 'stockable', 'saleable', 'test', 'all / stockable /frozen',
 ])
 
-export type CustomerFacingCategory = { id: string; name: string; nameZh: string | null; count: number }
+export type CustomerFacingCategory = { id: string; parentId: string | null; name: string; nameZh: string | null; count: number }
 
 export async function listCustomerFacingCategories(
   extraWhere: { canBeSold?: boolean; showInPortal?: boolean } = {},
@@ -22,20 +22,57 @@ export async function listCustomerFacingCategories(
     _count: { _all: true },
   })
 
-  const categoryIds = grouped.map((g) => g.categoryId).filter((id): id is string => !!id)
   const categories = await prisma.productCategory.findMany({
-    where: { id: { in: categoryIds } },
-    select: { id: true, name: true, nameZh: true },
+    select: { id: true, parentId: true, name: true, nameZh: true },
   })
   const byId = new Map(categories.map((c) => [c.id, c]))
+  const directCounts = new Map(grouped.flatMap((g) => g.categoryId ? [[g.categoryId, g._count._all] as const] : []))
+  const visibleIds = new Set<string>()
 
-  return grouped
-    .map((g) => {
-      const cat = g.categoryId ? byId.get(g.categoryId) : null
+  // Include ancestors with no directly assigned products so portal users can
+  // navigate the same hierarchy configured in Product Categories.
+  for (const id of directCounts.keys()) {
+    let current = byId.get(id)
+    while (current) {
+      if (!HIDDEN_CATEGORY_NAMES.has(current.name.trim().toLowerCase())) visibleIds.add(current.id)
+      current = current.parentId ? byId.get(current.parentId) : undefined
+    }
+  }
+
+  return [...visibleIds]
+    .map((id) => {
+      const cat = byId.get(id)
       if (!cat) return null
-      if (HIDDEN_CATEGORY_NAMES.has(cat.name.trim().toLowerCase())) return null
-      return { id: cat.id, name: cat.name, nameZh: cat.nameZh, count: g._count._all }
+      return { id: cat.id, parentId: cat.parentId, name: cat.name, nameZh: cat.nameZh, count: directCounts.get(cat.id) ?? 0 }
     })
     .filter((c): c is CustomerFacingCategory => !!c)
     .sort((a, b) => b.count - a.count)
+}
+
+/** Selecting a parent category includes its visible child categories as well. */
+export async function getCustomerFacingCategoryScope(categoryId: string): Promise<string[]> {
+  const categories = await prisma.productCategory.findMany({
+    select: { id: true, parentId: true, name: true },
+  })
+  const byId = new Map(categories.map((category) => [category.id, category]))
+  if (!byId.has(categoryId)) return [categoryId]
+
+  const childrenByParent = new Map<string, typeof categories>()
+  for (const category of categories) {
+    if (!category.parentId) continue
+    const children = childrenByParent.get(category.parentId) ?? []
+    children.push(category)
+    childrenByParent.set(category.parentId, children)
+  }
+
+  const result: string[] = []
+  const pending = [categoryId]
+  while (pending.length) {
+    const id = pending.pop()!
+    const category = byId.get(id)
+    if (!category || HIDDEN_CATEGORY_NAMES.has(category.name.trim().toLowerCase())) continue
+    result.push(id)
+    for (const child of childrenByParent.get(id) ?? []) pending.push(child.id)
+  }
+  return result.length ? result : [categoryId]
 }

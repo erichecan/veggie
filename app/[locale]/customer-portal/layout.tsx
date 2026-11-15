@@ -6,11 +6,16 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import Link from 'next/link'
 import { LocaleSwitcher } from '@/components/shared/locale-switcher'
+import Image from 'next/image'
+import { ChevronDown, ShoppingCart, UserRound } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { CART_UPDATED_EVENT, loadCart, OPEN_CART_EVENT } from '@/components/customer-portal/cart-utils'
 
 const PRIMARY = 'var(--portal-primary)'
 
 export default function CustomerPortalLayout({ children }: { children: React.ReactNode }) {
   const [userName, setUserName] = useState('')
+  const [cartCount, setCartCount] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
   const locale = useLocale()
@@ -24,12 +29,14 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
       return
     }
     setUserName(user.name || user.email)
+    const updateCartCount = () => setCartCount(loadCart().reduce((sum, item) => sum + item.quantity, 0))
+    updateCartCount()
+    window.addEventListener(CART_UPDATED_EVENT, updateCartCount)
+    return () => window.removeEventListener(CART_UPDATED_EVENT, updateCartCount)
   }, [router, prefix])
 
-  const nav = [
-    { href: `${prefix}/customer-portal`, label: isEn ? 'Catalog' : '商品目录', icon: '📦' },
-    { href: `${prefix}/customer-portal/orders`, label: isEn ? 'My Orders' : '我的订单', icon: '📋' },
-  ]
+  const catalogHref = `${prefix}/customer-portal`
+  const ordersHref = `${prefix}/customer-portal/orders`
 
   function handleLogout() {
     logout()
@@ -45,32 +52,47 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
       background: 'var(--portal-surface)',
     } as React.CSSProperties}>
       <header className="sticky top-0 z-30 border-b bg-white shadow-sm" style={{ borderColor: 'var(--portal-border)' }}>
-        <div className="w-full px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-6">
-            <span className="text-lg font-bold" style={{ color: PRIMARY }}>🥬 {isEn ? 'Order Vegetables' : '蔬菜订购'}</span>
-            <nav className="flex gap-1">
-              {nav.map(n => {
-                const active = n.href === `${prefix}/customer-portal`
-                  ? pathname === n.href || pathname === `${n.href}/`
-                  : pathname.startsWith(n.href)
-                return (
-                  <Link key={n.href} href={n.href}
-                    className="min-h-11 inline-flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                    style={active ? { background: PRIMARY, color: 'white' } : { color: '#3f513c' }}
-                  >
-                    {n.icon} {n.label}
-                  </Link>
-                )
-              })}
-            </nav>
-          </div>
-          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-sm">
-            <LocaleSwitcher />
-            <span className="max-w-40 truncate text-gray-600" title={userName}>{userName}</span>
-            <button onClick={handleLogout}
-              className="min-h-11 px-2 text-gray-500 hover:text-red-500 transition-colors text-xs">
-              {isEn ? 'Sign Out' : '退出'}
+        <div className="mx-auto flex min-h-14 w-full max-w-screen-2xl items-center gap-2 px-3 py-1.5 sm:px-4">
+          <Link href={catalogHref} aria-label="JohnstoneBros" className="shrink-0">
+            <Image src="/johnstonebros-logo.png" alt="JohnstoneBros" width={258} height={38} priority className="h-auto w-[132px] sm:w-[174px]" />
+          </Link>
+          <Link href={catalogHref}
+            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition-colors sm:px-3"
+            style={pathname === catalogHref || pathname === `${catalogHref}/` ? { background: PRIMARY, color: 'white' } : { color: '#3f513c' }}>
+            <span aria-hidden="true">📦</span><span>{isEn ? 'Catalog' : '商品目录'}</span>
+          </Link>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <button type="button" onClick={() => {
+              if (pathname === catalogHref || pathname === `${catalogHref}/`) {
+                window.dispatchEvent(new Event(OPEN_CART_EVENT))
+              } else {
+                router.push(`${catalogHref}?openCart=1`)
+              }
+            }} aria-label={`${isEn ? 'Shopping cart' : '购物车'}${cartCount ? ` (${cartCount})` : ''}`}
+              className="relative inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border transition-colors hover:bg-green-50"
+              style={{ borderColor: 'var(--portal-border)', color: PRIMARY }}>
+              <ShoppingCart className="size-5" aria-hidden="true" />
+              {cartCount > 0 && <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] leading-5 text-white">{cartCount > 99 ? '99+' : cartCount}</span>}
             </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger className="inline-flex min-h-10 min-w-10 max-w-40 items-center justify-center gap-1.5 rounded-lg px-2 text-sm transition-colors hover:bg-green-50 sm:min-w-0 sm:px-3" style={{ color: '#3f513c' }} aria-label={isEn ? 'Account management' : '账号管理'}>
+                <UserRound className="size-5 shrink-0" aria-hidden="true" />
+                <span className="hidden max-w-28 truncate sm:inline">{userName || (isEn ? 'Account' : '账号')}</span>
+                <ChevronDown className="hidden size-4 shrink-0 sm:block" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="max-w-full truncate" title={userName}>{userName || (isEn ? 'Account' : '账号管理')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push(ordersHref)}>
+                  <span aria-hidden="true">📋</span>{isEn ? 'My Orders' : '我的订单'}
+                </DropdownMenuItem>
+                <div className="px-1.5 py-1.5"><LocaleSwitcher /></div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-700">
+                  {isEn ? 'Sign Out' : '退出登录'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

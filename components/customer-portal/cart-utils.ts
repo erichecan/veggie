@@ -13,6 +13,8 @@ export interface CartItem {
 }
 
 const CART_KEY = 'veggie_cart'
+export const CART_UPDATED_EVENT = 'customer-portal-cart-updated'
+export const OPEN_CART_EVENT = 'customer-portal-open-cart'
 
 export function loadCart(): CartItem[] {
   if (typeof window === 'undefined') return []
@@ -25,6 +27,7 @@ export function loadCart(): CartItem[] {
 
 export function saveCart(items: CartItem[]) {
   localStorage.setItem(CART_KEY, JSON.stringify(items))
+  window.dispatchEvent(new Event(CART_UPDATED_EVENT))
 }
 
 /**

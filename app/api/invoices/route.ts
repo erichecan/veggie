@@ -43,6 +43,8 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const customerId = searchParams.get('customerId')
+    const createdFrom = searchParams.get('createdFrom')
+    const createdTo = searchParams.get('createdTo')
     // ?slim=1 → only id + saleOrderIds (used by orders/quotations pages to detect invoiced orders)
     const slim = searchParams.get('slim') === '1'
     // ?orderIds=a,b,c → 只回传涉及这些订单的发票。配合 slim 用于"这批订单开票了没"，
@@ -60,6 +62,12 @@ export async function GET(req: Request) {
 
     const where: Record<string, unknown> = {}
     if (customerId) where.customerId = customerId
+    if (createdFrom || createdTo) {
+      const createdAt: { gte?: Date; lte?: Date } = {}
+      if (createdFrom && /^\d{4}-\d{2}-\d{2}$/.test(createdFrom)) createdAt.gte = new Date(`${createdFrom}T00:00:00.000Z`)
+      if (createdTo && /^\d{4}-\d{2}-\d{2}$/.test(createdTo)) createdAt.lte = new Date(`${createdTo}T23:59:59.999Z`)
+      if (createdAt.gte || createdAt.lte) where.createdAt = createdAt
+    }
     // saleOrderIds 是 String[]，hasSome 命中"这张发票涉及了其中任一订单"
     if (orderIds && orderIds.length > 0) where.saleOrderIds = { hasSome: orderIds }
     if (saleOrderTerms.length > 0) {

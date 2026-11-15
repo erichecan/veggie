@@ -21,7 +21,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const date = new Date()
         const prefix = `CN-${date.toISOString().slice(0, 10).replace(/-/g, '')}-`
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))`
+        // pg_advisory_xact_lock returns PostgreSQL `void`. Use executeRaw so Prisma
+        // does not try to deserialize that value as a query result (which raises 500).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))`
         const name = await nextSequenceName(tx, 'CreditNote', prefix, 4)
         const rawLines = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
         const hasProductLines = rawLines.some(line => line.productId != null || line.productName != null)

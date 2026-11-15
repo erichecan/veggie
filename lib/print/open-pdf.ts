@@ -38,8 +38,15 @@ export async function openAuthedPdf(url: string): Promise<void> {
 export async function downloadAuthedFile(
   url: string,
   fallbackFilename: string,
+  request?: { method?: 'GET' | 'POST'; body?: unknown },
 ): Promise<{ truncatedTotal: number | null }> {
-  const res = await fetch(url, { headers: authHeaders() })
+  const hasBody = request?.body !== undefined
+  const headers = { ...authHeaders(), ...(hasBody ? { 'Content-Type': 'application/json' } : {}) }
+  const res = await fetch(url, {
+    method: request?.method ?? (hasBody ? 'POST' : 'GET'),
+    headers,
+    ...(hasBody ? { body: JSON.stringify(request.body) } : {}),
+  })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(body?.message ?? body?.error ?? `HTTP ${res.status}`)
