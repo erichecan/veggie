@@ -43,6 +43,7 @@ export function ProductGrid({
           return (
             <div key={p.id} className="bg-white rounded-xl border p-4 flex flex-col justify-between hover:shadow-md transition-shadow">
               <div>
+                {p.images?.[0] && <div className="mb-3 flex h-36 items-center justify-center overflow-hidden rounded-lg bg-gray-50"><img src={p.images[0]} alt={p.name} loading="lazy" className="h-full w-full object-contain" /></div>}
                 {/* 缺货不再用卡片顶部的灰色角标提示，改为下方按钮置灰并写明「暂时缺货」（20261028 客户需求） */}
                 {(p.promoLabel || p.isNew) && (
                   <div className="flex flex-wrap gap-1 mb-1.5">

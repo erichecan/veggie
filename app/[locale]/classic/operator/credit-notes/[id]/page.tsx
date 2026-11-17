@@ -34,7 +34,7 @@ interface Note {
 }
 const statusLabel: Record<Status, { zh: string; en: string }> = {
   DRAFT: { zh: '草稿', en: 'Draft' }, CONFIRMED: { zh: '已确认', en: 'Confirmed' },
-  SETTLED: { zh: '已结算', en: 'Settled' }, CANCELLED: { zh: '已作废', en: 'Cancelled' },
+  SETTLED: { zh: '已付款', en: 'Paid' }, CANCELLED: { zh: '已作废', en: 'Cancelled' },
 }
 
 export default function CreditNoteDetailPage() {

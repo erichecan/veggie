@@ -133,6 +133,8 @@ export default function StatementsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [formCustomerId, setFormCustomerId] = useState('')
+  const [formCustomerIds, setFormCustomerIds] = useState<string[]>([])
+  const [customerSearch, setCustomerSearch] = useState('')
   const [formStart, setFormStart] = useState('')
   const [formEnd, setFormEnd] = useState('')
   const [creating, setCreating] = useState(false)
@@ -225,10 +227,10 @@ export default function StatementsPage() {
   useRefetchOnFocus([load])
 
   useEffect(() => {
-    apiGet<{ items: Customer[] }>('/api/customers?limit=500')
-      .then(d => setCustomers(d.items ?? []))
-      .catch(() => {})
-  }, [])
+    apiGet<Customer[] | { items?: Customer[] }>('/api/customers?slim=1')
+      .then(d => setCustomers(Array.isArray(d) ? d : d.items ?? []))
+      .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Could not load customers' : '客户列表加载失败')))
+  }, [isEn])
 
   function handleTabChange(tab: string) {
     setActiveTab(tab)
@@ -264,23 +266,32 @@ export default function StatementsPage() {
   }
 
   async function handleCreate() {
-    if (!formCustomerId || !formStart || !formEnd) {
+    const customerIds = formCustomerIds.length ? formCustomerIds : (formCustomerId ? [formCustomerId] : [])
+    if (!customerIds.length || !formStart || !formEnd) {
       toast.error(isEn ? 'Please fill in all fields' : '请填写完整信息')
       return
     }
     setCreating(true)
     try {
-      await apiPost('/api/statements', {
-        customerId: formCustomerId,
-        periodStart: formStart,
-        periodEnd: formEnd,
-      })
-      toast.success(isEn ? 'Statement generated' : '对账单已生成')
+      if (customerIds.length === 1) {
+        await apiPost('/api/statements', { customerId: customerIds[0], periodStart: formStart, periodEnd: formEnd })
+        toast.success(isEn ? 'Statement generated' : '对账单已生成')
+      } else {
+        const result = await apiPost<{ results: Array<{ customerId: string; status: string; error?: string }> }>('/api/statements/bulk', { customerIds, periodStart: formStart, periodEnd: formEnd })
+        const created = result.results.filter(row => row.status === 'created').length
+        const duplicates = result.results.filter(row => row.status === 'duplicate').length
+        const failed = result.results.length - created - duplicates
+        const summary = isEn ? `Generated ${created}; skipped ${duplicates} duplicate(s); ${failed} failed.` : `已生成 ${created} 张；跳过重复 ${duplicates} 张；失败 ${failed} 张。`
+        if (failed > 0) toast.error(summary)
+        else toast.success(summary)
+      }
       setShowCreate(false)
       setDetail(null)
       setDetailData(null)
       setDetailIsPreview(false)
       setFormCustomerId('')
+      setFormCustomerIds([])
+      setCustomerSearch('')
       setFormStart('')
       setFormEnd('')
       load()
@@ -331,6 +342,7 @@ export default function StatementsPage() {
             { label: isEn ? '← Back' : '← 返回', onClick: () => setDetail(null) },
             ...(detailIsPreview ? [{ label: isEn ? 'Generate formal statement' : '生成正式对账单', onClick: () => {
               setFormCustomerId(detail.customerId)
+              setFormCustomerIds([detail.customerId])
               setFormStart(detail.periodStart.slice(0, 10))
               setFormEnd(detail.periodEnd.slice(0, 10))
               setDetail(null); setDetailData(null); setDetailIsPreview(false); setShowCreate(true)
@@ -546,7 +558,7 @@ export default function StatementsPage() {
       <OdooControlPanel
         breadcrumb={isEn ? ['Finance', 'Statements'] : ['财务', '对账单']}
         permanentActions={[
-          { label: isEn ? 'Generate Statement' : '生成对账单', onClick: () => setShowCreate(true), primary: true },
+          { label: isEn ? 'Generate Statements' : '生成对账单', onClick: () => { setFormCustomerId(''); setFormCustomerIds([]); setShowCreate(true) }, primary: true },
           ...(selectedIds.size > 0 ? [{ label: isEn ? `Print ${selectedIds.size} PDFs` : `批量下载 PDF（${selectedIds.size}）`, onClick: handleBulkPdf }] : []),
           exportAction,
         ]}
@@ -724,18 +736,20 @@ export default function StatementsPage() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Generate Statement' : '生成对账单'}</h2>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 space-y-4">
+            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Generate statements by delivery date' : '按配送日期生成对账单'}</h2>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Customer' : '客户'}</label>
-              <SearchableDropdown
-                options={[{ value: '', label: isEn ? 'Select a customer...' : '请选择客户...' }, ...customers.map(c => ({ value: c.id, label: c.name }))]}
-                value={formCustomerId}
-                onChange={setFormCustomerId}
-                placeholder={isEn ? 'Select a customer...' : '请选择客户...'}
-                searchPlaceholder={isEn ? 'Search customer…' : '搜索客户…'}
-              />
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><label className="text-xs font-medium text-gray-500">{isEn ? `Customers (${formCustomerIds.length})` : `客户（已选 ${formCustomerIds.length}）`}</label><div className="flex gap-2"><button type="button" className="text-xs text-purple-700" onClick={() => setFormCustomerIds(customers.slice(0, 100).map(c => c.id))}>{isEn ? 'Select first 100' : '选择前 100 个'}</button><button type="button" className="text-xs text-gray-500" onClick={() => setFormCustomerIds([])}>{isEn ? 'Clear' : '清空'}</button></div></div>
+              <input value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} placeholder={isEn ? 'Search customers…' : '搜索客户…'} className="mb-2 w-full rounded border border-gray-300 px-3 py-2 text-sm" />
+              <div className="max-h-48 overflow-y-auto rounded border border-gray-200 p-2">
+                {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).map(c => <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-gray-50"><input type="checkbox" checked={formCustomerIds.includes(c.id)} onChange={event => setFormCustomerIds(current => {
+                  if (!event.target.checked) return current.filter(id => id !== c.id)
+                  if (current.length >= 100) { toast.error(isEn ? 'Select up to 100 customers at a time' : '一次最多选择 100 个客户'); return current }
+                  return [...current, c.id]
+                })} />{c.name}</label>)}
+              </div>
+              <p className="mt-1 text-xs text-gray-400">{isEn ? 'Sales are included by delivery date. Existing customer-period statements are skipped and reported.' : '销售按配送日期计入；已存在相同客户账期的对账单会跳过并汇报。'}</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -759,18 +773,18 @@ export default function StatementsPage() {
 
             <div className="flex gap-2 pt-2">
               <button
-                onClick={() => { setShowCreate(false); setFormCustomerId(''); setFormStart(''); setFormEnd('') }}
+                onClick={() => { setShowCreate(false); setFormCustomerId(''); setFormCustomerIds([]); setCustomerSearch(''); setFormStart(''); setFormEnd('') }}
                 className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
               >
                 {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={handleCreate}
-                disabled={creating || !formCustomerId || !formStart || !formEnd}
+                disabled={creating || !formCustomerIds.length || !formStart || !formEnd}
                 className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
                 style={{ background: '#875A7B' }}
               >
-                {creating ? (isEn ? 'Generating...' : '生成中...') : (isEn ? 'Generate' : '生成')}
+                {creating ? (isEn ? 'Generating...' : '生成中...') : (isEn ? `Generate (${formCustomerIds.length})` : `生成（${formCustomerIds.length} 个客户）`)}
               </button>
             </div>
           </div>

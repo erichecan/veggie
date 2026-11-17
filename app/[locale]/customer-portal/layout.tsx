@@ -36,6 +36,8 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
 
   const catalogHref = `${prefix}/customer-portal`
   const ordersHref = `${prefix}/customer-portal/orders`
+  const statementsHref = `${prefix}/customer-portal/statements`
+  const creditsHref = `${prefix}/customer-portal/credit-notes`
 
   function handleLogout() {
     logout()
@@ -84,6 +86,12 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => router.push(ordersHref)}>
                   <span aria-hidden="true">📋</span>{isEn ? 'My Orders' : '我的订单'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push(creditsHref)}>
+                  <span aria-hidden="true">💳</span>{isEn ? 'My Credits' : '我的 Credit'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push(statementsHref)}>
+                  <span aria-hidden="true">🧾</span>{isEn ? 'My Statements' : '我的对账单'}
                 </DropdownMenuItem>
                 <div className="px-1.5 py-1.5"><LocaleSwitcher /></div>
                 <DropdownMenuSeparator />

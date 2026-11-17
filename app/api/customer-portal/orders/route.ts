@@ -12,7 +12,7 @@ import type { $Enums } from '@/lib/generated/prisma/client'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 import { checkCustomerCredit } from '@/lib/credit-check'
 import { portalOrderBlockers } from '@/lib/customer-portal-products'
-import { resolvePortalCustomerId } from '@/lib/customer-portal-auth'
+import { resolvePortalCustomerId, resolvePortalOwnerIds } from '@/lib/customer-portal-auth'
 
 /**
  * P1-2: 客户小程序 — 订单管理
@@ -66,8 +66,7 @@ export async function GET(req: Request) {
       const { searchParams } = new URL(req.url)
 
       // 新账号以 Customer.id 关联订单；历史记录仍可能使用 User.id，因此读取时兼容两种 ID。
-      const customerId = await resolvePortalCustomerId(user.userId, user.customerId)
-      const restaurantIds = [...new Set([customerId, user.userId])]
+      const restaurantIds = await resolvePortalOwnerIds(user.userId, user.customerId)
 
       const statusParam = searchParams.get('status')
       const statusFilter = statusParam

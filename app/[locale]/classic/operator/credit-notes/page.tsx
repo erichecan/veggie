@@ -59,14 +59,14 @@ interface TripForGen {
 const STATUS_LABEL_ZH: Record<CnStatus, string> = {
   DRAFT: '草稿',
   CONFIRMED: '已确认',
-  SETTLED: '已结算',
+  SETTLED: '已付款',
   CANCELLED: '已作废',
 }
 
 const STATUS_LABEL_EN: Record<CnStatus, string> = {
   DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
-  SETTLED: 'Settled',
+  SETTLED: 'Paid',
   CANCELLED: 'Cancelled',
 }
 
@@ -220,7 +220,7 @@ export default function CreditNotesPage() {
         filterOptions={[
           { label: isEn ? 'Draft' : '草稿', value: 'DRAFT' },
           { label: isEn ? 'Confirmed' : '已确认', value: 'CONFIRMED' },
-          { label: isEn ? 'Settled' : '已结算', value: 'SETTLED' },
+          { label: isEn ? 'Paid' : '已付款', value: 'SETTLED' },
           { label: isEn ? 'Cancelled' : '已作废', value: 'CANCELLED' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as CnStatus); setPage(1) }}
@@ -242,14 +242,13 @@ export default function CreditNotesPage() {
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Amount (Inc. Tax)' : '含税金额'}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Remaining' : '剩余可用'}</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Lines' : '行数'}</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Refund Date' : '退款日期'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">
+                  <td colSpan={7} className="text-center py-12 text-gray-400">
                     {isEn
                       ? 'No credit notes · create a blank draft or approve a return to generate one automatically'
                       : '暂无贷记单 · 可新建空白草稿，或在退换货审核通过后自动生成'}
@@ -270,7 +269,6 @@ export default function CreditNotesPage() {
                   <td className="px-4 py-3 text-right text-gray-700">
                     {['CONFIRMED', 'SETTLED'].includes(cn.status) && cn.amountRemaining != null ? `€${Number(cn.amountRemaining).toFixed(2)}` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-600">{cn.lines.length}</td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
                     {new Date(cn.creditDate).toLocaleDateString('en-GB')}
                   </td>
