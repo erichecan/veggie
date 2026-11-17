@@ -9,7 +9,8 @@ import { ProductGrid } from '@/components/customer-portal/product-grid'
 import { BannerCarousel } from '@/components/customer-portal/banner-carousel'
 import { CategorySidebar } from '@/components/customer-portal/category-sidebar'
 import { useCustomerPortal } from '@/components/customer-portal/use-customer-portal'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { OPEN_CART_EVENT } from '@/components/customer-portal/cart-utils'
 
 const PRIMARY = '#356b2f'
@@ -30,6 +31,8 @@ export default function CustomerProductsPage() {
   }
 
   const [tab, setTab] = useState<Tab>('recent')
+  const [quickOrderOpen, setQuickOrderOpen] = useState(false)
+  const cartSectionRef = useRef<HTMLDivElement>(null)
   const p = useCustomerPortal(isEn, `${prefix}/customer-portal/orders`)
 
   useEffect(() => {
@@ -41,6 +44,11 @@ export default function CustomerProductsPage() {
     }
     return () => window.removeEventListener(OPEN_CART_EVENT, openCart)
   }, [p.setShowCart])
+
+  useEffect(() => {
+    if (!p.showCart) return
+    requestAnimationFrame(() => cartSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [p.showCart])
 
   return (
     <div className="space-y-4">
@@ -68,29 +76,39 @@ export default function CustomerProductsPage() {
             </p>
           )}
 
-          {/* 快捷下单区：最近订单(整单再来一单) / 常购单品(单品复购) / 我的收藏(自存清单模板) */}
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
-                <button key={t} onClick={() => setTab(t)}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  style={tab === t ? { background: PRIMARY, color: 'white', borderColor: PRIMARY } : { borderColor: '#d7e1d4', color: '#52604f' }}>
-                  {TAB_LABELS[t]}
-                </button>
-              ))}
-            </div>
-            {tab === 'recent' && <RecentOrdersPanel onReorder={p.handleBulkAdd} isEn={isEn} />}
-            {tab === 'frequent' && <FrequentTab frequent={p.frequent} onReorder={p.addToCart} isEn={isEn} />}
-            {tab === 'favorites' && <FavoritesPanel cart={p.cart} onApply={p.handleBulkAdd} isEn={isEn} />}
+          {/* 快捷复购默认收起，避免占据首屏商品区域 */}
+          <div className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: 'var(--portal-border)' }}>
+            <button type="button" onClick={() => setQuickOrderOpen((open) => !open)} aria-expanded={quickOrderOpen}
+              className="flex min-h-11 w-full items-center justify-between gap-3 px-3 text-left text-sm font-medium"
+              style={{ color: '#3f513c' }}>
+              <span>{isEn ? 'Quick reorder' : '快捷复购'} <span className="ml-1 text-xs font-normal text-gray-500">{isEn ? 'Recent orders · Frequently ordered · My lists' : '最近订单 · 常购单品 · 我的收藏'}</span></span>
+              <ChevronDown aria-hidden="true" className={`size-4 shrink-0 transition-transform ${quickOrderOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {quickOrderOpen && <div className="space-y-3 border-t p-3" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="flex flex-wrap gap-2">
+                {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
+                  <button key={t} onClick={() => setTab(t)}
+                    className="min-h-9 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                    style={tab === t ? { background: PRIMARY, color: 'white', borderColor: PRIMARY } : { borderColor: '#d7e1d4', color: '#52604f' }}>
+                    {TAB_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+              {tab === 'recent' && <RecentOrdersPanel onReorder={p.handleBulkAdd} isEn={isEn} />}
+              {tab === 'frequent' && <FrequentTab frequent={p.frequent} onReorder={p.addToCart} isEn={isEn} />}
+              {tab === 'favorites' && <FavoritesPanel cart={p.cart} onApply={p.handleBulkAdd} isEn={isEn} />}
+            </div>}
           </div>
 
           {p.showCart && (
+            <div ref={cartSectionRef} id="customer-portal-cart" className="scroll-mt-16">
             <CartPanel
               cart={p.cart} cartTotal={p.cartTotal} cartTax={p.cartTax} setQty={p.setQty} removeFromCart={p.removeFromCart}
               deliveryDate={p.deliveryDate} setDeliveryDate={p.setDeliveryDate} minDate={p.minDate} capacityWarning={p.capacityWarning}
               paymentMethod={p.paymentMethod} setPaymentMethod={p.setPaymentMethod} note={p.note} setNote={p.setNote}
               submitting={p.submitting} placeOrder={p.placeOrder} isEn={isEn}
             />
+            </div>
           )}
 
         <div className="min-w-0">

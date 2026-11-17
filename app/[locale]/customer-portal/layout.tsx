@@ -6,7 +6,6 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import Link from 'next/link'
 import { LocaleSwitcher } from '@/components/shared/locale-switcher'
-import Image from 'next/image'
 import { ChevronDown, ShoppingCart, UserRound } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CART_UPDATED_EVENT, loadCart, OPEN_CART_EVENT } from '@/components/customer-portal/cart-utils'
@@ -53,13 +52,13 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
     } as React.CSSProperties}>
       <header className="sticky top-0 z-30 border-b bg-white shadow-sm" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="mx-auto flex min-h-14 w-full max-w-screen-2xl items-center gap-2 px-3 py-1.5 sm:px-4">
-          <Link href={catalogHref} aria-label="JohnstoneBros" className="shrink-0">
-            <Image src="/johnstonebros-logo.png" alt="JohnstoneBros" width={258} height={38} priority className="h-auto w-[132px] sm:w-[174px]" />
-          </Link>
-          <Link href={catalogHref}
-            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition-colors sm:px-3"
-            style={pathname === catalogHref || pathname === `${catalogHref}/` ? { background: PRIMARY, color: 'white' } : { color: '#3f513c' }}>
-            <span aria-hidden="true">📦</span><span>{isEn ? 'Catalog' : '商品目录'}</span>
+          <Link href={catalogHref} aria-label={isEn ? 'JohnstoneBros home' : 'JohnstoneBros 首页'} className="inline-flex min-h-10 shrink-0 items-center gap-2">
+            <svg aria-hidden="true" viewBox="0 0 40 40" className="size-9">
+              <rect x="5" y="19" width="30" height="16" rx="4" fill="#356b2f" />
+              <path d="M10 23h20M13 27h14" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+              <path d="M19 18c-7-2-8-8-7-12 6 0 11 3 11 9M21 17c0-7 5-11 12-11 0 6-3 12-10 13" fill="#4d8a3f" stroke="#285623" strokeWidth="1.5" strokeLinejoin="round" />
+            </svg>
+            <span className="whitespace-nowrap text-base font-bold tracking-tight text-[#356b2f] sm:text-lg">JohnstoneBros</span>
           </Link>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <button type="button" onClick={() => {

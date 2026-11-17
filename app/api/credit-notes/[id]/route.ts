@@ -83,6 +83,13 @@ export async function PUT(
             { status: 400 },
           )
         }
+        if (s === 'CONFIRMED') {
+          const effectiveLines = Array.isArray(data.lines) ? data.lines : existing.lines
+          const effectiveTotal = data.lines ? undefined : toNum(existing.totalIncTax)
+          if (effectiveLines.length === 0 || (effectiveTotal !== undefined && effectiveTotal <= 0)) {
+            return NextResponse.json({ error: '确认前请至少添加一条金额大于零的商品明细' }, { status: 400 })
+          }
+        }
         updateData.status = s
       }
 
@@ -103,18 +110,12 @@ export async function PUT(
 
       // 仅 DRAFT 状态允许修改行项
       if (Array.isArray(data.lines) && String(existing.status) === 'DRAFT') {
-        if (data.lines.length === 0) {
-          return NextResponse.json({ error: '贷记单至少需要一行商品' }, { status: 400 })
-        }
-        const invalidLine = (data.lines as Array<{ quantity?: unknown; unitPrice?: unknown; taxRate?: unknown }>).find((line) =>
-          !(toNum(line.quantity) > 0) || toNum(line.unitPrice) < 0 || toNum(line.taxRate) < 0,
+        const invalidLine = (data.lines as Array<{ productId?: unknown; productName?: unknown; quantity?: unknown; unitPrice?: unknown; taxRate?: unknown }>).find((line) =>
+          !String(line.productId ?? '').trim() || !String(line.productName ?? '').trim() || !(toNum(line.quantity) > 0) || toNum(line.unitPrice) < 0 || toNum(line.taxRate) < 0,
         )
         if (invalidLine) {
-          return NextResponse.json({ error: '商品数量必须大于 0，单价和税率不能为负数' }, { status: 400 })
+          return NextResponse.json({ error: '商品必须有效，数量必须大于 0，单价和税率不能为负数' }, { status: 400 })
         }
-        // 删除旧行，重建新行
-        await prisma.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
-
         let subtotalExTax = 0
         let totalTax = 0
         const lineData = (data.lines as Array<{
@@ -149,10 +150,16 @@ export async function PUT(
           }
         })
 
-        await prisma.creditNoteLine.createMany({ data: lineData })
+        const nextTotal = round2(subtotalExTax + totalTax)
+        if (updateData.status === 'CONFIRMED' && nextTotal <= 0) {
+          return NextResponse.json({ error: '确认前请至少添加一条金额大于零的商品明细' }, { status: 400 })
+        }
+        // 删除旧行，重建新行
+        await prisma.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
+        if (lineData.length > 0) await prisma.creditNoteLine.createMany({ data: lineData })
         updateData.subtotalExTax = round2(subtotalExTax)
         updateData.totalTax = round2(totalTax)
-        updateData.totalIncTax = round2(subtotalExTax + totalTax)
+        updateData.totalIncTax = nextTotal
       }
 
       if (Object.keys(updateData).length === 0) {

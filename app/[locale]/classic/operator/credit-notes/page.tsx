@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -14,7 +15,6 @@ import { creditNoteExportColumns } from '@/lib/export/columns/credit-notes'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
-import CreditNoteAllocations from '@/components/classic/CreditNoteAllocations'
 
 type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
@@ -91,17 +91,17 @@ export default function CreditNotesPage() {
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const router = useRouter()
 
   const [notes, setNotes] = useState<CreditNote[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<CnStatus | ''>('')
   const [page, setPage] = useState(1)
-  const [detail, setDetail] = useState<CreditNote | null>(null)
   const [busy, setBusy] = useState(false)
-  const [editingDraft, setEditingDraft] = useState(false)
-  const [draftLines, setDraftLines] = useState<CreditNoteLine[]>([])
-  const [draftNotes, setDraftNotes] = useState('')
-  const [draftDate, setDraftDate] = useState('')
+  const [newOpen, setNewOpen] = useState(false)
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [newCustomer, setNewCustomer] = useState<{ id: string; name: string } | null>(null)
 
   const load = useCallback(() => {
     apiGet<CreditNote[]>('/api/credit-notes')
@@ -146,68 +146,31 @@ export default function CreditNotesPage() {
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  async function changeStatus(cn: CreditNote, status: CnStatus, labelZh: string, labelEn: string) {
-    const label = isEn ? labelEn : labelZh
-    setBusy(true)
-    try {
-      await apiPut(`/api/credit-notes/${cn.id}`, { status })
-      toast.success(`${cn.name} ${label}`)
-      setDetail(null)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? `Failed to ${label.toLowerCase()}` : `${label}失败`))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function removeDraft(cn: CreditNote) {
-    if (!window.confirm(isEn ? `Confirm delete draft ${cn.name}?` : `确认删除草稿 ${cn.name}?`)) return
-    setBusy(true)
-    try {
-      await apiDelete(`/api/credit-notes/${cn.id}`)
-      toast.success(isEn ? 'Deleted' : '已删除')
-      setDetail(null)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to delete' : '删除失败'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   function openDetail(cn: CreditNote) {
-    setDetail(cn)
-    setEditingDraft(false)
-    setDraftLines(cn.lines.map(line => ({ ...line })))
-    setDraftNotes(cn.notes ?? '')
-    setDraftDate(cn.creditDate.slice(0, 10))
+    router.push(`${prefix}/classic/operator/credit-notes/${cn.id}`)
   }
 
-  async function saveDraftEdits() {
-    if (!detail) return
+  async function openNewCreditNote() {
+    setNewOpen(true)
+    setCustomerSearch('')
+    setNewCustomer(null)
+    try {
+      const rows = await apiGet<Array<{ id: string; name: string; isActive?: boolean }>>('/api/customers?slim=1')
+      setCustomers(rows.filter(row => row.isActive !== false))
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load customers' : '加载客户失败')) }
+  }
+
+  async function createBlankDraft() {
+    if (!newCustomer) return
     setBusy(true)
     try {
-      await apiPut(`/api/credit-notes/${detail.id}`, {
-        creditDate: draftDate,
-        notes: draftNotes,
-        lines: draftLines.map(({ productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence }) => ({
-          productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence,
-        })),
+      const created = await apiPost<{ id: string; name: string }>('/api/credit-notes', {
+        customerId: newCustomer.id, customerName: newCustomer.name, lines: [],
       })
-      const updated = await apiGet<CreditNote>(`/api/credit-notes/${detail.id}`)
-      setDetail(updated)
-      setDraftLines(updated.lines)
-      setDraftNotes(updated.notes ?? '')
-      setDraftDate(updated.creditDate.slice(0, 10))
-      setEditingDraft(false)
-      load()
-      toast.success(isEn ? 'Draft updated' : '草稿已更新')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update draft' : '更新草稿失败'))
-    } finally {
-      setBusy(false)
-    }
+      setNewOpen(false)
+      router.push(`${prefix}/classic/operator/credit-notes/${created.id}`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to create draft' : '创建草稿失败')) }
+    finally { setBusy(false) }
   }
 
   // 扫描含「已批准退货」的行程,一键生成信用票
@@ -243,6 +206,7 @@ export default function CreditNotesPage() {
       <OdooControlPanel
         breadcrumb={isEn ? ['Finance', 'Credit Notes'] : ['财务', '信用票']}
         permanentActions={[
+          { label: isEn ? 'New credit note' : '新建贷记单', onClick: openNewCreditNote, primary: true },
           { label: isEn ? 'Backfill legacy returns' : '补生成旧退货贷记单', onClick: generateFromReturns, primary: true },
           exportAction,
         ]}
@@ -287,8 +251,8 @@ export default function CreditNotesPage() {
                 <tr>
                   <td colSpan={8} className="text-center py-12 text-gray-400">
                     {isEn
-                      ? 'No credit notes · create one from an invoice or approve a return to generate a draft automatically'
-                      : '暂无贷记单 · 可从发票手动创建，或在退换货审核通过后自动生成草稿'}
+                      ? 'No credit notes · create a blank draft or approve a return to generate one automatically'
+                      : '暂无贷记单 · 可新建空白草稿，或在退换货审核通过后自动生成'}
                   </td>
                 </tr>
               )}
@@ -317,98 +281,17 @@ export default function CreditNotesPage() {
         </div>
       </div>
 
-      <Dialog open={!!detail} onOpenChange={open => { if (!open) setDetail(null) }}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(800px,calc(100vw-2rem))]">
-          {detail && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-3">
-                  <span className="font-mono">{detail.name}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status]}`}>
-                    {STATUS_LABEL[detail.status]}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex flex-wrap justify-between gap-2 text-gray-600">
-                  <span>{isEn ? 'Customer' : '客户'}：<b className="text-gray-900">{detail.customerName}</b></span>
-                  {detail.sourceInvoice && <span>{isEn ? 'Source invoice' : '来源发票'}：<a className="font-mono text-[#714B67] hover:underline" href={`${prefix}/classic/finance/invoices/${detail.sourceInvoice.id}`}>{detail.sourceInvoice.name}</a></span>}
-                  {editingDraft ? (
-                    <label className="flex items-center gap-2">{isEn ? 'Credit note date' : '贷记单日期'}<input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-gray-900" /></label>
-                  ) : <span>{isEn ? 'Credit Note Date' : '贷记单日期'}：{new Date(detail.creditDate).toLocaleDateString('en-GB')}</span>}
-                </div>
-
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full min-w-[560px] table-fixed text-xs">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Product' : '商品'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Qty' : '数量'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Unit Price' : '单价'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Subtotal (Inc. Tax)' : '含税小计'}</th>
-                        <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Reason' : '原因'}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {(editingDraft ? draftLines : detail.lines).map((l, index) => (
-                        <tr key={l.id}>
-                          <td className="px-3 py-2 text-gray-800">{l.productName}</td>
-                          <td className="px-3 py-2 text-right">{editingDraft ? <input aria-label={isEn ? 'Quantity' : '数量'} type="number" min="0.001" step="0.001" value={l.quantity} onChange={e => setDraftLines(rows => rows.map((row, i) => i === index ? { ...row, quantity: Number(e.target.value) } : row))} className="w-20 rounded border border-gray-300 px-1 py-1 text-right" /> : Number(l.quantity)}</td>
-                          <td className="px-3 py-2 text-right">{editingDraft ? <input aria-label={isEn ? 'Unit price' : '单价'} type="number" min="0" step="0.01" value={l.unitPrice} onChange={e => setDraftLines(rows => rows.map((row, i) => i === index ? { ...row, unitPrice: Number(e.target.value) } : row))} className="w-24 rounded border border-gray-300 px-1 py-1 text-right" /> : `€${Number(l.unitPrice).toFixed(2)}`}</td>
-                          <td className="px-3 py-2 text-right font-medium">€{(editingDraft ? Number(l.quantity) * Number(l.unitPrice) * (1 + Number(l.taxRate)) : Number(l.subtotalIncTax)).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-gray-500">{[l.reason, l.sourceOrderCode ? `${isEn ? 'Order' : '订单'} ${l.sourceOrderCode}` : null].filter(Boolean).join(' · ') || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 border-t border-gray-200">
-                      <tr>
-                        <td colSpan={3} className="px-3 py-2 font-medium text-gray-600">{isEn ? 'Total' : '合计'}</td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-900">€{(editingDraft ? draftLines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice) * (1 + Number(line.taxRate)), 0) : Number(detail.totalIncTax)).toFixed(2)}</td>
-                        <td />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                {editingDraft ? (
-                  <label className="block text-xs text-gray-500">{isEn ? 'Reason / Notes' : '原因 / 备注'}<textarea value={draftNotes} onChange={e => setDraftNotes(e.target.value)} maxLength={1000} rows={2} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800" /></label>
-                ) : detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes' : '备注'}：{detail.notes}</p>}
-
-                <CreditNoteAllocations
-                  key={detail.id}
-                  creditNoteId={detail.id}
-                  isEn={isEn}
-                  onChanged={() => {
-                    load()
-                    // 抵扣用完会自动变「已结算」，弹窗里的状态徽标跟着刷新
-                    apiGet<CreditNote>(`/api/credit-notes/${detail.id}`).then(d => setDetail(cur => cur && cur.id === d.id ? { ...cur, status: d.status } : cur)).catch(() => {})
-                  }}
-                />
-              </div>
-
-              <DialogFooter className="gap-2">
-                {detail.status === 'DRAFT' && (
-                  <>
-                    {editingDraft ? (
-                      <>
-                        <Button variant="outline" disabled={busy} onClick={() => { setEditingDraft(false); setDraftLines(detail.lines); setDraftNotes(detail.notes ?? ''); setDraftDate(detail.creditDate.slice(0, 10)) }}>{isEn ? 'Discard edits' : '放弃修改'}</Button>
-                        <Button variant="outline" disabled={busy} onClick={saveDraftEdits}>{isEn ? 'Save draft' : '保存草稿'}</Button>
-                      </>
-                    ) : <Button variant="outline" disabled={busy} onClick={() => setEditingDraft(true)}>{isEn ? 'Edit draft' : '编辑草稿'}</Button>}
-                    <Button variant="outline" disabled={busy} onClick={() => removeDraft(detail)}>{isEn ? 'Delete' : '删除'}</Button>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废', 'Cancelled')}>{isEn ? 'Cancel' : '作废'}</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'CONFIRMED', '已确认', 'Confirmed')}>{isEn ? 'Confirm' : '确认'}</Button>
-                  </>
-                )}
-                {detail.status === 'CONFIRMED' && (
-                  <>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废', 'Cancelled')}>{isEn ? 'Cancel' : '作废'}</Button>
-                  </>
-                )}
-              </DialogFooter>
-            </>
-          )}
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader><DialogTitle>{isEn ? 'New blank credit note' : '新建空白贷记单'}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">{isEn ? 'Choose a customer. The draft starts with no invoice lines.' : '选择客户后创建空白草稿，不会复制发票或退货明细。'}</p>
+            <input autoFocus value={customerSearch} onChange={e => { setCustomerSearch(e.target.value); setNewCustomer(null) }} placeholder={isEn ? 'Search customers…' : '搜索客户…'} className="w-full rounded border px-3 py-2" />
+            <div className="max-h-64 overflow-y-auto rounded border divide-y">
+              {customers.filter(c => c.name.toLowerCase().includes(customerSearch.trim().toLowerCase())).slice(0, 60).map(customer => <button key={customer.id} className={`block w-full px-3 py-2 text-left text-sm hover:bg-purple-50 ${newCustomer?.id === customer.id ? 'bg-purple-50 font-semibold' : ''}`} onClick={() => { setNewCustomer(customer); setCustomerSearch(customer.name) }}>{customer.name}</button>)}
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setNewOpen(false)}>{isEn ? 'Cancel' : '取消'}</Button><Button disabled={!newCustomer || busy} onClick={createBlankDraft}>{isEn ? 'Create blank draft' : '创建空白草稿'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

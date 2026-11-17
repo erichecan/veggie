@@ -175,15 +175,11 @@ export default function ClassicInvoiceDetailPage() {
 
   async function handleCreateCreditNote() {
     if (!inv) return
-    const message = isEn
-      ? `Create a draft credit note from all lines on ${inv.name}? You can edit the draft before confirming it.`
-      : `根据发票 ${inv.name} 的明细创建一张草稿贷记单？确认前可以在贷记单页面编辑金额和明细。`
-    if (!window.confirm(message)) return
     setCreditNoteBusy(true)
     try {
       const creditNote = await apiPost<{ id: string; name: string }>(`/api/invoices/${inv.id}/credit-note`, {})
-      toast.success(isEn ? `Draft credit note ${creditNote.name} created` : `已创建草稿贷记单 ${creditNote.name}`)
-      router.push(`${prefix}/classic/operator/credit-notes`)
+      toast.success(isEn ? `Blank draft credit note ${creditNote.name} created` : `已创建空白贷记单草稿 ${creditNote.name}`)
+      router.push(`${prefix}/classic/operator/credit-notes/${creditNote.id}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : (isEn ? 'Failed to create credit note' : '创建贷记单失败'))
     } finally {

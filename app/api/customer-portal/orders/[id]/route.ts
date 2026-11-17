@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
+import { resolvePortalCustomerId } from '@/lib/customer-portal-auth'
 
 /**
  * P1-2: 客户小程序 — 订单详情
@@ -51,7 +52,8 @@ export async function GET(
       }
 
       // 安全校验：客户只能查看自己的订单
-      if (order.restaurantId !== user.userId) {
+      const customerId = await resolvePortalCustomerId(user.userId, user.customerId)
+      if (order.restaurantId !== customerId && order.restaurantId !== user.userId) {
         return NextResponse.json({ error: '无权查看此订单' }, { status: 403 })
       }
 

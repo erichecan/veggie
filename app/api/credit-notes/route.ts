@@ -77,14 +77,12 @@ export async function POST(req: Request) {
       if (!customerId || !customerName) {
         return NextResponse.json({ error: '缺少客户信息' }, { status: 400 })
       }
-      if (!Array.isArray(lines) || lines.length === 0) {
-        return NextResponse.json({ error: '至少需要一行退款明细' }, { status: 400 })
-      }
+      const safeLines = Array.isArray(lines) ? lines : []
 
       // P0-3: 服务端权威计算金额
       let subtotalExTax = 0
       let totalTax = 0
-      const lineData = lines.map((l, idx) => {
+      const lineData = safeLines.map((l, idx) => {
         const qty = toNum(l.quantity)
         const price = toNum(l.unitPrice)
         const taxRate = toNum(l.taxRate)
@@ -93,8 +91,8 @@ export async function POST(req: Request) {
         subtotalExTax += lineSubtotal
         totalTax += lineTax
         return {
-          productId: String(l.productId).trim(),
-          productName: String(l.productName).trim(),
+          productId: String(l.productId ?? '').trim(),
+          productName: String(l.productName ?? '').trim(),
           quantity: qty,
           unitPrice: price,
           taxRate,
@@ -107,6 +105,9 @@ export async function POST(req: Request) {
           sequence: l.sequence ?? idx,
         }
       })
+
+      const invalidLine = lineData.find(line => !line.productId || !line.productName || !(line.quantity > 0) || line.unitPrice < 0 || line.taxRate < 0)
+      if (invalidLine) return NextResponse.json({ error: '商品、数量、单价或税率无效' }, { status: 400 })
 
       subtotalExTax = round2(subtotalExTax)
       totalTax = round2(totalTax)
@@ -141,7 +142,7 @@ export async function POST(req: Request) {
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'credit-note', resourceId: creditNote.id,
-        detail: `创建退款单 ${name} — ${customerName} — ${lines.length}行 — €${totalIncTax}`,
+        detail: `创建贷记单 ${name} — ${customerName} — ${lineData.length}行 — €${totalIncTax}`,
       })
 
       return NextResponse.json(serializeApi(creditNote), { status: 201 })

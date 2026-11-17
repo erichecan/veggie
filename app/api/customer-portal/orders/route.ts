@@ -12,6 +12,7 @@ import type { $Enums } from '@/lib/generated/prisma/client'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 import { checkCustomerCredit } from '@/lib/credit-check'
 import { portalOrderBlockers } from '@/lib/customer-portal-products'
+import { resolvePortalCustomerId } from '@/lib/customer-portal-auth'
 
 /**
  * P1-2: 客户小程序 — 订单管理
@@ -64,8 +65,9 @@ export async function GET(req: Request) {
     try {
       const { searchParams } = new URL(req.url)
 
-      // 客户只能看自己的订单（restaurantId = JWT userId）
-      const restaurantId = user.userId
+      // 新账号以 Customer.id 关联订单；历史记录仍可能使用 User.id，因此读取时兼容两种 ID。
+      const customerId = await resolvePortalCustomerId(user.userId, user.customerId)
+      const restaurantIds = [...new Set([customerId, user.userId])]
 
       const statusParam = searchParams.get('status')
       const statusFilter = statusParam
@@ -79,7 +81,7 @@ export async function GET(req: Request) {
       const pageSize = Math.min(100, Math.max(1, rawPageSize))
       const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
 
-      const where: Record<string, unknown> = { restaurantId }
+      const where: Record<string, unknown> = { restaurantId: { in: restaurantIds } }
       if (statusFilter && statusFilter.length > 0) where.status = { in: statusFilter }
       if (search) {
         where.code = { contains: search, mode: 'insensitive' }
@@ -164,7 +166,7 @@ export async function POST(req: Request) {
       const data = await req.json()
 
       // 客户只能给自己下单
-      const restaurantId = user.userId
+      const restaurantId = await resolvePortalCustomerId(user.userId, user.customerId)
 
       // 拉客户信息（名称 + 默认司机 + 信用管控所需字段）
       const customer = await prisma.customer.findUnique({
