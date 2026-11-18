@@ -141,7 +141,7 @@ async function submitReview(
     refundNote?: string
     exchangeOrderId?: string
   },
-): Promise<{ creditNotes?: Array<{ name: string }> }> {
+): Promise<{ creditNoteRequests?: Array<{ name: string }> }> {
   return apiPut(`/api/trips/${item.tripId}/returns`, {
     reviews: [{
       restaurantId: item.restaurantId,
@@ -211,9 +211,9 @@ export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readO
         refundNote: reviewNote,
       })
       toast.success(action === 'approve'
-        ? (result.creditNotes?.length
-          ? (isEn ? `Approved · draft credit note ${result.creditNotes.map(cn => cn.name).join(', ')} created` : `已批准，草稿贷记单 ${result.creditNotes.map(cn => cn.name).join(', ')} 已生成`)
-          : (isEn ? 'Return approved' : '已批准'))
+        ? (result.creditNoteRequests?.length
+          ? (isEn ? `Approved · sent to Finance ${result.creditNoteRequests.map(cn => cn.name).join(', ')}` : `已批准退货，申请 ${result.creditNoteRequests.map(cn => cn.name).join(', ')} 已提交会计审核`)
+          : (isEn ? 'Return approved · no credit note request for un-invoiced delivery' : '已批准；未开票退货不生成贷记申请'))
         : (isEn ? 'Return rejected' : '已拒绝'))
       onSaved()
       onClose()
@@ -548,7 +548,7 @@ export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readO
         )}
         {item.status === 'APPROVED' && (
           <span className="text-xs text-gray-400 self-center">
-            {isEn ? 'A draft credit note is created automatically for accounting review.' : '退换货审核通过后会自动生成贷记单草稿，交由财务核对。'}
+            {isEn ? 'After warehouse confirmation, invoiced returns go to Finance for review. Same-day un-invoiced returns only reduce the quantity to invoice.' : '仓库确认后，已开票退货提交会计审核；当天未开票退货只调整开票数量。'}
           </span>
         )}
       </DialogFooter>

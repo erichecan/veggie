@@ -1184,6 +1184,10 @@ model OrderReturn {
   sourceTrip              Trip?                    @relation(fields: [sourceTripId], references: [id], onDelete: SetNull)
   productId               String
   productName             String
+  /// 送错商品时记录实际退回商品；productId/productName 保留原订单应送商品
+  actualReturnedProductName String?
+  actualReturnedProductId String?
+  warehouseAcceptedQuantity Decimal?                @db.Decimal(12, 3)
   quantity                Decimal                  @db.Decimal(12, 3)
   unitPrice               Decimal?                 @db.Decimal(12, 2)
   photo                   String?
@@ -1221,6 +1225,36 @@ model OrderReturn {
   @@index([orderLineId, status])
   @@index([sourceTripId, status])
   @@index([status])
+}
+
+/// 销售发起的价格/质量贷记申请。审核通过后由会计生成草稿 CreditNote。
+model CreditNoteRequest {
+  id              String    @id @default(cuid())
+  name            String    @unique
+  customerId      String
+  customerName    String
+  sourceOrderId   String
+  sourceOrderCode String    @default("")
+  sourceInvoiceId String?
+  sourceReturnId  String?   @unique
+  requestDate     DateTime  @default(now())
+  reason          String
+  lines           Json      @default("[]")
+  totalIncTax     Decimal   @default(0) @db.Decimal(12, 2)
+  status          String    @default("PENDING")
+  requestedById   String
+  requestedByName String?
+  reviewedById    String?
+  reviewedByName  String?
+  reviewedAt      DateTime?
+  reviewNote      String?
+  creditNoteId    String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([customerId, status])
+  @@index([sourceOrderId])
+  @@index([status, createdAt])
 }
 
 model Invoice {
@@ -2020,6 +2054,8 @@ model CreditNoteLine {
   reason         String?
   /// 来源销售订单 ID
   sourceOrderId  String?
+  /// 来源销售订单行 ID，用于按明细核对累计退货/贷记数量
+  sourceOrderLineId String?
   /// 来源行程 ID
   sourceTripId   String?
   /// 来源退换货记录的稳定键；唯一约束确保审核重试不会重复生成贷记单
@@ -2030,6 +2066,7 @@ model CreditNoteLine {
   @@index([creditNoteId])
   @@index([productId])
   @@index([sourceOrderId])
+  @@index([sourceOrderLineId])
   @@index([sourceTripId])
 }
 

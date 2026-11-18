@@ -49,6 +49,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [exceptionProducts, setExceptionProducts] = useState<ExceptionProduct[]>([])
   const [exceptionReasons, setExceptionReasons] = useState<string[]>([])
   const [exceptionAction, setExceptionAction] = useState<'return' | 'exchange'>('return')
+  const [actualReturnedProductName, setActualReturnedProductName] = useState('')
   /** 现场照片（20260922）：证明退换货商品的实际状态 */
   const [exceptionPhoto, setExceptionPhoto] = useState<string | null>(null)
   /** 补报备注（20261028，退换货补全 M3）：补报几天前的退换货时，说明"为什么现在才报"，
@@ -282,6 +283,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           quantity: p.quantity,
           reason: reasonText,
           actionType: exceptionAction,
+          actualReturnedProductName: actualReturnedProductName.trim() || undefined,
           photo: exceptionPhoto ?? undefined,
           lateReportNote: isLateReport ? exceptionLateNote.trim() : undefined,
         })),
@@ -1050,6 +1052,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   </label>
                 </div>
               </div>
+
+              <label className="block text-sm font-medium text-gray-700">{isEn ? 'Actual returned product (if wrong item)' : '实际退回商品（送错商品时填写）'}
+                <input value={actualReturnedProductName} onChange={e => setActualReturnedProductName(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 py-2" placeholder={isEn ? 'Example: bamboo strips instead of bamboo slices' : '例如：订单笋片，实际送笋丝'} />
+              </label>
 
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Photo Evidence' : '现场照片'}</p>

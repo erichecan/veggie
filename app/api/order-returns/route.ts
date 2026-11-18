@@ -83,6 +83,8 @@ export async function POST(req: Request) {
         reason?: string
         actionType?: 'return' | 'exchange'
         exchangeOrderId?: string
+        actualReturnedProductName?: string
+        actualReturnedProductId?: string
       }
 
       if (!orderId || !orderLineId || !Number.isFinite(quantity) || Number(quantity) <= 0) {
@@ -98,6 +100,8 @@ export async function POST(req: Request) {
         reason,
         actionType,
         exchangeOrderId,
+        actualReturnedProductName: body.actualReturnedProductName,
+        actualReturnedProductId: body.actualReturnedProductId,
       }, user))
 
       await writeLog({

@@ -35,6 +35,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
     { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch' : '配送中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
     { href: `${prefix}/classic/operator/daily-sales`, label: en ? 'Daily Sales' : '日销售中心' },
+    { href: `${prefix}/classic/operator/credit-note-requests`, label: en ? 'CN Requests' : '贷记申请' },
     // 数据中心：临时先屏蔽权限校验，让 OPERATOR 直接进入老板视角的分析页面（见 boss/layout.tsx + 相关 API 的 allowedRoles）
     // 20260821：改名"数据中心"、去掉新标签页打开——boss/layout.tsx 已加返回入口，不会回不去
     { href: `${prefix}/classic/boss`,   label: en ? 'Data Center' : '数据中心' },

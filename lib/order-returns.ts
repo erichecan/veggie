@@ -21,6 +21,8 @@ export interface CreateOrderReturnInput {
   sourceTripId?: string
   photo?: string
   lateReportNote?: string
+  actualReturnedProductName?: string
+  actualReturnedProductId?: string
 }
 
 /**
@@ -79,6 +81,8 @@ export async function createOrderReturn(tx: Tx, input: CreateOrderReturnInput, a
       sourceTripId: input.sourceTripId,
       productId: line.productId,
       productName: line.productName,
+      actualReturnedProductName: input.actualReturnedProductName?.trim() || undefined,
+      actualReturnedProductId: input.actualReturnedProductId?.trim() || undefined,
       quantity: input.quantity,
       unitPrice: line.unitPrice,
       reason: input.reason?.trim() || undefined,
