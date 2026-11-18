@@ -42,6 +42,10 @@ const SOURCES: RefSource[] = [
     count: async ids => grouped(await prisma.payment.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
   },
   {
+    zh: '批收款', en: 'payment batch(es)',
+    count: async ids => grouped(await prisma.paymentBatch.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
+  },
+  {
     zh: '张送货单', en: 'delivery slip(s)',
     count: async ids => grouped(await prisma.deliverySlip.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
   },
@@ -52,6 +56,10 @@ const SOURCES: RefSource[] = [
   {
     zh: '张贷项通知单', en: 'credit note(s)',
     count: async ids => grouped(await prisma.creditNote.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
+  },
+  {
+    zh: '张待处理贷记申请', en: 'credit note request(s)',
+    count: async ids => grouped(await prisma.creditNoteRequest.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
   },
   {
     // 20261014 复式改造 L3：库存流水记着客户/供应商（订单出库、收货、退货）

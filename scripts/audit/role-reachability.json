@@ -1932,9 +1932,9 @@
   "OTHER": "n"
  },
  "POST /api/invoices/[id]/reset-to-draft": {
-  "BOSS": "n",
-  "OPERATOR": "n",
-  "FINANCE": "n",
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
   "WAREHOUSE": "n",
   "DISPATCH": "n",
   "SALES": "n",
@@ -2002,9 +2002,9 @@
   "OTHER": "n"
  },
  "POST /api/invoices/batch-post": {
-  "BOSS": "n",
-  "OPERATOR": "n",
-  "FINANCE": "n",
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
   "WAREHOUSE": "n",
   "DISPATCH": "n",
   "SALES": "n",
@@ -3850,9 +3850,9 @@
   "OTHER": "n"
  },
  "POST /api/statements/bulk": {
-  "BOSS": "n",
-  "OPERATOR": "n",
-  "FINANCE": "n",
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
   "WAREHOUSE": "n",
   "DISPATCH": "n",
   "SALES": "n",
