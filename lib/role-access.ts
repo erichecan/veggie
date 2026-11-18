@@ -120,6 +120,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   WAREHOUSE: [
     ...COMMON,
+    // 本人提交的贷记申请只含本人创建的记录，可用于追踪仓库验收后的处理进度。
+    { pattern: '/api/credit-note-requests/mine', methods: READ },
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
     exportOf('product-templates'),
@@ -156,6 +158,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
   FINANCE: [
     ...COMMON,
     { pattern: '/api/invoices/**' },
+    { pattern: '/api/credit-note-requests/**' },
     { pattern: '/api/statements/**' },
     exportOf('statements'),
     { pattern: '/api/payments/**' },
@@ -206,6 +209,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   DISPATCH: [
     ...COMMON,
+    // 本人提交的贷记申请只含本人创建的记录，可用于追踪代办退货后的处理进度。
+    { pattern: '/api/credit-note-requests/mine', methods: READ },
     { pattern: '/api/waves/**', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { pattern: '/api/trips/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     { pattern: '/api/orders', methods: READ },
@@ -240,6 +245,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   SALES: [
     ...COMMON,
+    { pattern: '/api/credit-note-requests', methods: ['POST'] },
+    { pattern: '/api/credit-note-requests/mine', methods: READ },
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     exportOf('orders'),
     exportOf('order-lines'),
@@ -289,6 +296,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   EXTERNAL_SALES: [
     ...COMMON,
+    { pattern: '/api/credit-note-requests', methods: ['POST'] },
+    { pattern: '/api/credit-note-requests/mine', methods: READ },
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     exportOf('orders'),
     exportOf('order-lines'),

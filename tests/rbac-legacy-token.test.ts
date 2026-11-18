@@ -5,7 +5,7 @@ import { legacyRolesHavePermission } from '../lib/rbac/legacy-roles'
 import { canAccessApi } from '../lib/rbac/gate'
 import { isPublicApiRoute } from '../lib/public-routes'
 import { probeRoutes, PROBE_ROLES, type Reach } from '../lib/role-reachability'
-const baseline = JSON.parse(readFileSync('lib/rbac/parity-baseline.json', 'utf-8')) as
+const baseline = JSON.parse(readFileSync('lib/rbac/legacy-token-baseline.json', 'utf-8')) as
   Record<string, Record<string, Reach>>
 
 /**
@@ -103,6 +103,21 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
   'GET /api/order-returns [SALES]': '同上',
   'POST /api/order-returns [SALES]': '同上',
   'PUT /api/order-returns/[id]/review [SALES]': '同上',
+  // 20261117：三个已有接口漏登记在 route-map，登录位图用户此前一律 403。
+  // 现在按 handler 已声明的 finance 权限补登记，角色矩阵确认 BOSS/OPERATOR/FINANCE 可用。
+  // 仓库与调度的 /mine 只返回 requestedById=当前用户的记录，不扩大客户或申请可见范围。
+  // 旧 token 例外仅覆盖位图切换期间；仓库/调度对这两个我的列表接口仍保持最小只读范围。
+  'POST /api/invoices/[id]/reset-to-draft [BOSS]': '按 finance.invoice.update 恢复漏登记接口；无位图旧 token 已于 2026-09-29 前过期',
+  'POST /api/invoices/[id]/reset-to-draft [OPERATOR]': '同上',
+  'POST /api/invoices/[id]/reset-to-draft [FINANCE]': '同上',
+  'POST /api/invoices/batch-post [BOSS]': '按 finance.invoice.pay 恢复漏登记接口；无位图旧 token 已于 2026-09-29 前过期',
+  'POST /api/invoices/batch-post [OPERATOR]': '同上',
+  'POST /api/invoices/batch-post [FINANCE]': '同上',
+  'POST /api/statements/bulk [BOSS]': '按 finance.statement.create 恢复漏登记接口；无位图旧 token 已于 2026-09-29 前过期',
+  'POST /api/statements/bulk [OPERATOR]': '同上',
+  'POST /api/statements/bulk [FINANCE]': '同上',
+  // Sage 导出始终按 finance.invoice.read 授权；销售角色旧范围只允许读取发票，不应继续持有 POST 导出能力。
+  'POST /api/invoices/sage-export [SALES]': '按既有 Finance 权限边界收紧；无位图旧 token 已于 2026-09-29 前过期',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */

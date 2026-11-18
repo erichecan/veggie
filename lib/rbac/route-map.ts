@@ -229,6 +229,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
 
   // ── 财务 ────────────────────────────────────────────────────────────────
   { pattern: '/api/invoices/*/post', permission: 'finance.invoice.pay' },
+  { pattern: '/api/invoices/*/reset-to-draft', methods: ['POST'], permission: 'finance.invoice.update', note: '冲销未收款发票并退回草稿' },
+  { pattern: '/api/invoices/batch-post', methods: ['POST'], permission: 'finance.invoice.pay', note: '批量过账所选发票' },
+  { pattern: '/api/statements/bulk', methods: ['POST'], permission: 'finance.statement.create', note: '按客户批量生成对账单' },
   { pattern: '/api/invoices/*/credit-note', methods: ['POST'], permission: 'finance.credit_note.create', note: '从已过账发票创建关联的草稿贷记单' },
   { pattern: '/api/invoices/*/apply-prepayment', permission: 'finance.invoice.pay' },
   { pattern: '/api/invoices/*/reissue', methods: ['POST'], permission: 'finance.invoice.create', note: '历史发票换开新发票（20261028 M8），复用开票权限' },
