@@ -247,6 +247,10 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/statements/*', methods: ['PUT'], permission: 'finance.statement.update' },
   { pattern: '/api/statements/*', methods: ['DELETE'], permission: 'finance.statement.delete' },
   { pattern: '/api/credit-notes/generate-from-returns', permission: 'finance.credit_note.create' },
+  { pattern: '/api/credit-note-requests/mine', methods: R, permission: 'sales.order.read' },
+  { pattern: '/api/credit-note-requests', methods: R, permission: 'finance.credit_note.read' },
+  { pattern: '/api/credit-note-requests', methods: ['POST'], permission: 'sales.order.update' },
+  { pattern: '/api/credit-note-requests/*', methods: ['PUT'], permission: 'finance.credit_note.create' },
   { pattern: '/api/credit-notes/*/allocations/**', methods: ['POST'], permission: 'finance.credit_note.update', note: '贷记单抵扣发票/退款/撤销（20261014 复式改造 L1）' },
   { pattern: '/api/credit-notes/*/allocations', methods: ['POST'], permission: 'finance.credit_note.update' },
   { pattern: '/api/credit-notes', methods: R, permission: 'finance.credit_note.read' },
@@ -479,6 +483,7 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/classic/operator/orders/**', permission: ['page.operator.access', 'page.finance.access'] },
   // 财务人员从核销页进入贷记单草稿处理；页面仍挂在 operator 路由下。
   { pattern: '/classic/operator/credit-notes/**', permission: ['page.operator.access', 'page.finance.access'] },
+  { pattern: '/classic/operator/credit-note-requests/**', permission: ['page.operator.access', 'page.finance.access'] },
   // 20261027（退货/报废整合 M1/M2）：operator/inventory 的「退换货」tab 合并了
   // warehouse/returns 的三段审核看板，WAREHOUSE 角色原本就在管这段流程
   // （page.warehouse.access），不能因为页面挂在 operator 模块下就把人挡在外面。

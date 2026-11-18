@@ -99,7 +99,7 @@ function DraftCreditNotesPanel({ isEn, href }: { isEn: boolean; href: string }) 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="font-semibold text-amber-900">{isEn ? `Draft credit notes to review (${notes.length})` : `待会计处理的草稿贷记单（${notes.length}）`}</h2>
-          <p className="mt-0.5 text-xs text-amber-800">{isEn ? 'Approved return/exchange decisions create drafts automatically. Review and confirm them before applying the credit.' : '退换货审核通过后自动生成草稿；财务核对确认后再抵扣订单或退款。'}</p>
+          <p className="mt-0.5 text-xs text-amber-800">{isEn ? 'Approve pending Sales credit requests from CN Requests. Confirm generated drafts before applying credit to invoices or issuing refunds.' : '请先在“贷记申请”审核销售及历史退货申请；批准后生成草稿，确认后再抵扣发票或退款。'}</p>
         </div>
         <Link href={href} className="rounded border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100">
           {isEn ? 'Review credit notes' : '查看并处理'} →

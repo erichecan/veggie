@@ -595,6 +595,9 @@ export interface ReturnItem {
   orderId?: string
   sourceTripId?: string
   productName: string
+  actualReturnedProductName?: string
+  actualReturnedProductId?: string
+  warehouseAcceptedQuantity?: number | null
   quantity: number
   photo?: string
   unitPrice?: number
@@ -651,6 +654,9 @@ export interface OrderReturn {
   order?: { code: string; restaurantId: string; restaurantName: string }
   productId: string
   productName: string
+  actualReturnedProductName?: string | null
+  actualReturnedProductId?: string | null
+  warehouseAcceptedQuantity?: number | null
   quantity: number
   reason?: string
   actionType: 'return' | 'exchange'

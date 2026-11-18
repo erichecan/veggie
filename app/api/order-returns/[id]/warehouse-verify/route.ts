@@ -24,7 +24,7 @@ export async function PUT(
     try {
       const { id } = await params
       const body = await req.json()
-      const { action, note } = body as { action?: 'verify' | 'reject'; note?: string }
+      const { action, note, acceptedQuantity, actualReturnedProductId, actualReturnedProductName } = body as { action?: 'verify' | 'reject'; note?: string; acceptedQuantity?: number; actualReturnedProductId?: string; actualReturnedProductName?: string }
 
       if (action !== 'verify' && action !== 'reject') {
         return NextResponse.json({ error: '缺少必填字段: action(verify|reject)' }, { status: 400 })
@@ -46,6 +46,21 @@ export async function PUT(
           { status: 409 },
         )
       }
+      let confirmedQuantity: number | undefined
+      let actualProduct: { id: string; name: string } | null = null
+      const actualName = String(actualReturnedProductName ?? ret.actualReturnedProductName ?? '').trim()
+      if (action === 'verify') {
+        confirmedQuantity = acceptedQuantity == null ? toNum(ret.quantity) : Number(acceptedQuantity)
+        if (!Number.isFinite(confirmedQuantity) || confirmedQuantity <= 0 || confirmedQuantity > toNum(ret.quantity)) {
+          return NextResponse.json({ error: `仓库确认数量须大于 0 且不超过登记数量 ${ret.quantity}` }, { status: 400 })
+        }
+        if (actualReturnedProductId) {
+          actualProduct = await prisma.product.findUnique({ where: { id: actualReturnedProductId }, select: { id: true, name: true } })
+          if (!actualProduct) return NextResponse.json({ error: '实际退回商品不存在，请重新选择' }, { status: 400 })
+        } else if (actualName && actualName.toLowerCase() !== ret.productName.trim().toLowerCase()) {
+          return NextResponse.json({ error: '送错商品时，请选择仓库实际收到的商品' }, { status: 400 })
+        }
+      }
 
       const updated = await prisma.$transaction(async (tx) => {
         // updateMany + 状态锁定 where，防止两个并发核实请求都越过上面的前置检查、都执行一遍副作用
@@ -58,6 +73,11 @@ export async function PUT(
             warehouseVerifiedByName: user.name,
             warehouseVerifiedAt: new Date(),
             warehouseNote: note?.trim() || undefined,
+            ...(action === 'verify' ? {
+              warehouseAcceptedQuantity: confirmedQuantity,
+              actualReturnedProductId: actualProduct?.id ?? ret.actualReturnedProductId,
+              actualReturnedProductName: actualProduct?.name ?? (actualName || ret.productName),
+            } : {}),
           },
         })
         if (count === 0) return null
@@ -69,13 +89,13 @@ export async function PUT(
             orderId: ret.orderId,
             status: 'REJECTED',
             productName: ret.productName,
-            quantity: toNum(ret.quantity),
+            quantity: confirmedQuantity ?? toNum(ret.quantity),
           }], user)
         } else {
           await createAutoGoodsReturnPost(tx, {
             restaurantName: ret.order.restaurantName,
-            productName: ret.productName,
-            quantity: toNum(ret.quantity),
+            productName: actualProduct?.name ?? (actualName || ret.productName),
+            quantity: confirmedQuantity ?? toNum(ret.quantity),
             linkUrl: `/classic/operator/inventory?tab=returns&highlight=${ret.id}&source=order_return`,
           })
         }
@@ -93,7 +113,7 @@ export async function PUT(
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'order_return', resourceId: id,
-        detail: `仓库核实退货: ${ret.productName} × ${ret.quantity} — ${action === 'verify' ? '核实通过' : `核实不通过(${note})`}`,
+        detail: `仓库核实退货: ${actualProduct?.name ?? (actualName || ret.productName)} × ${confirmedQuantity ?? ret.quantity} — ${action === 'verify' ? '核实通过' : `核实不通过(${note})`}`,
       })
 
       return NextResponse.json(serializeApi({

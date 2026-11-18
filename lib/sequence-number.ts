@@ -10,6 +10,7 @@ const NUMBERED_COLUMNS = {
   VendorBill: 'name',
   StockTake: 'name',
   CreditNote: 'name',
+  CreditNoteRequest: 'name',
   OrderDiscrepancy: 'code',
   Lot: 'lotNumber',
   Invoice: 'name',

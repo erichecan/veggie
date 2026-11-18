@@ -10,7 +10,7 @@ import {
   applyReturnOrderLineReduction,
   syncOrderGoodsReturnStatus,
 } from '@/lib/returns-engine'
-import { createDraftCreditNotesForReturns } from '@/lib/finance/return-credit-note'
+import { creditForInvoicedReturn, createReturnCreditNoteRequest, reduceDraftInvoiceForReturn } from '@/lib/finance/return-credit-note'
 
 /**
  * 审核 + 处置（退货/报废整合 M3，对齐 app/api/trips/[id]/returns PUT 的既有规则，
@@ -32,11 +32,12 @@ export async function PUT(
     try {
       const { id } = await params
       const body = await req.json()
-      const { action, disposition, scrapReason, note } = body as {
+      const { action, disposition, scrapReason, note, exchangeOrderId } = body as {
         action?: 'approve' | 'reject'
         disposition?: 'SELLABLE' | 'SCRAP'
         scrapReason?: string
         note?: string
+        exchangeOrderId?: string
       }
 
       if (action !== 'approve' && action !== 'reject') {
@@ -113,16 +114,18 @@ export async function PUT(
       if (!line) {
         return NextResponse.json({ error: '原订单中找不到对应商品行，无法核算贷记金额' }, { status: 400 })
       }
-      const quantity = toNum(ret.quantity)
+      const quantity = toNum(ret.warehouseAcceptedQuantity ?? ret.quantity)
+      const returnedProductId = ret.actualReturnedProductId ?? ret.productId
+      const returnedProductName = ret.actualReturnedProductName ?? ret.productName
 
       const stockMoves = buildReturnStockMoves({
-        productId: ret.productId,
-        productName: ret.productName,
+        productId: returnedProductId,
+        productName: returnedProductName,
         quantity,
         disposition: disposition as 'SELLABLE' | 'SCRAP',
         scrapReason,
         reason: ret.reason ?? undefined,
-        uomId: line?.uomId ?? null,
+        uomId: returnedProductId === ret.productId ? line?.uomId ?? null : null,
         partnerId: order.restaurantId,
         partnerName: order.restaurantName,
         sourceType: 'ORDER_RETURN',
@@ -137,6 +140,7 @@ export async function PUT(
           data: {
             status: 'APPROVED',
             disposition,
+            ...(ret.actionType === 'exchange' ? { exchangeOrderId: exchangeOrderId?.trim() || null } : {}),
             approvedById: user.userId,
             approvedByName: user.name,
             approvedAt: new Date(),
@@ -152,30 +156,44 @@ export async function PUT(
           productId: ret.productId,
           reduceQty: quantity,
         }])
+        if (ret.orderLineId) await reduceDraftInvoiceForReturn(tx, { orderId: ret.orderId, orderLineId: ret.orderLineId, quantity })
         await syncOrderGoodsReturnStatus(tx, [{
           orderId: ret.orderId,
           status: 'APPROVED',
-          productName: ret.productName,
+          productName: returnedProductName,
           quantity,
           disposition: disposition as 'SELLABLE' | 'SCRAP',
         }], user)
 
-        // 销售审核确认退货/换货意图后立即生成草稿贷记单；库存处置（可再售/报废）
-        // 不改变客户贷项，财务仍需在贷记单页面核对后确认过账。
-        const creditNotes = await createDraftCreditNotesForReturns(tx, [{
+        // 销售审核确认退货后，只建立待会计审核的申请；会计批准后才生成贷记单草稿。
+        // 未开票的当天退货不建立申请，按修正后的实送数量开票。
+        const billedQuantities = ret.orderLineId ? await creditForInvoicedReturn(tx, {
           sourceReturnId: `ORDER_RETURN:${ret.id}`,
-          customerId: order.restaurantId,
-          customerName: order.restaurantName,
-          productId: ret.productId,
-          productName: ret.productName,
+          orderId: ret.orderId,
+          orderLineId: ret.orderLineId,
           quantity,
-          amountExTax: round2(quantity * toNum(line?.unitPrice ?? 0)),
-          taxRate: toNum(line?.taxRate ?? 0),
-          reason: [ret.actionType === 'exchange' ? '换货' : '退货', disposition === 'SCRAP' ? '报废' : '可再售', ret.reason].filter(Boolean).join(' · '),
-          sourceOrderId: ret.orderId,
-        }], user.userId)
+          returnedAt: ret.createdAt,
+        }) : null
+        const creditNoteRequests = []
+        for (const billed of billedQuantities ?? []) {
+          creditNoteRequests.push(await createReturnCreditNoteRequest(tx, {
+            sourceReturnId: `ORDER_RETURN:${ret.id}`,
+            customerId: order.restaurantId,
+            customerName: order.restaurantName,
+            orderId: ret.orderId,
+            orderCode: order.code ?? order.id,
+            orderLineId: ret.orderLineId!,
+            invoiceId: billed.sourceInvoiceId,
+            productId: ret.productId,
+            productName: ret.productName,
+            quantity: billed.quantity,
+            unitPrice: billed.unitPrice,
+            taxRate: billed.taxRate,
+            reason: [ret.actionType === 'exchange' ? '换货' : '退货', disposition === 'SCRAP' ? '报废' : '可再售', ret.reason].filter(Boolean).join(' · '),
+          }, user))
+        }
 
-        return { orderReturn: await tx.orderReturn.findUnique({ where: { id } }), creditNotes }
+        return { orderReturn: await tx.orderReturn.findUnique({ where: { id } }), creditNoteRequests }
       })
 
       if (!result) {
@@ -185,14 +203,14 @@ export async function PUT(
         )
       }
 
-      const creditNoteRefs = result.creditNotes.map(cn => cn.name).join(', ')
+      const requestRefs = result.creditNoteRequests.map(cn => cn.name).join(', ')
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'order_return', resourceId: id,
-        detail: `退货审核通过(${disposition === 'SELLABLE' ? '可再售' : '报废'}): ${ret.productName} × ${ret.quantity}${creditNoteRefs ? ` · 草稿贷记单 ${creditNoteRefs}` : ''}`,
+        detail: `退货审核通过(${disposition === 'SELLABLE' ? '可再售' : '报废'}): ${ret.productName} × ${ret.quantity}${requestRefs ? ` · 待会计审核申请 ${requestRefs}` : ''}`,
       })
 
-      return NextResponse.json(serializeApi({ message: '已批准该退货申请', orderReturn: result.orderReturn, creditNotes: result.creditNotes }))
+      return NextResponse.json(serializeApi({ message: '已批准该退货申请', orderReturn: result.orderReturn, creditNoteRequests: result.creditNoteRequests }))
     } catch (error) {
       console.error('[PUT /api/order-returns/[id]/review]', error)
       return NextResponse.json({ error: '退货审核失败' }, { status: 500 })

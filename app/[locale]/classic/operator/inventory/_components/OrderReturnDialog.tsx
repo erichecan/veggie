@@ -1,12 +1,13 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiPut } from '@/lib/api'
+import { apiGet, apiPut } from '@/lib/api'
 import type { OrderReturn } from '@/lib/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
 import { TRIP_STATUS_COLORS, TRIP_STATUS_LABELS_ZH, TRIP_STATUS_LABELS_EN, type ReturnStatus } from './TripReturnReviewDialog'
 
@@ -34,6 +35,12 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
   const [disposition, setDisposition] = useState<'SELLABLE' | 'SCRAP'>('SELLABLE')
   const [scrapReason, setScrapReason] = useState<'CUSTOMER_RETURN_EXPIRED' | 'CUSTOMER_RETURN_DAMAGED' | 'OTHER'>('CUSTOMER_RETURN_DAMAGED')
   const [saving, setSaving] = useState(false)
+  const [acceptedQuantity, setAcceptedQuantity] = useState(String(item.warehouseAcceptedQuantity ?? item.quantity))
+  const [exchangeOrderId, setExchangeOrderId] = useState(item.exchangeOrderId ?? '')
+  const [products, setProducts] = useState<Array<{ id: string; name: string; internalRef?: string | null; listPrice?: number; price?: number; standardPrice?: number }>>([])
+  const [actualProduct, setActualProduct] = useState<{ id: string; name: string; internalRef?: string | null } | null>(item.actualReturnedProductId ? { id: item.actualReturnedProductId, name: item.actualReturnedProductName ?? '' } : null)
+
+  useEffect(() => { apiGet<typeof products>('/api/products?status=ACTIVE&sellable=1&slim=1').then(setProducts).catch(() => {}) }, [])
 
   const status = item.status as ReturnStatus
 
@@ -44,7 +51,11 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
     }
     setSaving(true)
     try {
-      await apiPut(`/api/order-returns/${item.id}/warehouse-verify`, { action, note: note.trim() || undefined })
+      await apiPut(`/api/order-returns/${item.id}/warehouse-verify`, {
+        action, note: note.trim() || undefined,
+        acceptedQuantity: Number(acceptedQuantity), actualReturnedProductId: actualProduct?.id,
+        actualReturnedProductName: actualProduct?.name,
+      })
       toast.success(action === 'verify'
         ? (isEn ? 'Verified, sent for review' : '已核实通过，转入审核')
         : (isEn ? 'Rejected' : '已标记核实不通过'))
@@ -60,16 +71,17 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
   async function review(action: 'approve' | 'reject') {
     setSaving(true)
     try {
-      const result = await apiPut<{ creditNotes?: Array<{ name: string }> }>(`/api/order-returns/${item.id}/review`, {
+      const result = await apiPut<{ creditNoteRequests?: Array<{ name: string }> }>(`/api/order-returns/${item.id}/review`, {
         action,
         disposition: action === 'approve' ? disposition : undefined,
         scrapReason: action === 'approve' && disposition === 'SCRAP' ? scrapReason : undefined,
+        exchangeOrderId: action === 'approve' && item.actionType === 'exchange' ? exchangeOrderId.trim() : undefined,
         note: note.trim() || undefined,
       })
       toast.success(action === 'approve'
-        ? (result.creditNotes?.length
-          ? (isEn ? `Approved · draft credit note ${result.creditNotes.map(cn => cn.name).join(', ')} created` : `已批准，草稿贷记单 ${result.creditNotes.map(cn => cn.name).join(', ')} 已生成`)
-          : (isEn ? 'Return approved' : '已批准'))
+        ? (result.creditNoteRequests?.length
+          ? (isEn ? `Approved · sent to Finance ${result.creditNoteRequests.map(cn => cn.name).join(', ')}` : `已批准退货，申请 ${result.creditNoteRequests.map(cn => cn.name).join(', ')} 已提交会计审核`)
+          : (isEn ? 'Return approved · no credit note is created for un-invoiced delivery' : '已批准；未开票退货不生成贷记申请，后续按实送数量开票'))
         : (isEn ? 'Return rejected' : '已拒绝'))
       onSaved()
       onClose()
@@ -95,6 +107,11 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
             <span className="font-medium text-gray-900">{item.productName}</span>
             <span className="text-orange-700 font-semibold">×{item.quantity}</span>
           </div>
+          {item.actualReturnedProductName && <div className="text-xs font-medium text-blue-700">{isEn ? 'Actual returned item: ' : '实际退回商品：'}{item.actualReturnedProductName}</div>}
+          {status === 'WAREHOUSE_PENDING' && !readOnly && <div className="grid gap-2 border-t border-orange-200 pt-2 sm:grid-cols-2">
+            <label className="text-xs text-gray-600">{isEn ? 'Received quantity' : '仓库实收数量'}<input type="number" min="0.001" max={Number(item.quantity)} step="0.001" value={acceptedQuantity} onChange={e => setAcceptedQuantity(e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 text-sm" /></label>
+            <label className="text-xs text-gray-600">{isEn ? 'Actual product received (if different)' : '实际收到商品（送错商品时选择）'}<ProductSearchInput value={actualProduct?.name ?? item.actualReturnedProductName ?? ''} onChange={value => setActualProduct(current => current ? { ...current, name: value, id: '' } : { id: '', name: value })} onSelect={product => setActualProduct(product)} products={products} placeholder={isEn ? 'Search actual product…' : '搜索实际商品…'} inputClassName="mt-1 w-full rounded border px-2 py-1.5 text-sm" portalDropdown /></label>
+          </div>}
           <div className="text-xs text-gray-500">{isEn ? 'Order' : '订单'} {item.order?.code ?? item.orderId}</div>
           {item.reason && <div className="text-xs text-orange-600">{isEn ? 'Reason: ' : '原因：'}{item.reason}</div>}
           {item.actionType === 'exchange' && (
@@ -131,6 +148,12 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
 
         {status === 'PENDING_REVIEW' && !readOnly && (
           <div className="space-y-2">
+            {item.actionType === 'exchange' && (
+              <label className="block text-xs text-gray-600">
+                {isEn ? 'Replacement order number (create the new order separately)' : '补送新订单号（请先单独创建补送订单）'}
+                <input value={exchangeOrderId} onChange={e => setExchangeOrderId(e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 text-sm" placeholder={isEn ? 'e.g. D-261117-001' : '例如：D-261117-001'} />
+              </label>
+            )}
             <p className="text-sm font-medium text-gray-700">{isEn ? 'Disposition' : '货物去向'} <span className="text-red-500">*</span></p>
             <div className="flex gap-2">
               <button

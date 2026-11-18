@@ -19,6 +19,7 @@ interface RegisterForm {
   reason: string
   actionType: 'return' | 'exchange'
   exchangeOrderId: string
+  actualReturnedProductName: string
 }
 
 interface RegisteredReturn {
@@ -28,7 +29,7 @@ interface RegisteredReturn {
   status: string
 }
 
-const EMPTY_FORM: RegisterForm = { quantity: '', reason: '', actionType: 'return', exchangeOrderId: '' }
+const EMPTY_FORM: RegisterForm = { quantity: '', reason: '', actionType: 'return', exchangeOrderId: '', actualReturnedProductName: '' }
 
 export default function ReturnRegistration({ refreshKey }: { refreshKey: number }) {
   const locale = useLocale()
@@ -123,6 +124,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
         reason: form.reason.trim() || undefined,
         actionType: form.actionType,
         exchangeOrderId: form.actionType === 'exchange' ? form.exchangeOrderId.trim() || undefined : undefined,
+        actualReturnedProductName: form.actualReturnedProductName.trim() || undefined,
       })
       toast.success(isEn ? 'Return registered' : '登记成功，待仓库核实')
       setRegisteredReturns(prev => [...prev, created])
@@ -250,6 +252,10 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
                         />
                       </div>
                     )}
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-500 w-20">{isEn ? 'Actual item' : '实际退回商品'}</label>
+                      <input value={form.actualReturnedProductName} onChange={e => setForm(f => ({ ...f, actualReturnedProductName: e.target.value }))} className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" placeholder={isEn ? 'If different from ordered item' : '与订单商品不同时填写'} />
+                    </div>
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-gray-500 w-20">{isEn ? 'Reason' : '原因'}</label>
                       <input

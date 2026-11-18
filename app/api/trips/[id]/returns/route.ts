@@ -3,10 +3,10 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { toNum } from '@/lib/decimal-helpers'
+import { round2, toNum } from '@/lib/decimal-helpers'
 import { recalcTripDriverCommission } from '@/lib/commission'
 import { createOrderReturn, OrderReturnInputError } from '@/lib/order-returns'
-import { createDraftCreditNotesForReturns, type ReturnCreditNoteInput } from '@/lib/finance/return-credit-note'
+import { creditForInvoicedReturn, createReturnCreditNoteRequest, reduceDraftInvoiceForReturn, type ReturnCreditNoteInput } from '@/lib/finance/return-credit-note'
 import {
   buildReturnStockMoves,
   postReturnStockMoves,
@@ -151,6 +151,8 @@ export async function POST(
           photo?: string
           /// 补报场景专用备注（20261028 M3），跟 reason 彻底分开
           lateReportNote?: string
+          actualReturnedProductName?: string
+          actualReturnedProductId?: string
         }>
       }
 
@@ -219,6 +221,8 @@ export async function POST(
             actionType: ri.actionType,
             photo: ri.photo,
             lateReportNote: ri.lateReportNote,
+            actualReturnedProductName: ri.actualReturnedProductName,
+            actualReturnedProductId: ri.actualReturnedProductId,
             sourceTripId: id,
           }, user))
         }
@@ -332,7 +336,7 @@ export async function PUT(
         let rejected = 0
         let sellable = 0
         let scrap = 0
-        const createdCreditNotes = await prisma.$transaction(async tx => {
+        const createdCreditNoteRequests = await prisma.$transaction(async tx => {
           const creditNoteInputs: ReturnCreditNoteInput[] = []
           for (const review of reviews) {
             const ret = canonicalRows.find(row => row.id === review.returnId)!
@@ -362,14 +366,17 @@ export async function PUT(
                 : await tx.orderLine.findFirst({ where: { orderId: ret.orderId, productId: ret.productId }, select: { uomId: true, taxRate: true } })
               const order = await tx.order.findUniqueOrThrow({ where: { id: ret.orderId }, select: { code: true, restaurantId: true, restaurantName: true } })
               const disposition = review.disposition as 'SELLABLE' | 'SCRAP'
+              const confirmedQuantity = toNum(ret.warehouseAcceptedQuantity ?? ret.quantity)
+              const returnedProductId = ret.actualReturnedProductId ?? ret.productId
+              const returnedProductName = ret.actualReturnedProductName ?? ret.productName
               const moves = buildReturnStockMoves({
-                productId: ret.productId,
-                productName: ret.productName,
-                quantity: toNum(ret.quantity),
+                productId: returnedProductId,
+                productName: returnedProductName,
+                quantity: confirmedQuantity,
                 disposition,
                 scrapReason: review.scrapReason,
                 reason: ret.reason ?? undefined,
-                uomId: line?.uomId ?? null,
+                uomId: returnedProductId === ret.productId ? line?.uomId ?? null : null,
                 partnerId: order.restaurantId,
                 partnerName: order.restaurantName,
                 sourceType: 'ORDER_RETURN',
@@ -377,22 +384,32 @@ export async function PUT(
                 sourceRef: order.code,
               })
               await postReturnStockMoves(tx, moves, user)
-              await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, orderLineId: ret.orderLineId ?? undefined, productId: ret.productId, reduceQty: toNum(ret.quantity) }])
-              await syncOrderGoodsReturnStatus(tx, [{ orderId: ret.orderId, status: 'APPROVED', productName: ret.productName, quantity: toNum(ret.quantity), disposition }], user)
-              const approvedCredit = toNum(review.refundAmount ?? calculateRefundAmount(toNum(ret.unitPrice), toNum(ret.quantity), review))
-              if (approvedCredit > 0.005) {
+              await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, orderLineId: ret.orderLineId ?? undefined, productId: ret.productId, reduceQty: confirmedQuantity }])
+              if (ret.orderLineId) await reduceDraftInvoiceForReturn(tx, { orderId: ret.orderId, orderLineId: ret.orderLineId, quantity: confirmedQuantity })
+              await syncOrderGoodsReturnStatus(tx, [{ orderId: ret.orderId, status: 'APPROVED', productName: returnedProductName, quantity: confirmedQuantity, disposition }], user)
+              const billedRows = ret.orderLineId ? await creditForInvoicedReturn(tx, {
+                sourceReturnId: `ORDER_RETURN:${ret.id}`,
+                orderId: ret.orderId,
+                orderLineId: ret.orderLineId,
+                quantity: confirmedQuantity,
+                returnedAt: ret.createdAt,
+              }) : null
+              if (billedRows?.length) {
+                const billed = billedRows[0]
                 creditNoteInputs.push({
                   sourceReturnId: `ORDER_RETURN:${ret.id}`,
                   customerId: order.restaurantId,
                   customerName: order.restaurantName,
                   productId: ret.productId,
                   productName: ret.productName,
-                  quantity: toNum(ret.quantity),
-                  amountExTax: approvedCredit,
-                  taxRate: toNum(line?.taxRate ?? 0),
+                  quantity: billed.quantity,
+                  amountExTax: round2(billed.quantity * billed.unitPrice),
+                  taxRate: billed.taxRate,
                   reason: [ret.actionType === 'exchange' ? '换货' : '退货', disposition === 'SCRAP' ? '报废' : '可再售', ret.reason, review.refundNote].filter(Boolean).join(' · '),
                   sourceOrderId: ret.orderId,
+                  sourceOrderCode: order.code,
                   sourceTripId: id,
+                  sourceInvoiceId: billed.sourceInvoiceId,
                 })
               }
               approved++
@@ -404,15 +421,29 @@ export async function PUT(
             }
           }
           await recalcTripDriverCommission(id, tx)
-          return createDraftCreditNotesForReturns(tx, creditNoteInputs, user.userId)
+          const requests = []
+          for (const input of creditNoteInputs) {
+            if (!input.sourceInvoiceId || !input.sourceOrderId) continue
+            requests.push(await createReturnCreditNoteRequest(tx, {
+              sourceReturnId: input.sourceReturnId, customerId: input.customerId,
+              customerName: input.customerName, orderId: input.sourceOrderId,
+              orderCode: input.sourceOrderCode ?? input.sourceOrderId,
+              orderLineId: input.sourceOrderLineId!,
+              invoiceId: input.sourceInvoiceId, productId: input.productId,
+              productName: input.productName, quantity: input.quantity,
+              unitPrice: round2(input.amountExTax / input.quantity), taxRate: input.taxRate ?? 0,
+              reason: input.reason ?? '退货验收通过',
+            }, user))
+          }
+          return requests
         })
-        const creditNoteRefs = createdCreditNotes.map(cn => cn.name).join(', ')
+        const creditNoteRefs = createdCreditNoteRequests.map(cn => cn.name).join(', ')
         await writeLog({
           userId: user.userId, userEmail: user.email, userName: user.name,
           action: 'UPDATE', resource: 'trip', resourceId: id,
-          detail: `退货审核: 通过${approved}项(可再售${sellable}/报废${scrap}), 拒绝${rejected}项${creditNoteRefs ? ` · 草稿贷记单 ${creditNoteRefs}` : ''}`,
+          detail: `退货审核: 通过${approved}项(可再售${sellable}/报废${scrap}), 拒绝${rejected}项${creditNoteRefs ? ` · 待会计审核申请 ${creditNoteRefs}` : ''}`,
         })
-        return NextResponse.json(serializeApi({ message: `已审核 ${reviews.length} 项退货`, approved, rejected, sellable, scrap, creditNotes: createdCreditNotes }))
+        return NextResponse.json(serializeApi({ message: `已审核 ${reviews.length} 项退货`, approved, rejected, sellable, scrap, creditNoteRequests: createdCreditNoteRequests }))
       }
 
       const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
@@ -470,10 +501,9 @@ export async function PUT(
           // 流水记的是未换算的数，按箱退货时流水与 qtyOnHand 不一致）
           const sourceLine = await prisma.orderLine.findFirst({
             where: { orderId: { in: restaurant.orderIds }, productId: ret.productId },
-            select: { uomId: true, taxRate: true },
+            select: { id: true, orderId: true, uomId: true, taxRate: true },
           })
-          const approvedCredit = toNum(returns[retIdx].refundAmount ?? calculateRefundAmount(toNum(ret.unitPrice), returnQty, review))
-          if (approvedCredit > 0.005) {
+          if (sourceLine?.id) {
             creditNoteInputs.push({
               sourceReturnId: `TRIP:${id}:${ret.id ?? `${restaurant.restaurantId}:${retIdx}:${ret.productId}`}`,
               customerId: restaurant.restaurantId,
@@ -481,11 +511,13 @@ export async function PUT(
               productId: ret.productId,
               productName: ret.productName,
               quantity: returnQty,
-              amountExTax: approvedCredit,
+              amountExTax: round2(returnQty * toNum(ret.unitPrice)),
               taxRate: toNum(sourceLine?.taxRate ?? 0),
               reason: [ret.actionType === 'exchange' ? '换货' : '退货', disposition === 'SCRAP' ? '报废' : '可再售', ret.reason, review.refundNote].filter(Boolean).join(' · '),
-              sourceOrderId: restaurant.orderIds?.[0] ?? null,
+              sourceOrderId: sourceLine?.orderId ?? null,
+              sourceOrderCode: restaurant.orderCodes?.[restaurant.orderIds.indexOf(sourceLine?.orderId ?? '')] ?? null,
               sourceTripId: id,
+              sourceOrderLineId: sourceLine?.id ?? null,
             })
           }
           // P1-3: StockMove with source tracking; P1-4: decimal qty
@@ -553,7 +585,7 @@ export async function PUT(
       }
 
       // 事务: 更新 Trip JSON + 创建 StockMove + 调整 OrderLine
-      const createdCreditNotes = await prisma.$transaction(async (tx) => {
+      const createdCreditNoteRequests = await prisma.$transaction(async (tx) => {
         await tx.trip.update({
           where: { id },
           data: { restaurants: restaurants as never },
@@ -566,16 +598,55 @@ export async function PUT(
         // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）+ 提成重算（deliveredQty 变了，
         // 受影响订单的司机提成快照需要重新覆盖，不再信旧快照）
         await applyReturnOrderLineReduction(tx, orderLineUpdates)
+        for (const input of creditNoteInputs) {
+          if (input.sourceOrderId && input.sourceOrderLineId) await reduceDraftInvoiceForReturn(tx, {
+            orderId: input.sourceOrderId, orderLineId: input.sourceOrderLineId, quantity: input.quantity,
+          })
+        }
         await syncOrderGoodsReturnStatus(tx, goodsReturnSyncs, user)
         await recalcTripDriverCommission(id, tx)
-        return createDraftCreditNotesForReturns(tx, creditNoteInputs, user.userId)
+        const invoicedInputs: ReturnCreditNoteInput[] = []
+        for (const input of creditNoteInputs) {
+          if (!input.sourceOrderId || !input.sourceOrderLineId) continue
+          const billedRows = await creditForInvoicedReturn(tx, {
+            sourceReturnId: input.sourceReturnId,
+            orderId: input.sourceOrderId,
+            orderLineId: input.sourceOrderLineId,
+            quantity: input.quantity,
+            returnedAt: trip.createdAt,
+          })
+          const billed = billedRows?.[0]
+          if (!billed) continue
+          invoicedInputs.push({
+            ...input,
+            sourceInvoiceId: billed.sourceInvoiceId,
+            quantity: billed.quantity,
+            amountExTax: round2(billed.quantity * billed.unitPrice),
+            taxRate: billed.taxRate,
+          })
+        }
+        const requests = []
+        for (const input of invoicedInputs) {
+          if (!input.sourceInvoiceId || !input.sourceOrderId) continue
+          requests.push(await createReturnCreditNoteRequest(tx, {
+            sourceReturnId: input.sourceReturnId, customerId: input.customerId,
+            customerName: input.customerName, orderId: input.sourceOrderId,
+            orderCode: input.sourceOrderCode ?? input.sourceOrderId,
+            orderLineId: input.sourceOrderLineId!,
+            invoiceId: input.sourceInvoiceId, productId: input.productId,
+            productName: input.productName, quantity: input.quantity,
+            unitPrice: round2(input.amountExTax / input.quantity), taxRate: input.taxRate ?? 0,
+            reason: input.reason ?? '退货验收通过',
+          }, user))
+        }
+        return requests
       })
-      const creditNoteRefs = createdCreditNotes.map(cn => cn.name).join(', ')
+      const creditNoteRefs = createdCreditNoteRequests.map(cn => cn.name).join(', ')
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'trip', resourceId: id,
-        detail: `退货审核: 通过${approvedCount}项(可再售${sellableCount}/报废${scrapCount}), 拒绝${rejectedCount}项${creditNoteRefs ? ` · 草稿贷记单 ${creditNoteRefs}` : ''}`,
+        detail: `退货审核: 通过${approvedCount}项(可再售${sellableCount}/报废${scrapCount}), 拒绝${rejectedCount}项${creditNoteRefs ? ` · 待会计审核申请 ${creditNoteRefs}` : ''}`,
       })
 
       return NextResponse.json(serializeApi({
@@ -584,7 +655,7 @@ export async function PUT(
         rejected: rejectedCount,
         sellable: sellableCount,
         scrap: scrapCount,
-        creditNotes: createdCreditNotes,
+        creditNoteRequests: createdCreditNoteRequests,
       }))
     } catch (error) {
       console.error('[PUT /api/trips/[id]/returns]', error)
