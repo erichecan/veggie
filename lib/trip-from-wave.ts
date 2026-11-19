@@ -11,7 +11,7 @@ import { serializeApi } from '@/lib/api-serializer'
 
 // 接受事务句柄(项目内多处 prisma as any)
 type TripTx = {
-  pickingWave: { findUnique: (a: unknown) => Promise<{ id: string; name: string | null; orderIds: unknown; driverSlotId: string | null; driverName: string | null; waveType: string | null } | null> }
+  pickingWave: { findUnique: (a: unknown) => Promise<{ id: string; name: string | null; orderIds: unknown; driverSlotId: string | null; driverName: string | null; waveType: string | null; vehiclePlate?: string | null } | null> }
   driverSlot: { findUnique: (a: unknown) => Promise<{ userId: string | null; driverName: string; timeOfDay: string } | null> }
   order: { findMany: (a: unknown) => Promise<Array<{ id: string; restaurantId: string; restaurantName: string; totalAmount: unknown; lines: unknown[] }>> }
   customer: { findMany: (a: unknown) => Promise<Array<{ id: string; street: string; street2: string; city: string | null; zip: string; address: string }>> }
@@ -92,6 +92,7 @@ export async function createTripFromWave(tx: TripTx, waveId: string): Promise<{ 
       name: wave.name ?? `${driverName} · ${restaurants.length}家餐馆`,
       driverId,
       driverName,
+      vehiclePlate: wave.vehiclePlate ?? null,
       timeSlot,
       status: 'PENDING',
       restaurants: restaurants as never,

@@ -89,6 +89,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   DRIVER: [
     ...COMMON,
+    { pattern: '/api/trips/*/returns', methods: READ },
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: ['GET', 'PUT'] },
     { pattern: '/api/trips/*/order-timing', methods: ['POST'] },
@@ -120,6 +121,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   WAREHOUSE: [
     ...COMMON,
+    { pattern: '/api/order-returns', methods: ['POST'] },
+    { pattern: '/api/order-returns/intakes/*', methods: ['PUT'] },
     // 本人提交的贷记申请只含本人创建的记录，可用于追踪仓库验收后的处理进度。
     { pattern: '/api/credit-note-requests/mine', methods: READ },
     { pattern: '/api/products/**', methods: READ },

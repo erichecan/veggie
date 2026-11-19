@@ -1,3 +1,4 @@
+import { lockReturnOrders, assertReturnsResolved } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -134,6 +135,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         updateData.status = 'CANCELLED'
       }
       const invoice = await prisma.$transaction(async tx => {
+        await lockReturnOrders(tx, before.saleOrderIds)
+        if (editsFinancialContent) await assertReturnsResolved(tx, before.saleOrderIds)
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
         const latest = await tx.invoice.findUnique({ where: { id } })
         if (!latest) throw Object.assign(new Error('发票不存在'), { status: 404 })

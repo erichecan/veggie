@@ -1,3 +1,5 @@
+import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-invoice-guard'
+import type { Prisma } from '@/lib/generated/prisma/client'
 import { round2 } from '@/lib/decimal-helpers'
 import { nextSequenceName } from '@/lib/sequence-number'
 import { computeDueDate } from '@/lib/payment-terms'
@@ -14,6 +16,9 @@ import { computeDueDate } from '@/lib/payment-terms'
 // 前者 TS 按方法双变规则检查参数，真实 PrismaClient/事务客户端（参数类型比 unknown 更窄）
 // 能直接满足这个结构化类型；写成属性会被按严格逆变检查，逼着调用方转 any 才能传参。
 export type InvoiceTx = {
+  $transaction?<T>(fn: (tx: InvoiceTx) => Promise<T>, options?: { timeout?: number; maxWait?: number }): Promise<T>
+  orderReturn?: Prisma.TransactionClient['orderReturn']
+  $queryRaw?: Prisma.TransactionClient['$queryRaw']
   invoice: {
     findFirst(a: unknown): Promise<{ id: string; name?: string } | null>
     create(a: unknown): Promise<{ id: string }>
@@ -46,6 +51,14 @@ export async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
 export const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === 'P2002'
 
 export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string): Promise<{ id: string } | null> {
+  if (tx.$transaction) return tx.$transaction(inner => createDraftInvoiceForOrderInTransaction(inner, orderId), { timeout: 60000, maxWait: 10000 })
+  return createDraftInvoiceForOrderInTransaction(tx, orderId)
+}
+
+/** Requires the caller's existing transaction; never starts a nested transaction. */
+export async function createDraftInvoiceForOrderInTransaction(tx: InvoiceTx, orderId: string): Promise<{ id: string } | null> {
+  if (tx.$queryRaw) await lockReturnOrders(tx as Prisma.TransactionClient, [orderId])
+  if (tx.orderReturn) await assertReturnsResolved(tx as Prisma.TransactionClient, [orderId])
   // 幂等:已被任何发票引用则跳过
   const existing = await tx.invoice.findFirst({ where: { saleOrderIds: { has: orderId } }, select: { id: true } })
   if (existing) return null

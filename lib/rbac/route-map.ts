@@ -197,7 +197,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
   { pattern: '/api/trips/*/order-timing', methods: ['POST'], permission: 'dispatch.trip.update', note: '司机订单开始/结束计时（服务端时间戳）' },
-  { pattern: '/api/trips/*/returns', methods: R, permission: 'dispatch.trip.read_returns' },
+  { pattern: '/api/trips/*/returns', methods: R, permission: ['dispatch.trip.read_returns', 'dispatch.trip.report_return'] },
   // 上报（司机）与审核（销售/运营/boss）拆成两个权限点：司机只能报告，不能自己批准/拒绝。
   // 数组是「任一即可」——已有 dispatch.trip.returns 的角色不用额外发 report_return。
   { pattern: '/api/trips/*/returns', methods: ['POST'], permission: ['dispatch.trip.report_return', 'dispatch.trip.returns'] },
@@ -208,7 +208,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 权限点各自独立（见 lib/rbac/catalog.ts dispatch.goods_return 模块说明）。
   // 列表不单设 read 权限点（DEV-PLAN 路由清单原文）：谁能核实或审核，就能看列表。
   { pattern: '/api/order-returns', methods: R, permission: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review', 'dispatch.goods_return.register'] },
-  { pattern: '/api/order-returns', methods: ['POST'], permission: 'dispatch.goods_return.register' },
+  { pattern: '/api/order-returns', methods: ['POST'], permission: ['dispatch.goods_return.register', 'dispatch.goods_return.warehouse_verify'] },
+  { pattern: '/api/order-returns/intakes/*', methods: ['PUT'], permission: 'dispatch.goods_return.warehouse_verify' },
   { pattern: '/api/order-returns/*/warehouse-verify', methods: ['PUT'], permission: 'dispatch.goods_return.warehouse_verify' },
   { pattern: '/api/order-returns/*/review', methods: ['PUT'], permission: 'dispatch.goods_return.review' },
   { pattern: '/api/trips/*/discrepancy', methods: R, permission: 'dispatch.trip.read_discrepancy' },

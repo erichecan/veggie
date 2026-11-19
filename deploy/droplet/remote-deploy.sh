@@ -42,6 +42,24 @@ docker compose --profile tools pull app migrator
 # 「先迁移后部署」：加列这类增量变更下旧代码对多出的可空列前向兼容；
 # 反过来会出「镜像 client 期望新列、库还没有」的 ColumnNotFound 500。
 if [ "$SKIP_MIGRATE" != "true" ]; then
+  # Save a fresh backup using the currently running, schema-compatible app.
+  # Fail before changing the database if backup configuration/storage is unhealthy.
+  if [ -n "$PREV_TAG" ]; then
+    docker compose exec -T app node -e '
+      (async () => {
+        if (!process.env.CRON_SECRET) throw new Error("Pre-migration backup: CRON_SECRET is not configured")
+        const response = await fetch("http://127.0.0.1:3000/api/cron/backup-database", {
+          method: "POST", headers: { "x-cron-secret": process.env.CRON_SECRET },
+          signal: AbortSignal.timeout(15 * 60 * 1000),
+        })
+        const result = await response.json()
+        if (!response.ok || result.backup?.status !== "success" || !(result.backup?.sizeBytes > 0)) {
+          throw new Error(`Pre-migration backup failed (HTTP ${response.status}); database migration was not started`)
+        }
+        console.log(`Pre-migration backup verified: ${result.backup.id} (${result.backup.sizeBytes} bytes)`)
+      })().catch(error => { console.error(error.message); process.exitCode = 1 })
+    ' < /dev/null
+  fi
   # -T 关掉 TTY 分配，</dev/null 断掉 stdin —— 双保险，见文件头的说明
   docker compose run --rm -T migrator npx prisma migrate deploy < /dev/null
 else

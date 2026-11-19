@@ -1,3 +1,4 @@
+import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -247,6 +248,8 @@ export async function POST(req: Request) {
       const createOnce = async () => {
         const name = autoName ? await nextInvoiceName(prisma as unknown as InvoiceTx) : requestedName
         return prisma.$transaction(async (tx) => {
+          await lockReturnOrders(tx, saleOrderIds)
+          await assertReturnsResolved(tx, saleOrderIds)
           const created = await tx.invoice.create({
             data: {
               name,

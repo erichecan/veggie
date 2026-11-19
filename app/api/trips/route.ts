@@ -53,13 +53,14 @@ export async function GET(req: Request) {
         : []
       const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
       const canonicalReturns = trips.length > 0
-        ? await prisma.orderReturn.findMany({ where: { sourceTripId: { in: trips.map(t => t.id) } }, orderBy: { createdAt: 'asc' } })
+        ? await prisma.orderReturn.findMany({ where: { sourceTripId: { in: trips.map(t => t.id) } }, include: { order: { select: { restaurantId: true } } }, orderBy: { createdAt: 'asc' } })
         : []
       const returnsByTripOrder = new Map<string, Array<Record<string, unknown>>>()
       for (const ret of canonicalReturns) {
-        const key = `${ret.sourceTripId}:${ret.orderId}`
+        const key = `${ret.sourceTripId}:${ret.order.restaurantId}`
         const rows = returnsByTripOrder.get(key) ?? []
         rows.push({
+          returnKind: ret.returnKind, approvedQuantity: ret.approvedQuantity == null ? undefined : Number(ret.approvedQuantity),
           id: ret.id,
           orderId: ret.orderId,
           orderLineId: ret.orderLineId,
@@ -97,7 +98,7 @@ export async function GET(req: Request) {
           orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
           returns: [
             ...(Array.isArray(restaurant.returns) ? restaurant.returns : []),
-            ...(restaurant.orderIds ?? []).flatMap(orderId => returnsByTripOrder.get(`${trip.id}:${orderId}`) ?? []),
+            ...(returnsByTripOrder.get(`${trip.id}:${String(restaurant.restaurantId)}`) ?? []),
           ],
         })),
       }))

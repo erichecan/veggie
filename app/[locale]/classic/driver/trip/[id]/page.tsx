@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { NumericInput } from '@/components/ui/numeric-input'
 import { TripStatusBadge } from '@/components/shared/status-badge'
 import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
+import HistoricalReturnIntakeForm from '@/components/driver/HistoricalReturnIntakeForm'
 import SignaturePad from '@/components/driver/SignaturePad'
 import { orderIncTaxTotal } from '@/lib/order-items'
 import { calculateReturnAdjustment } from '@/lib/trip-collection'
@@ -22,6 +23,9 @@ const EXCEPTION_REASONS_ZH = ['品质问题', '数量错误', '客户拒收', '�
 const EXCEPTION_REASONS_EN = ['Quality issue', 'Wrong quantity', 'Customer refused', 'Delivery delay', 'Damaged packaging', 'Other']
 
 interface ExceptionProduct {
+  orderId?: string
+  spec?: string | null
+
   orderLineId?: string
   productId: string
   productName: string
@@ -47,6 +51,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   // 报告异常 modal
   const [exceptionModal, setExceptionModal] = useState<{ restId: string } | null>(null)
   const [exceptionProducts, setExceptionProducts] = useState<ExceptionProduct[]>([])
+  const [returnKind, setReturnKind] = useState<'CURRENT' | 'HISTORICAL'>('CURRENT')
+  const [historicalCode, setHistoricalCode] = useState('')
+  const [sourceLoading, setSourceLoading] = useState(false)
   const [exceptionReasons, setExceptionReasons] = useState<string[]>([])
   const [exceptionAction, setExceptionAction] = useState<'return' | 'exchange'>('return')
   const [actualReturnedProductName, setActualReturnedProductName] = useState('')
@@ -56,6 +63,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
    * 跟 reasonText（退换货本身的原因）彻底分开，不混在一起 */
   const [exceptionLateNote, setExceptionLateNote] = useState('')
   const [submittingException, setSubmittingException] = useState(false)
+  const historicalLookupId = useRef(0)
   const exceptionPhotoInputRef = useRef<HTMLInputElement>(null)
 
   // 电子签收 modal（Sign on Glass）
@@ -229,6 +237,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       allocatedQuantity: item.quantity,
       selected: false,
     })))
+    setReturnKind('CURRENT')
+    setHistoricalCode('')
     setExceptionReasons([])
     setExceptionAction('return')
     setExceptionPhoto(null)
@@ -277,6 +287,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       await apiPost<{ returns: ReturnItem[] }>(`/api/trips/${trip.id}/returns`, {
         restaurantId: exceptionModal.restId,
         returns: selected.map(p => ({
+          returnKind, orderId: p.orderId,
           orderLineId: p.orderLineId,
           productId: p.productId,
           productName: p.productName,
@@ -559,6 +570,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         </div>
       )}
 
+      {!!trip.returnIntakes?.length && <section className="rounded border border-amber-200 bg-amber-50 p-3 text-sm"><h3 className="font-semibold">{isEn ? 'Historical goods registered for matching' : '历史货物待匹配登记'}</h3>{trip.returnIntakes.map(row => <p key={row.id} className="mt-1">{row.customerName} · {row.productName} {row.spec} × {row.quantity} {row.uomLabel} · {row.status === 'OPEN' ? (isEn ? 'Awaiting warehouse matching' : '待仓库匹配') : row.status === 'LINKED' ? (isEn ? 'Matched; processing return' : '已匹配，退货处理中') : (isEn ? 'Rejected' : '已拒绝')}</p>)}</section>}
       {/* 总收款信息 */}
       {(tripStatus === 'in_progress' || tripStatus === 'completed') && (
         <div className="rounded-xl p-4 mb-5 flex justify-between items-center" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
@@ -946,6 +958,20 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
             <div className="max-h-[90dvh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-xl bg-white p-4 sm:p-5">
               <h3 className="break-words font-bold leading-snug text-gray-900">{isEn ? `Report Exception — ${rest.restaurantName}` : `报告异常 — ${rest.restaurantName}`}</h3>
 
+              <div className="space-y-2">
+                <label className="block text-sm">{isEn ? 'Goods being returned' : '退回的货物来源'}<select value={returnKind} onChange={e => {
+                  historicalLookupId.current++
+                  const kind = e.target.value as 'CURRENT' | 'HISTORICAL'; setReturnKind(kind); setExceptionProducts(kind === 'CURRENT' ? rest.items.map(item => ({ orderLineId: item.orderLineId, productId: item.productId, productName: item.productName, quantity: item.quantity, allocatedQuantity: item.quantity, selected: false })) : [])
+                }} className="mt-1 w-full rounded border p-2"><option value="CURRENT">{isEn ? 'This delivery' : '本次配送的货'}</option><option value="HISTORICAL">{isEn ? 'Previously delivered goods' : '以前送的货'}</option></select></label>
+                {returnKind === 'HISTORICAL' && <div className="space-y-2"><input aria-label={isEn ? 'Original order number' : '原订单号'} value={historicalCode} onChange={e => { historicalLookupId.current++; setHistoricalCode(e.target.value); setExceptionProducts([]) }} placeholder="D-261109-007" className="w-full rounded border p-2" /><Button disabled={sourceLoading || !historicalCode.trim()} onClick={async () => {
+                  const lookup = ++historicalLookupId.current; setSourceLoading(true)
+                  try {
+                    const source = await apiGet<{ id: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: number }> }>(`/api/trips/${trip.id}/returns?restaurantId=${rest.restaurantId}&sourceOrderCode=${encodeURIComponent(historicalCode.trim())}`)
+                    if (lookup === historicalLookupId.current) setExceptionProducts(source.lines.filter(line => Number(line.deliveredQty) > 0).map(line => ({ orderId: source.id, orderLineId: line.id, productId: line.productId, productName: line.productName, spec: line.spec, quantity: Number(line.deliveredQty), allocatedQuantity: Number(line.deliveredQty), selected: false })))
+                  } catch (error) { if (lookup === historicalLookupId.current) toast.error(error instanceof Error ? error.message : 'Failed') } finally { setSourceLoading(false) }
+                }}>{isEn ? 'Find original delivery' : '查找原配送订单'}</Button><p className="text-xs text-gray-500">{isEn ? 'Use the original delivery record. Unidentified goods must be held for warehouse investigation.' : '按原订单选商品；无法确认来源的货先交仓库隔离核实，不按今天的订单退款。'}</p></div>}
+              </div>
+              {returnKind === 'HISTORICAL' && <HistoricalReturnIntakeForm tripId={trip.id} customerId={rest.restaurantId} photo={exceptionPhoto} lateNote={exceptionLateNote} isLate={tripStatus === 'completed'} isEn={isEn} onSaved={() => { setExceptionModal(null); load() }} />}
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Select affected products (multiple allowed)' : '选择有异常的商品（可多选）'}</p>
                 <div className="space-y-2 border rounded-lg divide-y">

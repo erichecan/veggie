@@ -62,6 +62,10 @@ const SOURCES: RefSource[] = [
     count: async ids => grouped(await prisma.creditNoteRequest.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
   },
   {
+    zh: '条历史退货待匹配登记', en: 'historical return intake(s)',
+    count: async ids => grouped(await prisma.returnIntake.groupBy({ by: ['customerId'], where: { customerId: { in: ids } }, _count: { _all: true } }), 'customerId'),
+  },
+  {
     // 20261014 复式改造 L3：库存流水记着客户/供应商（订单出库、收货、退货）
     zh: '条库存流水', en: 'stock move(s)',
     count: async ids => grouped(await prisma.stockMove.groupBy({ by: ['partnerId'], where: { partnerId: { in: ids } }, _count: { _all: true } }), 'partnerId'),

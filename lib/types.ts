@@ -585,6 +585,9 @@ export interface PickingWave {
 export type TripStatus = 'pending' | 'pending_assignment' | 'verifying' | 'in_progress' | 'completed'
 
 export interface ReturnItem {
+  returnKind?: string
+  approvedQuantity?: number | null
+
   /// 稳定的单条记录 id（20260922 补），仓库核实/销售审核靠它精确定位这一条，
   /// 不再只靠 productId+status 匹配——同一商品在不同时间报告两次时，
   /// 后者匹配会误命中前一条。历史遗留记录（此字段上线前提交的）没有 id，
@@ -640,6 +643,13 @@ export interface ReturnItem {
 /** Shared driver/manual return ledger. Driver reports have sourceTripId and refund/evidence fields;
  * manual registrations omit those. Both retain the exact original orderLineId. */
 export interface OrderReturn {
+  workflowVersion?: number
+  returnKind?: string
+  approvedQuantity?: number | null
+  actualReturnedStockQuantity?: number | null
+  scrapReason?: string | null
+  sourceTrip?: { id: string; driverName?: string | null; vehiclePlate?: string | null; createdAt: string } | null
+
   id: string
   orderId: string
   orderLineId?: string | null
@@ -726,6 +736,10 @@ export interface SignatureCorrection {
 }
 
 export interface Trip {
+  returnIntakes?: Array<{ id: string; customerName: string; productName: string; spec: string; uomLabel: string; quantity: number; status: string }>
+
+  vehiclePlate?: string | null
+
   id: string
   /** 关联拣货波次（手动创建的行程可为空） */
   waveId?: string

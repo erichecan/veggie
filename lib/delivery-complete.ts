@@ -76,6 +76,7 @@ export async function fillDeliveredQtyIfUnrecorded(orderId: string): Promise<boo
   const n = await prisma.$executeRaw`
     UPDATE "OrderLine" SET "deliveredQty" = "orderedQty", "updatedAt" = NOW()
     WHERE "orderId" = ${orderId}
+      AND NOT EXISTS (SELECT 1 FROM "OrderReturn" r WHERE r."orderId" = ${orderId} AND r."status" IN ('APPROVED', 'SETTLED'))
       AND NOT EXISTS (SELECT 1 FROM "OrderLine" x WHERE x."orderId" = ${orderId} AND x."deliveredQty" > 0)
   `
   return n > 0

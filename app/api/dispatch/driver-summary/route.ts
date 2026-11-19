@@ -67,6 +67,7 @@ export async function GET(req: Request) {
         const batchNums = [...new Set(w.pallets.map(p => p.seq))].sort((a, b) => a - b)
         return {
           waveId: w.id,
+          vehiclePlate: w.vehiclePlate,
           driverName: w.driverName || (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.driverName : undefined) || '',
           timeOfDay: w.timeOfDay || (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.timeOfDay : undefined) || null,
           batchNums,
