@@ -4,9 +4,10 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 
 /** 与后台导航共用 next-intl 的语言 cookie 和路径约定，保留当前子页及查询参数。 */
-export function LocaleSwitcher() {
+export function LocaleSwitcher({ colorScheme = 'default' }: { colorScheme?: 'default' | 'green' }) {
   const locale = useLocale()
   const isEn = locale === 'en'
+  const isGreen = colorScheme === 'green'
 
   function switchLanguage() {
     const nextLocale = isEn ? 'zh' : 'en'
@@ -25,7 +26,7 @@ export function LocaleSwitcher() {
 
   return <button type="button" onClick={switchLanguage}
     lang={isEn ? 'zh' : 'en'} aria-label={isEn ? '切换为中文' : 'Switch to English'}
-    className="min-h-11 shrink-0 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-[#875A7B] hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#875A7B]">
+    className={`min-h-11 shrink-0 rounded-md border bg-white px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${isGreen ? 'border-[#dce7d9] text-[#356b2f] hover:bg-green-50 focus-visible:outline-green-700' : 'border-gray-300 text-[#875A7B] hover:bg-gray-50 focus-visible:outline-[#875A7B]'}`}>
     {isEn ? '中文' : 'English'}
   </button>
 }

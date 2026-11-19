@@ -101,7 +101,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
                 <DropdownMenuItem onClick={() => router.push(statementsHref)}>
                   <span aria-hidden="true">🧾</span>{isEn ? 'My Statements' : '我的对账单'}
                 </DropdownMenuItem>
-                <div className="px-1.5 py-1.5"><LocaleSwitcher /></div>
+                <div className="px-1.5 py-1.5"><LocaleSwitcher colorScheme="green" /></div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-700">
                   {isEn ? 'Sign Out' : '退出登录'}
