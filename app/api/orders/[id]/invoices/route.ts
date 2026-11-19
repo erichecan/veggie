@@ -10,6 +10,7 @@ type Context = { params: Promise<{ id: string }> }
 const invoiceSummarySelect = {
   id: true,
   name: true,
+  invoiceDate: true,
   customerId: true,
   saleOrderIds: true,
   totalIncTax: true,
@@ -30,7 +31,7 @@ export async function POST(req: Request, { params }: Context) {
         prisma.order.findUnique({
           where: { id },
           select: {
-            id: true, restaurantId: true, restaurantName: true,
+            id: true, restaurantId: true, restaurantName: true, deliveryDate: true,
             salesUserId: true, createdById: true, salesUser: { select: { managerId: true } },
           },
         }),
@@ -43,6 +44,9 @@ export async function POST(req: Request, { params }: Context) {
       }
       if (!order.restaurantId || invoice.customerId !== order.restaurantId) {
         return NextResponse.json({ error: '只能关联同一客户的发票' }, { status: 400 })
+      }
+      if (order.deliveryDate && invoice.invoiceDate.toISOString().slice(0, 10) !== order.deliveryDate.toISOString().slice(0, 10)) {
+        return NextResponse.json({ error: '该销售单的配送日期与发票日期不同，不能关联；请为该配送日期单独开票' }, { status: 409 })
       }
       if (invoice.saleOrderIds.includes(id)) return NextResponse.json(serializeApi(invoice))
 

@@ -6,6 +6,12 @@ import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import type { TripRestaurant, ReturnItem } from '@/lib/types'
 
+function requestTimestamp(value: Date | string | null | undefined, fallback: Date): Date {
+  if (!value) return fallback
+  const parsed = value instanceof Date ? value : new Date(value)
+  return Number.isFinite(parsed.getTime()) ? parsed : fallback
+}
+
 /**
  * P0-3: 从已审批退货批量生成 CreditNote
  *
@@ -17,7 +23,7 @@ import type { TripRestaurant, ReturnItem } from '@/lib/types'
  *    扫描指定 id 中所有 APPROVED 状态的 OrderReturn（手工登记路径，20261028 M7 补）
  * 2. 两条路径按客户（restaurantId）合并，每个客户生成一张 CreditNote
  * 3. 将退货记录状态更新为 SETTLED
- * 4. P0-3 退货日期使用今天（creditDate = today）
+ * 4. CreditNote 日期沿用退货申请创建时间；审核/生成时间只用于记录实际操作时间
  */
 
 export async function POST(req: Request) {
@@ -39,7 +45,7 @@ export async function POST(req: Request) {
 
       const trips = tripIds.length > 0 ? await prisma.trip.findMany({
         where: { id: { in: tripIds } },
-        select: { id: true, name: true, restaurants: true },
+        select: { id: true, name: true, restaurants: true, createdAt: true },
       }) : []
 
       // 按客户聚合所有 APPROVED 退货
@@ -54,6 +60,7 @@ export async function POST(req: Request) {
           sourceOrderId: string | null
           sourceTripId: string | null
           sourceReturnId: string | null
+          requestDate: Date
         }>
       }>()
 
@@ -110,6 +117,7 @@ export async function POST(req: Request) {
               sourceOrderId: restaurant.orderIds?.[0] ?? null,
               sourceTripId: trip.id,
               sourceReturnId,
+              requestDate: requestTimestamp(ret.createdAt, trip.createdAt),
             })
 
             // 标记为 SETTLED
@@ -138,6 +146,7 @@ export async function POST(req: Request) {
             sourceOrderId: ret.orderId,
             sourceTripId: trip.id,
             sourceReturnId,
+            requestDate: ret.createdAt,
           })
           settledOrderReturnIds.push(ret.id)
         }
@@ -198,6 +207,7 @@ export async function POST(req: Request) {
             sourceOrderId: ret.orderId,
             sourceTripId: ret.sourceTripId,
             sourceReturnId: `ORDER_RETURN:${ret.id}`,
+            requestDate: ret.createdAt,
           })
           settledOrderReturnIds.push(ret.id)
         }
@@ -274,7 +284,8 @@ export async function POST(req: Request) {
               name,
               customerId,
               customerName: data.customerName,
-              creditDate: today,
+              // Backfill credits use the return request's timestamp, not the later accounting generation time.
+              creditDate: new Date(Math.min(...data.lines.map(line => line.requestDate.getTime()))),
               currency: 'EUR',
               subtotalExTax,
               totalTax: 0,

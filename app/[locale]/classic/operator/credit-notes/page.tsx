@@ -15,6 +15,7 @@ import { creditNoteExportColumns } from '@/lib/export/columns/credit-notes'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { formatDateTime } from '@/lib/format-date'
 
 type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
@@ -270,7 +271,7 @@ export default function CreditNotesPage() {
                     {['CONFIRMED', 'SETTLED'].includes(cn.status) && cn.amountRemaining != null ? `€${Number(cn.amountRemaining).toFixed(2)}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
-                    {new Date(cn.creditDate).toLocaleDateString('en-GB')}
+                    {formatDateTime(cn.creditDate)}
                   </td>
                 </tr>
               ))}

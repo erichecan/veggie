@@ -397,6 +397,7 @@ export async function POST(req: Request) {
                 commissionFixed: custDefaults?.commissionFixed ?? null,
                 quotationDate: normalizeDateOnly(data.quotationDate) ?? new Date(),
                 deliveryDate: normalizeDateOnly(data.deliveryDate),
+                invoiceDate: normalizeDateOnly(data.deliveryDate),
                 driverSlotId: resolvedDriverSlotId,
                 internalNote: data.internalNote ? String(data.internalNote) : undefined,
                 externalNote: data.externalNote ? String(data.externalNote) : undefined,

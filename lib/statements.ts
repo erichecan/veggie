@@ -99,11 +99,11 @@ export async function generateStatement(
   })
   const invoiceRows = orders.length ? await prisma.invoice.findMany({
     where: { saleOrderIds: { hasSome: orders.map(o => o.id) } },
-    select: { name: true, createdAt: true, postedAt: true, saleOrderIds: true },
+    select: { name: true, invoiceDate: true, saleOrderIds: true },
   }) : []
   const invoiceSnapshot = orders.flatMap(order => invoiceRows
     .filter(invoice => invoice.saleOrderIds.includes(order.id))
-    .map(invoice => ({ orderId: order.id, name: invoice.name, issueDate: invoice.postedAt ? new Date(invoice.postedAt).toISOString() : invoice.createdAt.toISOString() })))
+    .map(invoice => ({ orderId: order.id, name: invoice.name, issueDate: invoice.invoiceDate.toISOString() })))
 
   const summary = summarizeStatement(
     openingBalance,

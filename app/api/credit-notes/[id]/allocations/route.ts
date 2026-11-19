@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         await writeLog({
           userId: user.userId, userEmail: user.email, userName: user.name,
           action: 'UPDATE', resource: 'credit-note', resourceId: id,
-          detail: `${r.creditNoteName} 抵扣发票 ${r.invoiceName} €${amount.toFixed(2)}（剩余 €${r.remaining.toFixed(2)}）`,
+          detail: `${r.creditNoteName} 抵扣发票 ${r.invoiceName} €${amount.toFixed(2)}（剩余 €${r.remaining.toFixed(2)}）${r.journalEntry ? ` · 凭证 ${r.journalEntry.name}` : ''}`,
         })
         return NextResponse.json(serializeApi(r), { status: 201 })
       }

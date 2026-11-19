@@ -914,6 +914,7 @@ export function isInvoiceOrderLine(
 export interface Invoice {
   id: string
   name: string
+  invoiceDate?: string
   customerId: string
   customerName: string
   saleOrderIds: string[]
@@ -934,8 +935,11 @@ export interface Invoice {
   creditAllocations?: Array<{
     id: string
     amount: number
+    kind?: string
+    reversalOfId?: string | null
     createdAt: string
     createdBy?: string | null
+    note?: string | null
     creditNote?: { id: string; name: string } | null
   }>
   dueDate?: string

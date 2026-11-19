@@ -13,8 +13,8 @@ const HEADERS = [
   'Tax in Invoice Currency',
 ] as const
 
-function sageDate(postedAt: string | null, createdAt: Date): string {
-  const value = postedAt ? new Date(postedAt) : createdAt
+function sageDate(invoiceDate: Date): string {
+  const value = invoiceDate
   if (Number.isNaN(value.getTime())) return ''
   const day = String(value.getUTCDate()).padStart(2, '0')
   const month = String(value.getUTCMonth() + 1).padStart(2, '0')
@@ -40,8 +40,7 @@ export async function POST(req: Request) {
           id: true,
           name: true,
           status: true,
-          createdAt: true,
-          postedAt: true,
+          invoiceDate: true,
           customerId: true,
           customerName: true,
           saleOrderIds: true,
@@ -72,7 +71,7 @@ export async function POST(req: Request) {
       const orderCodeById = new Map(orders.map(order => [order.id, order.code ?? order.id.slice(-6).toUpperCase()]))
       const rows = selected.map(invoice => [
         invoice.name,
-        sageDate(invoice.postedAt, invoice.createdAt),
+        sageDate(invoice.invoiceDate),
         invoice.saleOrderIds.map(id => orderCodeById.get(id)).filter(Boolean).join(', '),
         sageAccountByCustomer.get(invoice.customerId) ?? '',
         invoice.customerName,

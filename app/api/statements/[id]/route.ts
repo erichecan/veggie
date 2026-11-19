@@ -84,7 +84,7 @@ export async function GET(
         : []
       const linkedInvoices = invoiceSnapshot.length || orderIds.length === 0 ? [] : await prisma.invoice.findMany({
         where: { saleOrderIds: { hasSome: orderIds } },
-        select: { id: true, name: true, createdAt: true, postedAt: true, saleOrderIds: true },
+        select: { id: true, name: true, invoiceDate: true, saleOrderIds: true },
       })
       const invoicesByOrder = new Map<string, Array<{ name: string; issueDate: Date }>>()
       for (const invoice of invoiceSnapshot) {
@@ -96,7 +96,7 @@ export async function GET(
       if (!invoiceSnapshot.length) for (const invoice of linkedInvoices) for (const orderId of invoice.saleOrderIds) {
         if (!orderIds.includes(orderId)) continue
         const rows = invoicesByOrder.get(orderId) ?? []
-        rows.push({ name: invoice.name, issueDate: invoice.postedAt ? new Date(invoice.postedAt) : invoice.createdAt })
+        rows.push({ name: invoice.name, issueDate: invoice.invoiceDate })
         invoicesByOrder.set(orderId, rows)
       }
 

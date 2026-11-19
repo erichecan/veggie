@@ -10,11 +10,14 @@ export interface CartItem {
   quantity: number
   /** 百分数（13.5 而非 0.135），购物车按这个口径算税 */
   taxRate?: number
+  imageUrl?: string | null
+  promoLabel?: string | null
+  originalPrice?: number | null
 }
 
 const CART_KEY = 'veggie_cart'
 export const CART_UPDATED_EVENT = 'customer-portal-cart-updated'
-export const OPEN_CART_EVENT = 'customer-portal-open-cart'
+export const PORTAL_CATALOG_SCROLL_KEY = 'customer-portal-catalog-scroll'
 
 export function loadCart(): CartItem[] {
   if (typeof window === 'undefined') return []
@@ -59,7 +62,15 @@ export function mergeCartItems(existing: CartItem[], additions: CartItem[]): Car
   for (const add of additions) {
     const idx = result.findIndex((c) => c.productId === add.productId && c.uomName === add.uomName)
     if (idx >= 0) {
-      result[idx] = { ...add, quantity: result[idx].quantity + add.quantity }
+      const previous = result[idx]
+      result[idx] = {
+        ...previous,
+        ...add,
+        imageUrl: add.imageUrl ?? previous.imageUrl,
+        promoLabel: add.promoLabel === undefined ? previous.promoLabel : add.promoLabel,
+        originalPrice: add.originalPrice === undefined ? previous.originalPrice : add.originalPrice,
+        quantity: previous.quantity + add.quantity,
+      }
     } else {
       result.push(add)
     }

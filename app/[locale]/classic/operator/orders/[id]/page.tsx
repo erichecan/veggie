@@ -10,6 +10,7 @@ import OrderAdjustmentsPanel from '@/components/orders/order-adjustments-panel'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist, CustomerPriceType } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
+import { formatDateOnly } from '@/lib/format-date'
 import SendEmailDialog from '@/components/orders/send-email-dialog'
 import { OrderChatter } from '@/components/order/OrderChatter'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
@@ -57,6 +58,7 @@ interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
 interface OrderInvoiceSummary {
   id: string
   name: string
+  invoiceDate?: string
   totalIncTax: number
   status: string
   createdAt: string
@@ -1606,7 +1608,7 @@ export default function SalesOrderDetailPage() {
                     >
                       <span>
                         <span className="block text-sm font-medium text-[#714b67]">{invoice.name}</span>
-                        <span className="block text-xs text-gray-500">{invoice.status} · {new Date(invoice.createdAt).toLocaleDateString('en-GB')}</span>
+                        <span className="block text-xs text-gray-500">{invoice.status} · {formatDateOnly(invoice.invoiceDate ?? invoice.createdAt)}</span>
                       </span>
                       <span className="text-sm font-medium text-gray-800">€{Number(invoice.totalIncTax).toFixed(2)}</span>
                     </button>

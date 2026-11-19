@@ -119,7 +119,7 @@ export function renderOrderHtml(
   ].filter(Boolean).join(', ')
 
   const deliveryDate = formatDateOnly((order.deliveryDate ?? order.quotationDate) as string)
-  const invoiceDate = formatDateOnly(order.quotationDate as string)
+  const invoiceDate = deliveryDate
 
   const linesHtml = lines.map((l, i) => {
     const spec = l.spec

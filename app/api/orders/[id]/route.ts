@@ -303,8 +303,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (driverSlotId !== undefined) updateData.driverSlotId = driverSlotId || null
       if (paymentMethod) updateData.paymentMethod = String(paymentMethod).toUpperCase()
       if (confirmationDate !== undefined && newStatus !== 'CONFIRMED') updateData.confirmationDate = confirmationDate ? new Date(confirmationDate) : null
-      if (deliveryDate !== undefined) updateData.deliveryDate = deliveryDate ? new Date(deliveryDate) : null
-      if (invoiceDate !== undefined) updateData.invoiceDate = invoiceDate ? new Date(invoiceDate) : null
+      if (deliveryDate !== undefined) {
+        const normalizedDeliveryDate = deliveryDate ? new Date(deliveryDate) : null
+        updateData.deliveryDate = normalizedDeliveryDate
+        updateData.invoiceDate = normalizedDeliveryDate
+      }
+      if (invoiceDate !== undefined && deliveryDate === undefined) {
+        return NextResponse.json({ error: '发票日期跟随配送日期，不能单独修改' }, { status: 400 })
+      }
       if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null
       if (internalNote !== undefined) updateData.internalNote = internalNote ? String(internalNote) : null
       if (externalNote !== undefined) updateData.externalNote = externalNote ? String(externalNote) : null

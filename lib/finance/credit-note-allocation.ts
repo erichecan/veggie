@@ -10,7 +10,7 @@
  */
 import { round2, toNum } from '@/lib/decimal-helpers'
 import { recomputeInvoiceBalance } from './invoice-balance'
-import { postCreditNoteRefundToJournal } from '@/lib/accounting'
+import { postCreditNoteRefundToJournal, postCreditNoteToJournal } from '@/lib/accounting'
 
 const EPS = 0.005
 
@@ -36,7 +36,7 @@ async function lockCreditNote(db: Db, creditNoteId: string) {
   await db.$queryRaw`SELECT id FROM "CreditNote" WHERE id = ${creditNoteId} FOR UPDATE`
   const cn = await db.creditNote.findUnique({
     where: { id: creditNoteId },
-    select: { id: true, name: true, status: true, customerId: true, totalIncTax: true },
+    select: { id: true, name: true, status: true, customerId: true, totalIncTax: true, subtotalExTax: true, totalTax: true },
   })
   if (!cn) throw Object.assign(new Error('贷记单不存在'), { status: 404 })
   const allocs = await db.creditNoteAllocation.findMany({ where: { creditNoteId }, select: { amount: true } })
@@ -88,7 +88,23 @@ export async function allocateCreditNoteToInvoice(
   })
   const invoiceAfter = await recomputeInvoiceBalance(db, invoice.id)
   const remainingAfter = await syncCreditNoteStatus(db, cn.id)
-  return { allocation, invoice: invoiceAfter, remaining: remainingAfter, creditNoteName: cn.name, invoiceName: invoice.name }
+  // 确认贷记单时通常已生成凭证。抵扣只是同一客户应收子账的核销，不能再记一笔金额凭证。
+  // 对历史上缺少确认凭证的贷记单，在首次抵扣时补建一次，确保账务有凭证可追溯。
+  let journalEntry = await db.journalEntry.findFirst({
+    where: { sourceType: 'credit_note', sourceId: cn.id, status: 'POSTED' },
+    select: { id: true, name: true },
+  })
+  if (!journalEntry) {
+    journalEntry = await postCreditNoteToJournal(db, {
+      id: cn.id,
+      name: cn.name,
+      customerId: cn.customerId,
+      subtotalExTax: cn.subtotalExTax,
+      totalTax: cn.totalTax,
+      totalIncTax: cn.totalIncTax,
+    }, params.actor.userId)
+  }
+  return { allocation, invoice: invoiceAfter, remaining: remainingAfter, creditNoteName: cn.name, invoiceName: invoice.name, journalEntry }
 }
 
 export async function refundCreditNote(

@@ -50,12 +50,12 @@ export async function handleStatementPreview(req: Request) {
       const paymentInvoiceIds = [...new Set(paymentRows.map(p => p.invoiceId).filter((id): id is string => id != null))]
       const invoiceNames = paymentInvoiceIds.length ? await prisma.invoice.findMany({ where: { id: { in: paymentInvoiceIds } }, select: { id: true, name: true } }) : []
       const invoiceById = new Map(invoiceNames.map(i => [i.id, i.name]))
-      const linkedInvoices = orderRows.length ? await prisma.invoice.findMany({ where: { saleOrderIds: { hasSome: orderRows.map(o => o.id) } }, select: { name: true, createdAt: true, postedAt: true, saleOrderIds: true } }) : []
+      const linkedInvoices = orderRows.length ? await prisma.invoice.findMany({ where: { saleOrderIds: { hasSome: orderRows.map(o => o.id) } }, select: { name: true, invoiceDate: true, saleOrderIds: true } }) : []
       const invoicesByOrder = new Map<string, Array<{ name: string; issueDate: Date }>>()
       for (const invoice of linkedInvoices) for (const orderId of invoice.saleOrderIds) {
         if (!orderRows.some(o => o.id === orderId)) continue
         const rows = invoicesByOrder.get(orderId) ?? []
-        rows.push({ name: invoice.name, issueDate: invoice.postedAt ? new Date(invoice.postedAt) : invoice.createdAt })
+        rows.push({ name: invoice.name, issueDate: invoice.invoiceDate })
         invoicesByOrder.set(orderId, rows)
       }
 

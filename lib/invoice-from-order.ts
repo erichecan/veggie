@@ -18,7 +18,7 @@ export type InvoiceTx = {
     findFirst(a: unknown): Promise<{ id: string; name?: string } | null>
     create(a: unknown): Promise<{ id: string }>
   }
-  order: { findUnique(a: unknown): Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown; isGift?: boolean }> } | null> }
+  order: { findUnique(a: unknown): Promise<{ restaurantId: string; restaurantName: string; deliveryDate?: Date | null; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown; isGift?: boolean }> } | null> }
   customer: { findUnique(a: unknown): Promise<{ name: string; paymentTerm?: string | null } | null> }
   orderAdjustment: { findMany(a: unknown): Promise<Array<{ id: string; type: string; label: string; amount: unknown }>> }
   /** 真实 PrismaClient 有它：发票号按数字取最大号（见 nextInvoiceName）；单测的 mock 没有时退回 findFirst */
@@ -109,7 +109,8 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
   // 账期跟客户档案走、按账期推到期日（与 POST /api/invoices 同口径）。原来写死 monthly 且不填 dueDate，
   // 逾期检测（lib/credit-check.ts）对自动草稿发票永远查不到
   const paymentTerms = cust?.paymentTerm ?? 'monthly'
-  const dueDate = computeDueDate(new Date(), paymentTerms).toISOString().slice(0, 10)
+  const invoiceDate = order.deliveryDate ?? new Date()
+  const dueDate = computeDueDate(invoiceDate, paymentTerms).toISOString().slice(0, 10)
 
   // 两个人同时完成订单可能取到同一个号：撞唯一约束就重新取号，最多 3 次
   for (let attempt = 0; ; attempt++) {
@@ -120,6 +121,7 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
           name,
           customerId: order.restaurantId,
           customerName: cust?.name ?? order.restaurantName,
+          invoiceDate,
           saleOrderIds: [orderId],
           lines: lines as never,
           subtotalExTax: subEx,
