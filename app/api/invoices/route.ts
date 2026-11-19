@@ -43,8 +43,8 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const customerId = searchParams.get('customerId')
-    const createdFrom = searchParams.get('createdFrom')
-    const createdTo = searchParams.get('createdTo')
+    const createdFrom = searchParams.get('invoiceDateFrom') ?? searchParams.get('createdFrom')
+    const createdTo = searchParams.get('invoiceDateTo') ?? searchParams.get('createdTo')
     // ?slim=1 → only id + saleOrderIds (used by orders/quotations pages to detect invoiced orders)
     const slim = searchParams.get('slim') === '1'
     // ?orderIds=a,b,c → 只回传涉及这些订单的发票。配合 slim 用于"这批订单开票了没"，
@@ -63,10 +63,10 @@ export async function GET(req: Request) {
     const where: Record<string, unknown> = {}
     if (customerId) where.customerId = customerId
     if (createdFrom || createdTo) {
-      const createdAt: { gte?: Date; lte?: Date } = {}
-      if (createdFrom && /^\d{4}-\d{2}-\d{2}$/.test(createdFrom)) createdAt.gte = new Date(`${createdFrom}T00:00:00.000Z`)
-      if (createdTo && /^\d{4}-\d{2}-\d{2}$/.test(createdTo)) createdAt.lte = new Date(`${createdTo}T23:59:59.999Z`)
-      if (createdAt.gte || createdAt.lte) where.createdAt = createdAt
+      const invoiceDate: { gte?: Date; lte?: Date } = {}
+      if (createdFrom && /^\d{4}-\d{2}-\d{2}$/.test(createdFrom)) invoiceDate.gte = new Date(`${createdFrom}T00:00:00.000Z`)
+      if (createdTo && /^\d{4}-\d{2}-\d{2}$/.test(createdTo)) invoiceDate.lte = new Date(`${createdTo}T23:59:59.999Z`)
+      if (invoiceDate.gte || invoiceDate.lte) where.invoiceDate = invoiceDate
     }
     // saleOrderIds 是 String[]，hasSome 命中"这张发票涉及了其中任一订单"
     if (orderIds && orderIds.length > 0) where.saleOrderIds = { hasSome: orderIds }
@@ -212,6 +212,22 @@ export async function POST(req: Request) {
       const totalIncTax = round2(subtotalExTax + totalTax)
 
       const saleOrderIds: string[] = Array.isArray(data.saleOrderIds) ? data.saleOrderIds : []
+      const sourceOrders = saleOrderIds.length > 0 ? await prisma.order.findMany({
+        where: { id: { in: saleOrderIds } },
+        select: { id: true, restaurantId: true, deliveryDate: true },
+      }) : []
+      if (sourceOrders.some(order => order.restaurantId !== customerId)) {
+        return NextResponse.json({ error: '发票关联的销售单必须属于同一客户' }, { status: 400 })
+      }
+      const deliveryDays = [...new Set(sourceOrders
+        .map(order => order.deliveryDate?.toISOString().slice(0, 10))
+        .filter((day): day is string => Boolean(day)))]
+      if (deliveryDays.length > 1) {
+        return NextResponse.json({ error: '一张发票只能包含同一配送日期的销售单，请按配送日期分别开票' }, { status: 400 })
+      }
+      const invoiceDate = deliveryDays[0]
+        ? new Date(`${deliveryDays[0]}T00:00:00.000Z`)
+        : new Date()
 
       // dueDate 未显式传入时按账期天数自动推算（20260826）：此前这里永远是
       // `data.dueDate ?? null`，没有任何调用方会传 dueDate，导致新开的发票
@@ -224,7 +240,7 @@ export async function POST(req: Request) {
       }
       const dueDate = typeof data.dueDate === 'string' && data.dueDate
         ? data.dueDate
-        : computeDueDate(new Date(), paymentTerms).toISOString().slice(0, 10)
+        : computeDueDate(invoiceDate, paymentTerms).toISOString().slice(0, 10)
 
       // 事务：发票创建 + 回写 OrderLine.invoicedQty = deliveredQty。
       // 自动发号时两人并发可能取到同一个号：撞唯一约束就整笔重来，最多 3 次
@@ -236,6 +252,7 @@ export async function POST(req: Request) {
               name,
               customerId,
               customerName,
+              invoiceDate,
               saleOrderIds,
               lines: recomputedLines as unknown as object,
               subtotalExTax,

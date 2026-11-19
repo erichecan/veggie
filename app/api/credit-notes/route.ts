@@ -125,6 +125,7 @@ export async function POST(req: Request) {
           customerId,
           customerName,
           creditDate: today,
+          createdAt: today,
           currency,
           subtotalExTax,
           totalTax,

@@ -10,6 +10,7 @@ import { apiDelete, apiGet, apiPut } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CreditNoteAllocations from '@/components/classic/CreditNoteAllocations'
+import { formatDateTime } from '@/lib/format-date'
 
 type Status = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 interface Product { id: string; name: string; internalRef?: string | null; listPrice?: number; price?: number; standardPrice?: number }
@@ -50,7 +51,6 @@ export default function CreditNoteDetailPage() {
   const [busy, setBusy] = useState(false)
   const [lines, setLines] = useState<Line[]>([])
   const [notes, setNotes] = useState('')
-  const [creditDate, setCreditDate] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -62,7 +62,6 @@ export default function CreditNoteDetailPage() {
       setProducts(ps)
       setLines(cn.lines.map((line, i) => ({ ...line, sequence: line.sequence ?? i })))
       setNotes(cn.notes ?? '')
-      setCreditDate(cn.creditDate.slice(0, 10))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load credit note' : '加载贷记单失败'))
     }
@@ -81,7 +80,7 @@ export default function CreditNoteDetailPage() {
     setBusy(true)
     try {
       const saved = await apiPut<Note>(`/api/credit-notes/${note.id}`, {
-        creditDate, notes,
+        notes,
         lines: lines.map(({ productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence }) => ({ productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence })),
       })
       setNote(saved)
@@ -105,7 +104,7 @@ export default function CreditNoteDetailPage() {
     try {
       if (editing) {
         await apiPut(`/api/credit-notes/${note.id}`, {
-          creditDate, notes,
+          notes,
           lines: lines.map(({ productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence }) => ({ productId, productName, quantity, unitPrice, taxRate, reason, sourceOrderId, sourceTripId, sourceReturnId, sequence })),
         })
       }
@@ -143,7 +142,7 @@ export default function CreditNoteDetailPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {canEdit && !editing && <Button variant="outline" onClick={() => setEditing(true)}>{isEn ? 'Edit draft' : '编辑草稿'}</Button>}
-          {canEdit && editing && <><Button variant="outline" disabled={busy} onClick={() => { setEditing(false); setLines(note.lines); setNotes(note.notes ?? ''); setCreditDate(note.creditDate.slice(0, 10)) }}>{isEn ? 'Discard' : '放弃修改'}</Button><Button disabled={busy} onClick={save}>{isEn ? 'Save draft' : '保存草稿'}</Button></>}
+          {canEdit && editing && <><Button variant="outline" disabled={busy} onClick={() => { setEditing(false); setLines(note.lines); setNotes(note.notes ?? '') }}>{isEn ? 'Discard' : '放弃修改'}</Button><Button disabled={busy} onClick={save}>{isEn ? 'Save draft' : '保存草稿'}</Button></>}
           {canEdit && <><Button variant="outline" disabled={busy} onClick={removeDraft}>{isEn ? 'Delete' : '删除'}</Button><Button disabled={busy || editing} onClick={() => changeStatus('CONFIRMED')}>{isEn ? 'Confirm' : '确认贷记单'}</Button></>}
           {note.status === 'CONFIRMED' && <Button variant="outline" disabled={busy} onClick={() => changeStatus('CANCELLED')}>{isEn ? 'Cancel credit note' : '作废贷记单'}</Button>}
         </div>
@@ -151,7 +150,7 @@ export default function CreditNoteDetailPage() {
 
       <section className="grid gap-4 rounded-xl border bg-white p-5 md:grid-cols-2">
         <div><div className="text-xs uppercase text-gray-500">{isEn ? 'Customer' : '客户'}</div><div className="mt-1 font-semibold">{note.customerName}</div></div>
-        <div><div className="text-xs uppercase text-gray-500">{isEn ? 'Credit note date' : '贷记单日期'}</div>{editableNow ? <input type="date" value={creditDate} onChange={e => setCreditDate(e.target.value)} className="mt-1 rounded border px-2 py-1" /> : <div className="mt-1">{new Date(note.creditDate).toLocaleDateString('en-GB')}</div>}</div>
+        <div><div className="text-xs uppercase text-gray-500">{isEn ? 'Credit note date (request date)' : '贷记单日期（申请时间）'}</div><div className="mt-1">{formatDateTime(note.creditDate)}</div></div>
         <div><div className="text-xs uppercase text-gray-500">{isEn ? 'Source invoice reference' : '来源发票参考'}</div>{note.sourceInvoice ? <Link className="mt-1 inline-block font-mono text-[#714B67] hover:underline" href={`${prefix}/classic/finance/invoices/${note.sourceInvoice.id}`}>{note.sourceInvoice.name}</Link> : <div className="mt-1 text-gray-400">—</div>}</div>
         <div><div className="text-xs uppercase text-gray-500">{isEn ? 'Notes' : '备注'}</div>{editableNow ? <textarea value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} rows={2} className="mt-1 w-full rounded border px-2 py-1" /> : <div className="mt-1 whitespace-pre-wrap">{note.notes || '—'}</div>}</div>
       </section>

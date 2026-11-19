@@ -1260,6 +1260,8 @@ model CreditNoteRequest {
 model Invoice {
   id                String                 @id @default(cuid())
   name              String
+  /// 发票业务日期，跟随关联销售单的配送日期；与记录创建/过账时间分开保存。
+  invoiceDate       DateTime               @default(now())
   customerId        String
   customerName      String
   saleOrderIds      String[]
@@ -1299,6 +1301,7 @@ model Invoice {
   @@index([customerId])
   @@index([status])
   @@index([createdAt])
+  @@index([invoiceDate])
 }
 
 /**

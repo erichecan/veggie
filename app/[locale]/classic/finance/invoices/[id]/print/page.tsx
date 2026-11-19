@@ -120,7 +120,7 @@ export default function InvoicePrintPage() {
           <tbody><tr>
             <td><div className="info-head">{isEn ? 'Customer' : '客户'}</div><div className="info-val">{inv.customerName}<br/><span className="text-gray-500">{STATUS_LABELS[isEn ? 'en' : 'zh'][inv.status]}</span></div></td>
             <td className="barcode-cell"><div className="info-head">{isEn ? 'Invoice No.' : '发票号'}</div><svg ref={barcodeRef} /><div className="barcode-code">{inv.name}</div></td>
-            <td><div className="info-head">{isEn ? 'Dates' : '日期'}</div><div className="info-val">{formatDateOnly(inv.createdAt)}<br/>{isEn ? 'Due: ' : '到期：'}{formatDateOnly(inv.dueDate)}<br/>{isEn ? 'Related orders: ' : '关联订单：'}{inv.saleOrderIds.length}</div></td>
+            <td><div className="info-head">{isEn ? 'Dates' : '日期'}</div><div className="info-val">{formatDateOnly(inv.invoiceDate ?? inv.createdAt)}<br/>{isEn ? 'Due: ' : '到期：'}{formatDateOnly(inv.dueDate)}<br/>{isEn ? 'Related orders: ' : '关联订单：'}{inv.saleOrderIds.length}</div></td>
             <td><div className="info-head">{isEn ? 'Payment' : '付款方式'}</div><div className="info-val" dangerouslySetInnerHTML={{ __html: paymentDetails(inv.paymentTerms ?? customer?.paymentTerm, [customer?.externalNote], isEn ? 'en' : 'zh') }} /></td>
           </tr></tbody>
         </table>

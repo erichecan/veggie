@@ -14,6 +14,7 @@ import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invo
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import InvoiceCreditNotes from '@/components/classic/InvoiceCreditNotes'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -289,7 +290,9 @@ export default function ClassicInvoiceDetailPage() {
             </p>
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">{isEn ? 'Created At' : '创建时间'}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">{isEn ? 'Invoice Date' : '发票日期'}</p>
+            <p className="mt-1 text-gray-700">{formatDateOnly(inv.invoiceDate ?? inv.createdAt)}</p>
+            <p className="mt-2 text-xs text-gray-500 uppercase tracking-wide">{isEn ? 'Created At' : '创建时间'}</p>
             <p className="mt-1 text-gray-700">{new Date(inv.createdAt).toLocaleString('en-GB')}</p>
           </div>
           {inv.postedAt && (
@@ -418,11 +421,12 @@ export default function ClassicInvoiceDetailPage() {
         </div>
       </div>
 
-      {inv.status === 'posted' && Number(inv.amountDue ?? 0) > 0.005 && (
+      {['posted', 'paid'].includes(inv.status) && (Number(inv.amountDue ?? 0) > 0.005 || (inv.creditAllocations ?? []).length > 0) && (
         <InvoiceCreditNotes
           invoiceId={inv.id}
           customerId={inv.customerId}
           amountDue={Number(inv.amountDue)}
+          allocations={inv.creditAllocations ?? []}
           isEn={isEn}
           onApplied={() => load()}
         />

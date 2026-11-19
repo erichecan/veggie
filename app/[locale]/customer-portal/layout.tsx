@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { LocaleSwitcher } from '@/components/shared/locale-switcher'
 import { ChevronDown, ShoppingCart, UserRound } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { CART_UPDATED_EVENT, loadCart, OPEN_CART_EVENT } from '@/components/customer-portal/cart-utils'
+import { CART_UPDATED_EVENT, loadCart, PORTAL_CATALOG_SCROLL_KEY } from '@/components/customer-portal/cart-utils'
 
 const PRIMARY = 'var(--portal-primary)'
 
@@ -23,10 +23,13 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
 
   useEffect(() => {
     const user = getSession()
-    if (!user || user.role !== 'RESTAURANT') {
+    const isRestaurant = Boolean(user && (user.role === 'RESTAURANT' || user.roles?.includes('RESTAURANT')))
+    if (!user || !isRestaurant) {
       router.push(`${prefix}/enter`)
       return
     }
+    // Load the local session after hydration; the server render must not read browser storage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUserName(user.name || user.email)
     const updateCartCount = () => setCartCount(loadCart().reduce((sum, item) => sum + item.quantity, 0))
     updateCartCount()
@@ -38,6 +41,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
   const ordersHref = `${prefix}/customer-portal/orders`
   const statementsHref = `${prefix}/customer-portal/statements`
   const creditsHref = `${prefix}/customer-portal/credit-notes`
+  const cartHref = `${prefix}/customer-portal/cart`
 
   function handleLogout() {
     logout()
@@ -64,11 +68,15 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
           </Link>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <button type="button" onClick={() => {
-              if (pathname === catalogHref || pathname === `${catalogHref}/`) {
-                window.dispatchEvent(new Event(OPEN_CART_EVENT))
-              } else {
-                router.push(`${catalogHref}?openCart=1`)
+              if (pathname === cartHref) {
+                window.dispatchEvent(new Event(CART_UPDATED_EVENT))
+                router.refresh()
+                return
               }
+              if (pathname === catalogHref || pathname === `${catalogHref}/`) {
+                sessionStorage.setItem(PORTAL_CATALOG_SCROLL_KEY, String(window.scrollY))
+              }
+              router.push(cartHref)
             }} aria-label={`${isEn ? 'Shopping cart' : '购物车'}${cartCount ? ` (${cartCount})` : ''}`}
               className="relative inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border transition-colors hover:bg-green-50"
               style={{ borderColor: 'var(--portal-border)', color: PRIMARY }}>

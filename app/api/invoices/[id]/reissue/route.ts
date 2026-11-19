@@ -58,6 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 name,
                 customerId: old.customerId,
                 customerName: old.customerName,
+                invoiceDate: old.invoiceDate,
                 saleOrderIds: old.saleOrderIds,
                 lines: old.lines as object,
                 subtotalExTax: old.subtotalExTax,

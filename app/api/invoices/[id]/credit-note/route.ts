@@ -29,6 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             customerId: invoice.customerId,
             customerName: invoice.customerName,
             creditDate: date,
+            createdAt: date,
             currency: 'EUR',
             subtotalExTax: 0,
             totalTax: 0,

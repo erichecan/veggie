@@ -61,7 +61,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
   const [cart, setCart] = useState<CartItem[]>([])
   useEffect(() => { setCart(loadCart()) }, [])
   const [submitting, setSubmitting] = useState(false)
-  const [showCart, setShowCart] = useState(false)
+  const [cartPreviewOpen, setCartPreviewOpen] = useState(false)
   const [deliveryDate, setDeliveryDate] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE'>('CASH')
   const [note, setNote] = useState('')
@@ -192,10 +192,12 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
       const next = mergeCartItems(prev, [{
         productId: p.id, name: p.name, spec: p.spec, uomId: p.uomId ?? undefined, uomName: p.uomName,
         price: p.customerPrice ?? 0, quantity: qty, taxRate: toPercent(p.customerTaxRate),
+        imageUrl: p.images?.[0] ?? null, promoLabel: p.promoLabel ?? null, originalPrice: p.originalPrice ?? null,
       }])
       saveCart(next)
       return next
     })
+    setCartPreviewOpen(true)
     toast.success(isEn ? `Added ${p.name}` : `已添加 ${p.name}`)
   }, [isEn])
 
@@ -205,7 +207,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
       saveCart(next)
       return next
     })
-    setShowCart(true)
+    setCartPreviewOpen(true)
   }, [])
 
   // uomName 是可选的消歧参数：同一商品可能同时有两条不同单位的购物车行（如 CASE + PACK），
@@ -248,7 +250,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
         ? `Order placed! Order #: ${res.code}, total due: ${eur(cartTotal + cartTax)}`
         : `下单成功！订单号: ${res.code}，应付: ${eur(cartTotal + cartTax)}`)
       updateCart([])
-      setShowCart(false)
+      setCartPreviewOpen(false)
       setNote('')
       router.push(`${orderDetailPathPrefix}/${res.id}`)
     } catch (e: unknown) {
@@ -267,7 +269,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
     products, gridLoading, loadError, page, setPage, totalPages,
     searchInput, setSearchInput, activeSearch, paymentTerm,
     categoryId, selectCategory, categories, banners, handleBannerClick,
-    frequent, cart, submitting, showCart, setShowCart,
+    frequent, cart, submitting, cartPreviewOpen, setCartPreviewOpen,
     deliveryDate, setDeliveryDate, minDate, capacityWarning,
     paymentMethod, setPaymentMethod, note, setNote,
     addToCart, handleBulkAdd, setQty, removeFromCart, placeOrder,

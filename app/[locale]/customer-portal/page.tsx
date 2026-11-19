@@ -1,17 +1,18 @@
 'use client'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { useRouter } from 'next/navigation'
 import { RecentOrdersPanel } from '@/components/customer-portal/recent-orders-panel'
 import { FavoritesPanel } from '@/components/customer-portal/favorites-panel'
 import { FrequentTab } from '@/components/customer-portal/frequent-tab'
-import { CartPanel } from '@/components/customer-portal/cart-panel'
+import { CartPreviewDrawer } from '@/components/customer-portal/cart-preview-drawer'
 import { ProductGrid } from '@/components/customer-portal/product-grid'
 import { BannerCarousel } from '@/components/customer-portal/banner-carousel'
 import { CategorySidebar } from '@/components/customer-portal/category-sidebar'
 import { useCustomerPortal } from '@/components/customer-portal/use-customer-portal'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { OPEN_CART_EVENT } from '@/components/customer-portal/cart-utils'
+import { PORTAL_CATALOG_SCROLL_KEY } from '@/components/customer-portal/cart-utils'
 
 const PRIMARY = '#356b2f'
 const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
@@ -24,6 +25,7 @@ export default function CustomerProductsPage() {
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const PAYMENT_LABELS = isEn ? PAYMENT_LABELS_EN : PAYMENT_LABELS_ZH
+  const router = useRouter()
   const TAB_LABELS: Record<Tab, string> = {
     recent: isEn ? 'Recent Orders' : '最近订单',
     frequent: isEn ? 'Frequently Ordered' : '常购单品',
@@ -32,23 +34,21 @@ export default function CustomerProductsPage() {
 
   const [tab, setTab] = useState<Tab>('recent')
   const [quickOrderOpen, setQuickOrderOpen] = useState(false)
-  const cartSectionRef = useRef<HTMLDivElement>(null)
   const p = useCustomerPortal(isEn, `${prefix}/customer-portal/orders`)
 
   useEffect(() => {
-    const openCart = () => p.setShowCart(true)
-    window.addEventListener(OPEN_CART_EVENT, openCart)
-    if (new URLSearchParams(window.location.search).get('openCart') === '1') {
-      p.setShowCart(true)
-      window.history.replaceState(null, '', window.location.pathname)
+    const savedPosition = sessionStorage.getItem(PORTAL_CATALOG_SCROLL_KEY)
+    if (savedPosition != null) {
+      sessionStorage.removeItem(PORTAL_CATALOG_SCROLL_KEY)
+      requestAnimationFrame(() => window.scrollTo({ top: Number(savedPosition) || 0, behavior: 'instant' }))
     }
-    return () => window.removeEventListener(OPEN_CART_EVENT, openCart)
-  }, [p.setShowCart])
+  }, [])
 
-  useEffect(() => {
-    if (!p.showCart) return
-    requestAnimationFrame(() => cartSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }, [p.showCart])
+  function viewCart() {
+    sessionStorage.setItem(PORTAL_CATALOG_SCROLL_KEY, String(window.scrollY))
+    p.setCartPreviewOpen(false)
+    router.push(`${prefix}/customer-portal/cart`)
+  }
 
   return (
     <div className="space-y-4">
@@ -100,17 +100,6 @@ export default function CustomerProductsPage() {
             </div>}
           </div>
 
-          {p.showCart && (
-            <div ref={cartSectionRef} id="customer-portal-cart" className="scroll-mt-16">
-            <CartPanel
-              cart={p.cart} cartTotal={p.cartTotal} cartTax={p.cartTax} setQty={p.setQty} removeFromCart={p.removeFromCart}
-              deliveryDate={p.deliveryDate} setDeliveryDate={p.setDeliveryDate} minDate={p.minDate} capacityWarning={p.capacityWarning}
-              paymentMethod={p.paymentMethod} setPaymentMethod={p.setPaymentMethod} note={p.note} setNote={p.setNote}
-              submitting={p.submitting} placeOrder={p.placeOrder} isEn={isEn}
-            />
-            </div>
-          )}
-
         <div className="min-w-0">
           {p.gridLoading ? (
             <div className="text-center py-20 text-gray-400">{isEn ? 'Loading products...' : '加载商品中...'}</div>
@@ -124,6 +113,17 @@ export default function CustomerProductsPage() {
         </div>
         </div>
       </div>
+      <CartPreviewDrawer
+        open={p.cartPreviewOpen}
+        onOpenChange={p.setCartPreviewOpen}
+        cart={p.cart}
+        cartTotal={p.cartTotal}
+        cartTax={p.cartTax}
+        setQty={p.setQty}
+        removeFromCart={p.removeFromCart}
+        isEn={isEn}
+        onViewCart={viewCart}
+      />
     </div>
   )
 }

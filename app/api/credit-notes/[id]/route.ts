@@ -98,14 +98,7 @@ export async function PUT(
       }
 
       if (data.creditDate !== undefined) {
-        if (String(existing.status) !== 'DRAFT') {
-          return NextResponse.json({ error: '仅草稿贷记单可以修改日期' }, { status: 400 })
-        }
-        const creditDate = new Date(String(data.creditDate))
-        if (!Number.isFinite(creditDate.getTime())) {
-          return NextResponse.json({ error: '贷记单日期无效' }, { status: 400 })
-        }
-        updateData.creditDate = creditDate
+        return NextResponse.json({ error: '贷记单日期固定为申请创建时间，不可修改' }, { status: 400 })
       }
 
       // 仅 DRAFT 状态允许修改行项

@@ -21,6 +21,7 @@ import { INVOICE_FACET_DEFS, fieldsOf } from '@/lib/facets/client-defs'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { formatDateOnly } from '@/lib/format-date'
 
 const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   draft: '草稿',
@@ -171,7 +172,7 @@ function InvoiceRow({ inv, locale, isEn, onClick, selected, onSelect }: {
         {PAYMENT_LABELS[inv.paymentTerms]}
       </td>
       <td className="px-4 py-3 text-center text-xs text-gray-400">
-        {new Date(inv.createdAt).toLocaleDateString('en-GB')}
+        {formatDateOnly(inv.invoiceDate ?? inv.createdAt)}
       </td>
       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
         <button
@@ -204,7 +205,7 @@ export default function ClassicInvoicesPage() {
   const [generating, setGenerating] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
-  const [sortKey, setSortKey] = useState('createdAt')
+  const [sortKey, setSortKey] = useState('invoiceDate')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [statusFilter, setStatusFilter] = useState<Invoice['status'] | ''>('')
   const [groupBy, setGroupBy] = useState('')
@@ -320,7 +321,7 @@ export default function ClassicInvoicesPage() {
     setSearchInput('')
     setStatusFilter('')
     setGroupBy('')
-    setSortKey('createdAt')
+    setSortKey('invoiceDate')
     setSortDir('desc')
     setInvoiceDateFrom('')
     setInvoiceDateTo('')
@@ -349,8 +350,8 @@ export default function ClassicInvoicesPage() {
       }
       const loadPage = async (pageNumber: number) => {
         const params = new URLSearchParams({ page: String(pageNumber), pageSize: '200' })
-        if (from) params.set('createdFrom', from)
-        if (to) params.set('createdTo', to)
+        if (from) params.set('invoiceDateFrom', from)
+        if (to) params.set('invoiceDateTo', to)
         return apiGet<{ data: Record<string, unknown>[]; total: number }>(`/api/invoices?${params}`)
       }
       const first = await loadPage(1)
@@ -379,8 +380,8 @@ export default function ClassicInvoicesPage() {
     if (saleOrderTerms.length === 0) { setSoResults(null); return }
     let cancelled = false
     const params = new URLSearchParams({ page: '1', pageSize: '200', saleOrder: saleOrderTerms.join(',') })
-    if (appliedInvoiceDateRange?.from) params.set('createdFrom', appliedInvoiceDateRange.from)
-    if (appliedInvoiceDateRange?.to) params.set('createdTo', appliedInvoiceDateRange.to)
+    if (appliedInvoiceDateRange?.from) params.set('invoiceDateFrom', appliedInvoiceDateRange.from)
+    if (appliedInvoiceDateRange?.to) params.set('invoiceDateTo', appliedInvoiceDateRange.to)
     apiGet<{ data: Record<string, unknown>[] }>(
       `/api/invoices?${params}`,
     )
@@ -576,7 +577,7 @@ export default function ClassicInvoicesPage() {
                 <SortTh sk="totalIncTax" cur={sortKey} dir={sortDir} label={isEn ? 'Total (incl. tax)' : '含税总额'} align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
                 <SortTh sk="amountDue" cur={sortKey} dir={sortDir} label={isEn ? 'Amount Due' : '待收款'} align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Payment Terms' : '结款方式'}</th>
-                <SortTh sk="createdAt" cur={sortKey} dir={sortDir} label={isEn ? 'Created At' : '创建时间'} align="center" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <SortTh sk="invoiceDate" cur={sortKey} dir={sortDir} label={isEn ? 'Invoice Date' : '发票日期'} align="center" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Actions' : '操作'}</th>
               </tr>
             </thead>
