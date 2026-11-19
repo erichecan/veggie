@@ -1,0 +1,33 @@
+name: Repair archive backup read access
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/repair-backup-access.yml']
+permissions:
+  contents: read
+concurrency:
+  group: production-backup-check
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Grant read access on the identified archive and verify backup
+        env:
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          HOST_KEY: ${{ secrets.DROPLET_HOST_KEY }}
+          DEPLOY_HOST: ${{ vars.DROPLET_HOST }}
+          DEPLOY_PORT: ${{ vars.DROPLET_PORT }}
+          DEPLOY_USER: ${{ vars.DROPLET_USER }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          scp -P "$DEPLOY_PORT" scripts/ops/verify-production-backup.sh "$DEPLOY_USER@$DEPLOY_HOST:/opt/veggie/check-backup.sh"
+          scp -P "$DEPLOY_PORT" scripts/ops/fix-pricelist-backup-read.sql "$DEPLOY_USER@$DEPLOY_HOST:/opt/veggie/fix-pricelist-backup-read.sql"
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'sudo -n -u postgres psql --dbname=veggie --file=/opt/veggie/fix-pricelist-backup-read.sql && bash /opt/veggie/check-backup.sh'
