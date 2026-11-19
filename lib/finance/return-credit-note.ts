@@ -1,3 +1,4 @@
+import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
 import { Prisma } from '@/lib/generated/prisma/client'
 import { round2, toNum } from '@/lib/decimal-helpers'
 import { nextSequenceName } from '@/lib/sequence-number'
@@ -28,13 +29,6 @@ export async function creditForInvoicedReturn(
   tx: Prisma.TransactionClient,
   input: { sourceReturnId: string; orderId: string; orderLineId: string; quantity: number; returnedAt: Date },
 ) {
-  const order = await tx.order.findUnique({ where: { id: input.orderId }, select: { deliveryDate: true } })
-  const deliveryDay = order?.deliveryDate?.toISOString().slice(0, 10)
-  const returnDay = input.returnedAt.toISOString().slice(0, 10)
-  // Returns reported on the delivery date belong in Delivery Qty / Invoice Qty,
-  // even if a draft or posted invoice happens to exist already.
-  if (deliveryDay && deliveryDay === returnDay) return null
-
   const invoices = await tx.invoice.findMany({
     where: { saleOrderIds: { has: input.orderId }, status: { in: ['POSTED', 'PAID'] } },
     select: { id: true, lines: true },
@@ -133,6 +127,7 @@ export async function reduceDraftInvoiceForReturn(
     results.push(await tx.invoice.update({ where: { id: invoice.id }, data: {
       lines: updated as never, subtotalExTax, totalTax, totalIncTax,
     }, select: { id: true } }))
+    await recomputeInvoiceBalance(tx, invoice.id)
   }
   return results
 }

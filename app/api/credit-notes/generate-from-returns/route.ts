@@ -79,7 +79,7 @@ export async function POST(req: Request) {
       })
       const requestedOrderReturnIds = orderReturnIds.map(id => `ORDER_RETURN:${id}`)
       const tripOrderReturns = trips.length > 0 ? await prisma.orderReturn.findMany({
-        where: { sourceTripId: { in: trips.map(trip => trip.id) }, status: 'APPROVED' },
+        where: { sourceTripId: { in: trips.map(trip => trip.id) }, status: 'APPROVED', workflowVersion: 1 },
         select: { id: true },
       }) : []
       const sourceIdsToCheck = [...legacyTripReturns, ...requestedOrderReturnIds, ...tripOrderReturns.map(row => `ORDER_RETURN:${row.id}`)]
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
 
         // New driver returns use the same OrderReturn ledger as manual entries.
         const canonicalReturns = await prisma.orderReturn.findMany({
-          where: { sourceTripId: trip.id, status: 'APPROVED' },
+          where: { sourceTripId: trip.id, status: 'APPROVED', workflowVersion: 1 },
           include: { order: { select: { restaurantId: true, restaurantName: true, code: true } } },
         })
         for (const ret of canonicalReturns) {
@@ -162,7 +162,7 @@ export async function POST(req: Request) {
       // 批量查（而非逐条 findFirst），同批 Trip 路径早就是这么做的。
       if (orderReturnIds.length > 0) {
         const orderReturns = await prisma.orderReturn.findMany({
-          where: { id: { in: orderReturnIds, notIn: settledOrderReturnIds }, status: 'APPROVED' },
+          where: { id: { in: orderReturnIds, notIn: settledOrderReturnIds }, status: 'APPROVED', workflowVersion: 1 },
           include: { order: { select: { restaurantId: true, restaurantName: true } } },
         })
         const uncreditedOrderReturns = orderReturns.filter(ret => !existingSourceIds.has(`ORDER_RETURN:${ret.id}`))
@@ -243,7 +243,7 @@ export async function POST(req: Request) {
         // 防止与另一个并发请求结算同一条 OrderReturn 产生两张 CreditNote（TOCTOU）。
         if (settledOrderReturnIds.length > 0) {
           const settleResult = await tx.orderReturn.updateMany({
-            where: { id: { in: settledOrderReturnIds }, status: 'APPROVED' },
+            where: { id: { in: settledOrderReturnIds }, status: 'APPROVED', workflowVersion: 1 },
             data: { status: 'SETTLED', settledAt: today },
           })
           if (settleResult.count !== settledOrderReturnIds.length) {

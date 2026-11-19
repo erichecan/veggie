@@ -1,0 +1,38 @@
+{
+  "database": "127.0.0.1:55449/return_workflow_audit",
+  "result": "passed",
+  "checks": [
+    "un-invoiced return: all stages, invoice block, no pre-Finance effects, atomic quantity/stock/invoice, repeat confirmation blocked",
+    "partial approval: physical receipt 2 vs credit 1; scrap net-zero stock; Finance rejection/resubmission; draft recalculated; physical quantity cannot be returned twice",
+    "missing accounts: CN creation rolled back with status, stock and delivery quantity unchanged",
+    "posted invoice on delivery day: exactly one confirmed CN + balanced journal, original invoice immutable; concurrent confirmation executes once",
+    "paid invoice: confirmed credit retained for subsequent refund/allocation",
+    "warehouse rejection: reason required, no stock/credit effects, invoice block released",
+    "sales rejection: reason required, no stock/credit effects, invoice block released",
+    "driver historical return: own trip/current customer + exact original order line; retains historical kind and collecting vehicle",
+    "unknown historical goods: intake without order number, warehouse matches exact source, no premature stock/CN, repeated matching blocked",
+    "injected failure after stock/quantity updates: all stock, quantity, invoice and request changes rolled back; retry succeeds",
+    "return registration versus invoice creation: common order lock makes invoicing see the committed pending return",
+    "wrong item received: original order credit uses original units; physical stock uses actual product and explicitly verified base-unit quantity",
+    "dispatch vehicle: plate normalized and captured with driver on the trip; dispatched plate cannot be overwritten",
+    "role separation: warehouse cannot confirm finance requests; driver can read own return sources, not another driver trip or approve returns"
+  ],
+  "baseline": "a2628b04",
+  "migration": "20261119000000_return_finance_confirmation",
+  "migrationAppliedToMainBaselineSchema": true,
+  "typecheck": "passed",
+  "focusedRegression": {
+    "passed": 11,
+    "failed": 0
+  },
+  "productionDatabaseAccessed": false,
+  "fullRegression": {
+    "passed": 1030,
+    "skipped": 11,
+    "failed": 0
+  },
+  "deploymentPreparationRegression": {
+    "passed": 10,
+    "failed": 0
+  }
+}

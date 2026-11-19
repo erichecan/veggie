@@ -15,7 +15,10 @@ export async function GET(req: Request) {
       const rows = await prisma.creditNoteRequest.findMany({
         orderBy: { createdAt: 'desc' }, take: 500,
       })
-      return NextResponse.json(serializeApi(rows))
+      const returnIds = rows.map(row => row.sourceReturnId?.startsWith('ORDER_RETURN:') ? row.sourceReturnId.slice('ORDER_RETURN:'.length) : '').filter(Boolean)
+      const evidence = returnIds.length ? await prisma.orderReturn.findMany({ where: { id: { in: returnIds } }, select: { id: true, quantity: true, approvedQuantity: true, warehouseAcceptedQuantity: true, warehouseNote: true, salesNote: true, disposition: true, photo: true, returnKind: true, sourceTrip: { select: { driverName: true, vehiclePlate: true } } } }) : []
+      const evidenceById = new Map(evidence.map(row => [row.id, row]))
+      return NextResponse.json(serializeApi(rows.map(row => ({ ...row, returnEvidence: row.sourceReturnId ? evidenceById.get(row.sourceReturnId.slice('ORDER_RETURN:'.length)) ?? null : null }))))
     } catch (error) {
       console.error('[GET /api/credit-note-requests]', error)
       return NextResponse.json({ error: '获取贷记申请失败' }, { status: 500 })

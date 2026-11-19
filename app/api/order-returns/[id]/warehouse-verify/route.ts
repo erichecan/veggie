@@ -1,3 +1,4 @@
+import { maybeInvoiceAfterReturn, lockReturnOrders } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -24,7 +25,7 @@ export async function PUT(
     try {
       const { id } = await params
       const body = await req.json()
-      const { action, note, acceptedQuantity, actualReturnedProductId, actualReturnedProductName } = body as { action?: 'verify' | 'reject'; note?: string; acceptedQuantity?: number; actualReturnedProductId?: string; actualReturnedProductName?: string }
+      const { action, note, acceptedQuantity, actualReturnedProductId, actualReturnedProductName, disposition, scrapReason, actualReturnedStockQuantity } = body as { action?: 'verify' | 'reject'; note?: string; acceptedQuantity?: number; actualReturnedProductId?: string; actualReturnedProductName?: string; disposition?: 'SELLABLE' | 'SCRAP'; scrapReason?: string; actualReturnedStockQuantity?: number }
 
       if (action !== 'verify' && action !== 'reject') {
         return NextResponse.json({ error: '缺少必填字段: action(verify|reject)' }, { status: 400 })
@@ -46,12 +47,13 @@ export async function PUT(
           { status: 409 },
         )
       }
+      if (action === 'verify' && (!note?.trim() || !['SELLABLE', 'SCRAP'].includes(String(disposition)))) return NextResponse.json({ error: '核实通过须描述质量，并选择可再售或报废' }, { status: 400 })
       let confirmedQuantity: number | undefined
       let actualProduct: { id: string; name: string } | null = null
       const actualName = String(actualReturnedProductName ?? ret.actualReturnedProductName ?? '').trim()
       if (action === 'verify') {
         confirmedQuantity = acceptedQuantity == null ? toNum(ret.quantity) : Number(acceptedQuantity)
-        if (!Number.isFinite(confirmedQuantity) || confirmedQuantity <= 0 || confirmedQuantity > toNum(ret.quantity)) {
+        if (!Number.isFinite(confirmedQuantity) || confirmedQuantity <= 0 || confirmedQuantity > toNum(ret.quantity) || Math.abs(confirmedQuantity * 1000 - Math.round(confirmedQuantity * 1000)) > 0.00001) {
           return NextResponse.json({ error: `仓库确认数量须大于 0 且不超过登记数量 ${ret.quantity}` }, { status: 400 })
         }
         if (actualReturnedProductId) {
@@ -62,7 +64,10 @@ export async function PUT(
         }
       }
 
+      const returnedProductId = actualProduct?.id ?? ret.actualReturnedProductId ?? ret.productId
+      if (action === 'verify' && returnedProductId !== ret.productId && (!(Number(actualReturnedStockQuantity) > 0) || !Number.isFinite(Number(actualReturnedStockQuantity)))) return NextResponse.json({ error: '实际退回商品不同时，须填写实际商品的基础库存单位数量' }, { status: 400 })
       const updated = await prisma.$transaction(async (tx) => {
+        await lockReturnOrders(tx, [ret.orderId])
         // updateMany + 状态锁定 where，防止两个并发核实请求都越过上面的前置检查、都执行一遍副作用
         // （原来这里连事务都没有，是本次 code-review 补的）
         const { count } = await tx.orderReturn.updateMany({
@@ -75,6 +80,8 @@ export async function PUT(
             warehouseNote: note?.trim() || undefined,
             ...(action === 'verify' ? {
               warehouseAcceptedQuantity: confirmedQuantity,
+              disposition, scrapReason: disposition === 'SCRAP' ? scrapReason || 'CUSTOMER_RETURN_DAMAGED' : null,
+              actualReturnedStockQuantity: returnedProductId !== ret.productId ? Number(actualReturnedStockQuantity) : null,
               actualReturnedProductId: actualProduct?.id ?? ret.actualReturnedProductId,
               actualReturnedProductName: actualProduct?.name ?? (actualName || ret.productName),
             } : {}),
@@ -100,8 +107,9 @@ export async function PUT(
           })
         }
 
+        if (action === 'reject') await maybeInvoiceAfterReturn(tx, ret.orderId)
         return tx.orderReturn.findUnique({ where: { id } })
-      })
+      }, { timeout: 60000, maxWait: 10000 })
 
       if (!updated) {
         return NextResponse.json(

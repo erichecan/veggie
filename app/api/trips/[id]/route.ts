@@ -65,7 +65,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   return withAuth(req, async (user) => {
   try {
     const { id } = await params
-    const trip = await prisma.trip.findUnique({ where: { id } })
+    const trip = await prisma.trip.findUnique({ where: { id }, include: { returnIntakes: { select: { id: true, customerName: true, productName: true, spec: true, uomLabel: true, quantity: true, status: true } } } })
     if (!trip) return NextResponse.json({ error: '行程不存在' }, { status: 404 })
     const scope = driverRowScope(user)
     if (scope && trip.driverId !== scope.userId) {
@@ -83,12 +83,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const orderCodeById = new Map((orders as Array<{ id: string; code: string | null }>).map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
     const canonicalReturns = await prisma.orderReturn.findMany({
       where: { sourceTripId: id },
+      include: { order: { select: { restaurantId: true } } },
       orderBy: { createdAt: 'asc' },
     })
     const canonicalByOrder = new Map<string, Array<Record<string, unknown>>>()
     for (const ret of canonicalReturns) {
-      const rows = canonicalByOrder.get(ret.orderId) ?? []
+      const customerKey = ret.order.restaurantId
+      const rows = canonicalByOrder.get(customerKey) ?? []
       rows.push({
+        returnKind: ret.returnKind, approvedQuantity: ret.approvedQuantity == null ? undefined : Number(ret.approvedQuantity),
         id: ret.id,
         orderId: ret.orderId,
         orderLineId: ret.orderLineId,
@@ -116,7 +119,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         approvedAt: ret.approvedAt,
         settledAt: ret.settledAt,
       })
-      canonicalByOrder.set(ret.orderId, rows)
+      canonicalByOrder.set(customerKey, rows)
     }
     const tripWithOrderCodes = {
       ...trip,
@@ -126,7 +129,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
         returns: [
           ...(Array.isArray(restaurant.returns) ? restaurant.returns : []),
-          ...(restaurant.orderIds ?? []).flatMap(orderId => canonicalByOrder.get(orderId) ?? []),
+          ...(canonicalByOrder.get(String(restaurant.restaurantId)) ?? []),
         ],
       })),
     }

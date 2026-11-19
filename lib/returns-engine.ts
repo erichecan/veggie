@@ -152,7 +152,7 @@ export async function applyReturnOrderLineReduction(
     })
     if (line) {
       const current = toNum(line.deliveredQty)
-      const newQty = round2(Math.max(0, current - upd.reduceQty))
+      const newQty = Math.round(Math.max(0, current - upd.reduceQty) * 1000) / 1000
       await tx.orderLine.update({
         where: { id: line.id },
         data: { deliveredQty: newQty },

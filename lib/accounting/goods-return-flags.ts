@@ -8,13 +8,11 @@ export interface GoodsReturnFlag {
   quantity: number
 }
 
-/**
- * 核销清单的退换货异常徽章（20261028 M6）。
- * OrderReturn（手工登记路径）按 orderId 精确查，覆盖包括 WAREHOUSE_PENDING/PENDING_REVIEW
- * 的全部状态；Trip 路径（司机报备）的退换货活在 Trip.restaurants[].returns[] JSON 里没有
- * orderId 索引，只能退回到 Order.goodsReturnStatus/goodsReturnedAt 这两个"终态角标"字段兜底。
- * 已知局限：Trip 路径的退换货如果还停在待核实/待审核，这里看不到——不做全表扫 Trip 的复杂方案。
+/** Canonical returns include driver and warehouse reports. Unresolved stages take priority
+ * over newer terminal records so receipt reconciliation does not hide a blocked invoice.
+ * Old JSON-only records can only fall back to the order's historical terminal badge.
  */
+
 export async function getGoodsReturnFlags(orderIds: string[]): Promise<Map<string, GoodsReturnFlag>> {
   const flags = new Map<string, GoodsReturnFlag>()
   if (orderIds.length === 0) return flags
@@ -24,6 +22,9 @@ export async function getGoodsReturnFlags(orderIds: string[]): Promise<Map<strin
     select: { orderId: true, status: true, productName: true, quantity: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
+  // Prioritize unresolved entries; a newer rejection must not hide another pending return.
+  const priority: Record<string, number> = { WAREHOUSE_PENDING: 0, PENDING_REVIEW: 1, APPROVED: 2, REJECTED: 3, SETTLED: 4 }
+  orderReturns.sort((a, b) => priority[a.status] - priority[b.status])
   const covered = new Set<string>()
   for (const r of orderReturns) {
     if (covered.has(r.orderId)) continue // 同订单多条记录取最新一条（createdAt desc 已排好序）

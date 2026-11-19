@@ -1,4 +1,6 @@
 'use client'
+import UnmatchedReturnIntakes from '@/components/warehouse/UnmatchedReturnIntakes'
+import ReturnRegistration from '../../daily-sales/_components/ReturnRegistration'
 import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -28,6 +30,7 @@ export default function VehicleInspectionBoard() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
 
+  const [vehicleQuery, setVehicleQuery] = useState('')
   const [dialog, setDialog] = useState<DialogState>(null)
 
   const ability = useAbility()
@@ -61,6 +64,7 @@ export default function VehicleInspectionBoard() {
           <span className="text-gray-700 truncate mr-2">{row.productName}</span>
           <span className="text-orange-700 font-semibold flex-shrink-0">×{row.quantity}</span>
         </div>
+        {row.orderReturnRow?.sourceTrip && <div className="text-xs text-blue-700">{row.orderReturnRow.sourceTrip.driverName || '—'} · {row.orderReturnRow.sourceTrip.vehiclePlate || (isEn ? 'No plate recorded' : '未记录车牌')} · {new Date(row.orderReturnRow.sourceTrip.createdAt).toLocaleDateString('en-GB')}</div>}
         {row.reason && <div className="text-xs text-gray-400 truncate">{isEn ? 'Reason: ' : '原因：'}{row.reason}</div>}
         <div className="text-[11px] text-gray-400">{new Date(row.createdAt).toLocaleDateString('en-GB')}</div>
       </button>
@@ -69,6 +73,9 @@ export default function VehicleInspectionBoard() {
 
   return (
     <div>
+      <UnmatchedReturnIntakes isEn={isEn} canVerify={canVerify} onSaved={load} />
+      {canVerify && <details className="mb-3 rounded border bg-white p-3"><summary className="cursor-pointer font-semibold text-sm">{isEn ? 'Register unreported returned goods' : '仓库发起退货（司机漏报）'}</summary><ReturnRegistration refreshKey={0} /></details>}
+      <div className="mb-3 rounded border bg-white p-3"><h3 className="mb-2 text-sm font-semibold">{isEn ? 'Vehicle / driver trip history (including trips without reported returns)' : '车辆 / 司机配送记录（包含未申报退货的行程）'}</h3><input aria-label={isEn ? 'Find vehicle or driver' : '查找车牌或司机'} value={vehicleQuery} onChange={e => setVehicleQuery(e.target.value)} placeholder={isEn ? 'Vehicle plate / driver…' : '输入车牌 / 司机…'} className="mb-2 rounded border p-2 text-sm" /><div className="max-h-48 overflow-y-auto text-xs space-y-1">{[...trips].filter(trip => !vehicleQuery.trim() || `${trip.vehiclePlate ?? ''} ${trip.driverName ?? ''} ${trip.name ?? ''}`.toLowerCase().includes(vehicleQuery.trim().toLowerCase())).sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0,100).map(trip => <div key={trip.id} className="flex flex-wrap gap-3 border-b py-1"><b>{trip.vehiclePlate || '—'}</b><span>{trip.driverName || '—'}</span><span>{trip.name}</span><span>{new Date(trip.createdAt).toLocaleDateString('en-GB')}</span><span>{trip.restaurants.reduce((sum, stop) => sum + (stop.returns?.length ?? 0), 0)} {isEn ? 'legacy reports' : '旧退货记录'} / {orderReturns.filter(row => row.sourceTripId === trip.id).length} {isEn ? 'return reports' : '退货申报'}</span><div className="w-full text-gray-600">{orderReturns.filter(row => row.sourceTripId === trip.id).map(row => `${row.productName} × ${row.quantity} (${row.status})`).join(' · ')}</div></div>)}</div></div>
       {loading && trips.length === 0 && orderReturns.length === 0 ? (
         <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (

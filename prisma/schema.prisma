@@ -1062,6 +1062,8 @@ model DeliverySlip {
 }
 
 model PickingWave {
+  vehiclePlate     String?
+
   id               String     @id @default(cuid())
   name             String?
   orderIds         String[]
@@ -1122,6 +1124,9 @@ model Pallet {
 }
 
 model Trip {
+  returnIntakes ReturnIntake[]
+  vehiclePlate     String?
+
   id               String     @id @default(cuid())
   /// 关联拣货波次（手动创建的行程可为空）
   waveId           String?
@@ -1175,6 +1180,13 @@ enum GoodsReturnDisposition {
 /// 司机端和手动登记共用的退货账本。每条新记录精确关联原订单行；sourceTripId 仅记录
 /// 司机上报来源，Trip.restaurants[].returns 只保留历史兼容数据，不再写入新记录。
 model OrderReturn {
+  /// v1 records already moved stock at sales approval; never replay them at Finance.
+  workflowVersion         Int                      @default(1)
+  returnKind              String                   @default("CURRENT")
+  actualReturnedStockQuantity Decimal?             @db.Decimal(14, 3)
+  approvedQuantity        Decimal?                 @db.Decimal(12, 3)
+  scrapReason             String?
+
   id                      String                   @id @default(cuid())
   orderId                 String
   order                   Order                    @relation(fields: [orderId], references: [id])
@@ -2443,4 +2455,29 @@ model StockLocation {
 
   movesFrom StockMove[] @relation("StockMoveFrom")
   movesTo   StockMove[] @relation("StockMoveTo")
+}
+
+/// Historical goods reported without an identifiable source invoice/order line.
+/// Physical quarantine intake only: never a credit or saleable-stock posting.
+model ReturnIntake {
+  id String @id @default(cuid())
+  sourceTripId String
+  sourceTrip Trip @relation(fields: [sourceTripId], references: [id])
+  customerId String
+  customerName String
+  productName String
+  spec String
+  uomLabel String
+  quantity Decimal @db.Decimal(12,3)
+  photo String?
+  reason String?
+  status String @default("OPEN")
+  orderReturnId String? @unique
+  reportedById String
+  reviewedById String?
+  reviewNote String?
+  createdAt DateTime @default(now())
+  reviewedAt DateTime?
+  @@index([status, createdAt])
+  @@index([sourceTripId])
 }

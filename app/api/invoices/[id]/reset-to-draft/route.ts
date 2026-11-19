@@ -1,3 +1,4 @@
+import { lockReturnOrders, assertReturnsResolved } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -10,6 +11,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     try {
       const { id } = await params
       const result = await prisma.$transaction(async tx => {
+        const source = await tx.invoice.findUnique({ where: { id }, select: { saleOrderIds: true } })
+        await lockReturnOrders(tx, source?.saleOrderIds ?? [])
+        await assertReturnsResolved(tx, source?.saleOrderIds ?? [])
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
         const invoice = await tx.invoice.findUnique({ where: { id }, include: { supersededBy: { select: { id: true } } } })
         if (!invoice) throw Object.assign(new Error('发票不存在'), { status: 404 })
@@ -22,6 +26,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (paymentCount || allocationCount || Number(invoice.writeOffAmount) > 0) {
           throw Object.assign(new Error('已有收款、贷记单抵扣或抹零的发票不能退回草稿；请先按财务冲正流程处理'), { status: 409 })
         }
+        const returnCredit = await tx.creditNote.findFirst({ where: { sourceInvoiceId: id, status: { not: 'CANCELLED' }, lines: { some: { sourceReturnId: { not: null } } } }, select: { id: true } })
+        if (returnCredit) throw Object.assign(new Error('该发票已有退货贷记单，不能退回草稿以免重复扣减'), { status: 409 })
         const entries = await tx.journalEntry.findMany({
           where: { sourceType: 'invoice', sourceId: id, status: 'POSTED' },
           include: { lines: { include: { account: { select: { code: true } } } } },

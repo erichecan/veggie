@@ -39,7 +39,7 @@ export const TRIP_STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
   PENDING_REVIEW: '待审核',
   APPROVED: '已批准',
   REJECTED: '已拒绝',
-  SETTLED: '已结算',
+  SETTLED: '会计已确认',
 }
 
 export const TRIP_STATUS_LABELS_EN: Record<ReturnStatus, string> = {

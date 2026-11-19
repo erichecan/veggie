@@ -18,6 +18,7 @@ export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
+      if (searchParams.get('intakes') === '1') return NextResponse.json(serializeApi(await prisma.returnIntake.findMany({ where: { status: 'OPEN' }, include: { sourceTrip: { select: { driverName: true, vehiclePlate: true } } }, orderBy: { createdAt: 'asc' }, take: 300 })))
       const status = searchParams.get('status')
       const orderId = searchParams.get('orderId')
 
@@ -37,6 +38,7 @@ export async function GET(req: Request) {
           orderBy: { createdAt: 'desc' },
           take: RETURNS_LIST_CAP,
           include: {
+            sourceTrip: { select: { id: true, driverName: true, vehiclePlate: true, createdAt: true } },
             order: { select: { code: true, restaurantId: true, restaurantName: true } },
           },
         }),
@@ -56,7 +58,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/order-returns]', error)
       return NextResponse.json({ error: '获取退货列表失败' }, { status: 500 })
     }
-  }, { require: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review'] })
+  }, { require: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review', 'dispatch.goods_return.register'] })
 }
 
 /**
@@ -118,5 +120,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/order-returns]', error)
       return NextResponse.json({ error: '登记退货失败' }, { status: 500 })
     }
-  }, { require: 'dispatch.goods_return.register' })
+  }, { require: ['dispatch.goods_return.register', 'dispatch.goods_return.warehouse_verify'] })
 }

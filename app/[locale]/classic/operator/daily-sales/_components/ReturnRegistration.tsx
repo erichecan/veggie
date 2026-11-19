@@ -75,7 +75,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
     setRegisteredReturns([])
     try {
       const result = await apiGet<{ returns: RegisteredReturn[] }>(`/api/order-returns?orderId=${encodeURIComponent(o.id)}`)
-      setRegisteredReturns(result.returns.filter(row => row.status === 'WAREHOUSE_PENDING' || row.status === 'PENDING_REVIEW'))
+      setRegisteredReturns(result.returns.filter(row => row.status === 'WAREHOUSE_PENDING' || row.status === 'PENDING_REVIEW' || row.status === 'APPROVED'))
     } catch (err) {
       setSelected(null)
       toast.error(err instanceof Error ? err.message : (isEn ? 'Could not load registered returns' : '读取已有退货登记失败'))

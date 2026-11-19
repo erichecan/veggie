@@ -1,3 +1,4 @@
+import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -29,13 +30,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
 
       const result = await p.$transaction(async (tx: typeof p) => {
-        const entry = await postInvoiceToJournal(tx, inv, user.userId)
+        await lockReturnOrders(tx, inv.saleOrderIds ?? [])
+        await assertReturnsResolved(tx, inv.saleOrderIds ?? [])
+        await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
+        const current = await tx.invoice.findUnique({ where: { id } })
+        if (current?.status !== 'DRAFT') throw Object.assign(new Error('发票已处理，请刷新'), { status: 409 })
+        const entry = await postInvoiceToJournal(tx, current, user.userId)
         const updated = await tx.invoice.update({
           where: { id },
           data: { status: 'POSTED', postedAt: new Date().toISOString() },
         })
         // 回写 OrderLine.invoicedQty=deliveredQty(B-2: 优先按发票行 orderLineId 精确到行,回退整单)
-        await writebackInvoicedQty(tx, inv.lines, Array.isArray(inv.saleOrderIds) ? inv.saleOrderIds : [])
+        await writebackInvoicedQty(tx, current.lines, Array.isArray(inv.saleOrderIds) ? inv.saleOrderIds : [])
         return { invoice: updated, entry }
       })
 
@@ -52,6 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         warning: result.entry ? undefined : '标准会计科目未配置，凭证未生成。请先跑 npm run db:seed 或手动配置 Account 表。',
       }))
     } catch (error) {
+      if ((error as { status?: number }).status) return NextResponse.json({ error: (error as Error).message }, { status: (error as { status: number }).status })
       console.error('[POST /api/invoices/:id/post]', error)
       return NextResponse.json({ error: '发票过账失败' }, { status: 500 })
     }

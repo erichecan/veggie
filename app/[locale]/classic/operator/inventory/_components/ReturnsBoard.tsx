@@ -105,7 +105,7 @@ export default function ReturnsBoard() {
   ].sort(byDateDesc)
 
   const DONE_STATUSES: ReturnStatus[] = ['APPROVED', 'REJECTED', 'SETTLED']
-  const done: CardRow[] = [
+  const processed: CardRow[] = [
     ...allTripRows.filter(r => DONE_STATUSES.includes(r.status)).map(r => ({
       key: r.id,
       source: 'trip' as const,
@@ -134,6 +134,9 @@ export default function ReturnsBoard() {
     })),
   ].sort(byDateDesc)
 
+  const financePending = processed.filter(row => row.status === 'APPROVED' && row.orderReturnRow?.workflowVersion === 2)
+  const done = processed.filter(row => !financePending.includes(row))
+
   // 退换货补全 M4：消息广场自动发帖的 linkUrl 带 ?highlight=<id>&source=，跳转过来直接
   // 弹出对应记录，不用用户自己在三栏里找。只在第一次成功匹配时打开一次，避免数据刷新
   // （useRefetchOnFocus）时反复弹窗。
@@ -142,7 +145,7 @@ export default function ReturnsBoard() {
     const highlight = searchParams.get('highlight')
     const source = searchParams.get('source')
     if (!highlight || !source) return
-    const match = [...warehousePending, ...pendingReview, ...done].find(r => {
+    const match = [...warehousePending, ...pendingReview, ...financePending, ...done].find(r => {
       if (source === 'order_return') return r.source === 'order_return' && r.orderReturnRow?.id === highlight
       // tripRow 是 FlatReturn：.id 是 `${tripId}-${ri}-${ei}` 合成行 key，不是真实
       // ReturnItem.id（真实 id 存在 .returnId，跟 bulletin linkUrl 里带的 highlight 同源，
@@ -156,7 +159,8 @@ export default function ReturnsBoard() {
       openCard(match)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, warehousePending, pendingReview, done])
+  }, [loading, warehousePending, pendingReview, financePending, done])
+
 
   function openCard(card: CardRow) {
     if (card.source === 'trip') {
@@ -216,6 +220,9 @@ export default function ReturnsBoard() {
       emptyText: isEn ? 'Nothing pending review' : '暂无待审核记录',
     },
     {
+      key: 'finance_pending', title: isEn ? `Pending Finance (${financePending.length})` : `待会计确认 (${financePending.length})`, rows: financePending, emptyText: isEn ? 'Nothing pending Finance' : '暂无待会计确认记录',
+    },
+    {
       key: 'done',
       title: isEn ? `Processed (${done.length})` : `已处理 (${done.length})`,
       rows: done,
@@ -228,7 +235,7 @@ export default function ReturnsBoard() {
       {loading && trips.length === 0 && orderReturns.length === 0 ? (
         <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {columns.map(col => (
             <div key={col.key} className="space-y-2">
               <div className="flex items-center justify-between px-1">

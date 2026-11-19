@@ -1,3 +1,4 @@
+import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
@@ -195,21 +196,20 @@ export async function POST(req: Request) {
         ))
 
       } else if (action === 'mark_returned') {
-        await prisma.order.updateMany({
-          where: { id: { in: ids } },
-          data: {
-            returnStatus: status,
-            returnIssueNote: status === 'ISSUE' ? note!.trim() : null,
-            // 核销时间/人：核销管理页「已核销的在主列表留 24 小时」靠它；撤销/退回时清空（20261021）
+        await prisma.$transaction(async tx => {
+          await lockReturnOrders(tx, ids)
+          if (lines !== undefined) {
+            await assertReturnsResolved(tx, ids)
+            const settled = await tx.orderReturn.count({ where: { orderId: { in: ids }, workflowVersion: 2, status: 'SETTLED' } })
+            if (settled) throw Object.assign(new Error('订单已按退货调整过数量，不能再通过回单核销重复修改实送量'), { status: 409 })
+          }
+          await tx.order.updateMany({ where: { id: { in: ids } }, data: {
+            returnStatus: status, returnIssueNote: status === 'ISSUE' ? note!.trim() : null,
             returnConfirmedAt: status === 'RETURNED' ? new Date() : null,
             returnConfirmedBy: status === 'RETURNED' ? (user.name ?? user.email) : null,
-          },
+          } })
+          if (lines !== undefined) for (const line of lines) await tx.orderLine.update({ where: { id: line.orderLineId }, data: { deliveredQty: line.deliveredQty } })
         })
-        if (lines !== undefined) {
-          for (const l of lines) {
-            await prisma.orderLine.update({ where: { id: l.orderLineId }, data: { deliveredQty: l.deliveredQty } })
-          }
-        }
         const label = status === 'RETURNED' ? '核销' : status === 'ISSUE' ? '退回核实' : '重置为未回'
         detail = `批量${label} ${ids.length} 单${lines !== undefined ? `（已修正 ${lines.length} 行送达数量）` : ''}`
         affectedOrders = before.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
@@ -235,6 +235,7 @@ export async function POST(req: Request) {
         // 失败只记日志不回滚核销本身：核销是真实的物理动作，发票/提成失败可以用「补开漏开的发票」补。
         if (status === 'RETURNED') {
           const invoiceFailed: string[] = []
+          const invoiceDeferred: string[] = []
           for (const o of before) {
             try {
               await createDraftInvoiceForOrder(prisma as never, o.id)
@@ -247,10 +248,12 @@ export async function POST(req: Request) {
                 await recalcTripDriverCommission(ownerTrip.id, prisma).catch((e: unknown) => console.error('[write-off: trip commission sync]', e))
               }
             } catch (e) {
+              if ((e as { status?: number }).status === 409 && (e as Error).message.includes('退货')) { invoiceDeferred.push(o.restaurantName ?? o.id.slice(-8)); continue }
               console.error('[write-off: invoice/commission]', o.id, e)
               invoiceFailed.push(o.restaurantName ?? o.id.slice(-8))
             }
           }
+          if (invoiceDeferred.length) detail += `；${invoiceDeferred.length} 单已核销，因退货处理中暂缓开票，处理完毕后自动补开`
           if (invoiceFailed.length > 0) {
             detail += `；⚠️ ${invoiceFailed.length} 单开票/提成失败（${invoiceFailed.join('、')}），可用「补开漏开的发票」补`
           }
