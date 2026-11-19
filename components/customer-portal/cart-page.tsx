@@ -7,7 +7,7 @@ import { ArrowLeft, Check, Minus, Plus, ShoppingBag } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiPost } from '@/lib/api'
 import { DatePicker } from '@/components/ui/date-picker'
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { eur } from '@/lib/format-money'
 import { routing } from '@/i18n/routing'
 import { CART_UPDATED_EVENT, loadCart, PORTAL_CATALOG_SCROLL_KEY, saveCart, type CartItem } from './cart-utils'
@@ -57,7 +57,6 @@ export default function CustomerCartPage() {
   const selectedTax = selectedItems.reduce((sum, item) => sum + item.price * item.quantity * ((item.taxRate ?? 0) / 100), 0)
   const selectedCount = selectedItems.reduce((sum, item) => sum + item.quantity, 0)
   const allSelected = cart.length > 0 && cart.every(item => selected.has(lineKey(item)))
-  const editingItem = cart.find(item => lineKey(item) === editingKey) ?? null
 
   function updateCart(next: CartItem[]) {
     setCart(next)
@@ -164,9 +163,40 @@ export default function CustomerCartPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start gap-2">
                       <h2 className="min-w-0 flex-1 font-semibold leading-5 text-gray-900">{item.name}</h2>
-                      <button type="button" onClick={() => { setEditingKey(key); setEditingQuantity(String(item.quantity)) }} className="shrink-0 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm font-semibold text-gray-800 hover:border-green-700" aria-label={isEn ? `Change quantity for ${item.name}` : `修改${item.name}数量`}>
-                        ×{item.quantity}
-                      </button>
+                      <Popover open={editingKey === key} onOpenChange={open => {
+                        if (open) {
+                          setEditingKey(key)
+                          setEditingQuantity(String(item.quantity))
+                        } else if (editingKey === key) {
+                          setEditingKey(null)
+                        }
+                      }}>
+                        <PopoverTrigger type="button" className="shrink-0 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm font-semibold text-gray-800 hover:border-green-700" aria-label={isEn ? `Change quantity for ${item.name}` : `修改${item.name}数量`}>
+                          ×{item.quantity}
+                        </PopoverTrigger>
+                        <PopoverContent side="top" align="end" className="w-auto min-w-60 p-2.5">
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setEditingQuantity(value => String(Math.max(0, Number(value || 0) - 1)))} aria-label={isEn ? 'Decrease quantity' : '减少数量'} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50">
+                              <Minus className="size-4" />
+                            </button>
+                            <input type="number" min="0" step="0.5" value={editingQuantity} onChange={event => setEditingQuantity(event.target.value)} onKeyDown={event => {
+                              if (event.key === 'Enter' && Number.isFinite(Number(editingQuantity)) && Number(editingQuantity) >= 0) {
+                                setQuantity(item, Number(editingQuantity))
+                                setEditingKey(null)
+                              }
+                            }} className="h-9 w-20 rounded-lg border border-gray-200 text-center text-sm font-semibold" aria-label={isEn ? 'Quantity' : '数量'} />
+                            <button type="button" onClick={() => setEditingQuantity(value => String(Number(value || 0) + 1))} aria-label={isEn ? 'Increase quantity' : '增加数量'} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50">
+                              <Plus className="size-4" />
+                            </button>
+                            <button type="button" disabled={!Number.isFinite(Number(editingQuantity)) || Number(editingQuantity) < 0} onClick={() => {
+                              setQuantity(item, Number(editingQuantity))
+                              setEditingKey(null)
+                            }} className="min-h-9 rounded-lg px-3 text-sm font-semibold text-white disabled:opacity-50" style={{ background: PRIMARY }}>
+                              {isEn ? 'Apply' : '确定'}
+                            </button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <p className="mt-1 text-sm text-gray-500">{[item.spec, item.uomName].filter(Boolean).join(' · ') || (isEn ? 'Standard unit' : '标准单位')}</p>
                     {item.promoLabel && <span className="mt-1 inline-flex rounded border border-orange-200 px-1.5 py-0.5 text-[11px] font-medium text-orange-700">{item.promoLabel}</span>}
@@ -212,22 +242,6 @@ export default function CustomerCartPage() {
         </>
       )}
 
-      <Sheet open={Boolean(editingItem)} onOpenChange={open => { if (!open) setEditingKey(null) }}>
-        <SheetContent side="bottom" className="gap-0 rounded-t-3xl px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:mx-auto sm:max-w-md">
-          <SheetHeader className="px-0 text-left">
-            <SheetTitle>{isEn ? 'Edit quantity' : '修改数量'}</SheetTitle>
-            <SheetDescription>{editingItem ? `${editingItem.name}${editingItem.uomName ? ` · ${editingItem.uomName}` : ''}` : ''}</SheetDescription>
-          </SheetHeader>
-          {editingItem && <div className="flex items-center justify-center gap-5 py-6">
-            <button type="button" onClick={() => setEditingQuantity(String(Math.max(0, Number(editingQuantity || editingItem.quantity) - 1)))} className="inline-flex size-11 items-center justify-center rounded-full border border-gray-200"><Minus className="size-5" /></button>
-            <input type="number" min="0" step="0.5" value={editingQuantity} onChange={event => setEditingQuantity(event.target.value)} className="h-12 w-28 rounded-lg border border-gray-300 text-center text-xl font-semibold" aria-label={isEn ? 'Quantity' : '数量'} />
-            <button type="button" onClick={() => setEditingQuantity(String(Number(editingQuantity || editingItem.quantity) + 1))} className="inline-flex size-11 items-center justify-center rounded-full border border-gray-200"><Plus className="size-5" /></button>
-          </div>}
-          <SheetFooter className="mt-0 px-0 pb-0">
-            <button type="button" disabled={!editingItem || !Number.isFinite(Number(editingQuantity)) || Number(editingQuantity) < 0} onClick={() => { if (editingItem) setQuantity(editingItem, Number(editingQuantity)); setEditingKey(null) }} className="min-h-11 rounded-xl px-4 font-semibold text-white disabled:opacity-50" style={{ background: PRIMARY }}>{isEn ? 'Save quantity' : '确认数量'}</button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
     </div>
   )
 }
