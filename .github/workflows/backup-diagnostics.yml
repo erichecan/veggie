@@ -28,5 +28,5 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-          scp -P "$DEPLOY_PORT" deploy/droplet/check-backup.sh "$DEPLOY_USER@$DEPLOY_HOST:/opt/veggie/check-backup.sh"
+          scp -P "$DEPLOY_PORT" scripts/ops/verify-production-backup.sh "$DEPLOY_USER@$DEPLOY_HOST:/opt/veggie/check-backup.sh"
           ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash /opt/veggie/check-backup.sh'
