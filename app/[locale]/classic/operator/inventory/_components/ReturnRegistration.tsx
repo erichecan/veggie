@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -7,8 +7,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import type { Order } from '@/lib/types'
 
 /**
- * 退货/报废整合 M3：日销售中心「退货登记」tab（跟打印中心/缺货处理平级，不嵌进缺货处理——
- * 缺货是发货前事件、退货是发货后事件，混在一起以后排查分不清是哪种原因）。
+ * 库存管理「车辆检查」中的仓库退货登记表。
  *
  * 按订单号/客户搜到订单 → 选订单行 → 填数量+原因+退货/换货 → 提交，创建一条 WAREHOUSE_PENDING
  * 状态的 OrderReturn 记录，后续核实/审核走 operator/inventory「退换货」tab 同一套看板，这里只管登记。
@@ -31,7 +30,7 @@ interface RegisteredReturn {
 
 const EMPTY_FORM: RegisterForm = { quantity: '', reason: '', actionType: 'return', exchangeOrderId: '', actualReturnedProductName: '' }
 
-export default function ReturnRegistration({ refreshKey }: { refreshKey: number }) {
+export default function ReturnRegistration({ refreshKey, initialOrderCode, initialOrderLineId, sourceTripId }: { refreshKey: number; initialOrderCode?: string; initialOrderLineId?: string; sourceTripId?: string }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
 
@@ -70,7 +69,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
 
   async function selectOrder(o: Order) {
     setSelected(o)
-    setActiveLineId(null)
+    setActiveLineId(initialOrderLineId && o.lines?.some(line => line.id === initialOrderLineId) ? initialOrderLineId : null)
     setForm(EMPTY_FORM)
     setRegisteredReturns([])
     try {
@@ -81,6 +80,27 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
       toast.error(err instanceof Error ? err.message : (isEn ? 'Could not load registered returns' : '读取已有退货登记失败'))
     }
   }
+
+  useEffect(() => {
+    if (!initialOrderCode) return
+    let cancelled = false
+    setQuery(initialOrderCode)
+    void (async () => {
+      try {
+        const response = await apiGet<{ data: Order[] }>(`/api/orders?colCode=${encodeURIComponent(initialOrderCode)}&include_lines=true&pageSize=20`)
+        if (cancelled) return
+        const exact = response.data.find(order => order.code?.toLowerCase() === initialOrderCode.toLowerCase())
+        if (exact && ['IN_DELIVERY', 'COMPLETED'].includes(String(exact.status))) {
+          await selectOrder(exact)
+        } else {
+          setResults(response.data.filter(order => ['IN_DELIVERY', 'COMPLETED'].includes(String(order.status))))
+        }
+      } catch (error) {
+        if (!cancelled) toast.error(error instanceof Error ? error.message : (isEn ? 'Could not load delivery order' : '无法读取配送订单'))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [initialOrderCode, initialOrderLineId])
 
   function reservedReturnQty(line: NonNullable<Order['lines']>[number]) {
     // Unlinked historical records (created before line-level linkage) are
@@ -119,6 +139,7 @@ export default function ReturnRegistration({ refreshKey }: { refreshKey: number 
       const created = await apiPost<RegisteredReturn>('/api/order-returns', {
         orderId: selected.id,
         orderLineId: line.id,
+        sourceTripId,
         productId: line.productId,
         quantity,
         reason: form.reason.trim() || undefined,

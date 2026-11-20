@@ -78,9 +78,10 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json()
-      const { orderId, orderLineId, quantity, reason, actionType, exchangeOrderId } = body as {
+      const { orderId, orderLineId, quantity, reason, actionType, exchangeOrderId, sourceTripId } = body as {
         orderId?: string
         orderLineId?: string
+        sourceTripId?: string
         quantity?: number
         reason?: string
         actionType?: 'return' | 'exchange'
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
         reason,
         actionType,
         exchangeOrderId,
+        sourceTripId,
         actualReturnedProductName: body.actualReturnedProductName,
         actualReturnedProductId: body.actualReturnedProductId,
       }, user))
