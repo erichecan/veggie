@@ -86,8 +86,8 @@ export interface UseInlineProductPickerOptions<P extends InlineProductPickerProd
    */
   dropdownClassName?: string
   /**
-   * 下拉最小宽度(px)。默认跟随商品格宽度；字号放大后商品名容易被 truncate，
-   * 调用方可以放宽。
+   * 下拉最小宽度(px)。至少 640px 以单行显示完整商品名、规格和代码，
+   * 受视口宽度限制；窄屏允许列表水平滚动，不截断名称。
    */
   dropdownMinWidth?: number
 }
@@ -161,8 +161,11 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     const above = Math.max(0, r.top - gap - 8)
     const placeAbove = below < Math.min(desired, 120) && above > below
     const maxHeight = Math.max(72, Math.min(desired, placeAbove ? above : below || desired))
-    setDropRect({ top: placeAbove ? Math.max(8, r.top - gap - maxHeight) : r.bottom + gap, left: r.left, width: Math.max(288, r.width), maxHeight })
-  }, [])
+    const viewportWidth = Math.max(0, window.innerWidth - 16)
+    const width = Math.min(viewportWidth, Math.max(640, dropdownMinWidth ?? 0, r.width))
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - 8 - width))
+    setDropRect({ top: placeAbove ? Math.max(8, r.top - gap - maxHeight) : r.bottom + gap, left, width, maxHeight })
+  }, [dropdownMinWidth])
   // 放 ref 里：close/activate 已经被一串 useCallback 依赖着，再多一个会变身份的
   // 依赖只会让那串回调和 mousedown 监听跟着反复重建
   const onCancelRef = useRef(onCancel)
@@ -368,10 +371,10 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
       ? createPortal(
           <div
             className={dropdownClassName}
-            style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, minWidth: dropdownMinWidth, zIndex: 9999 }}
+            style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, zIndex: 9999 }}
             onMouseDown={e => e.preventDefault()}  // 别让 mousedown 抢走输入框的焦点
           >
-            <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl overflow-y-auto" style={{ maxHeight: dropRect.maxHeight }}>
+            <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl overflow-auto" style={{ maxHeight: dropRect.maxHeight }}>
               {search.trim() !== '' && items.length === 1 && (
                 <div className="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-purple-100 bg-purple-50 text-[11px]">
                   <span className="font-semibold text-purple-800">{isEn ? '1 matching product found' : '找到 1 个匹配商品'}</span>
@@ -389,12 +392,12 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
                     aria-selected={idx === highlight}
                     onMouseEnter={() => setHighlight(idx)}
                     onMouseDown={e => { e.preventDefault(); pick(activeLineId, p) }}
-                    className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#875A7B]/20 flex items-center gap-2 ${
+                    className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#875A7B]/20 flex min-w-max items-center gap-2 whitespace-nowrap ${
                       idx === highlight ? 'bg-[#875A7B]/15 ring-1 ring-inset ring-[#875A7B]/50' : ''
                     }`}
                   >
                     <span className={`w-3 shrink-0 font-bold ${idx === highlight ? 'text-[#875A7B]' : 'text-transparent'}`} aria-hidden="true">✓</span>
-                    <span className="font-medium text-gray-800 truncate flex-1">{p.name}</span>
+                    <span className="font-medium text-gray-800 flex-1 shrink-0" title={p.name}>{p.name}</span>
                     {p.purchaseUomSpec && (
                       <span className="text-gray-500 text-[10px] shrink-0">({p.purchaseUomSpec})</span>
                     )}
