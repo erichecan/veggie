@@ -20,6 +20,7 @@
 
 import { recomputeInvoiceBalance } from './finance/invoice-balance'
 import { postPaymentToJournal } from './accounting'
+import { paymentJournalByMethod } from './finance/payment-journals'
 
 export interface InvoiceForAllocation {
   id: string
@@ -38,6 +39,8 @@ export interface StopCollection {
   amount: number
   /** 该站关联的订单 */
   orderIds: string[]
+  /** Actual collection method from the driver's stop report. */
+  method?: 'cash' | 'transfer'
 }
 
 export interface PaymentPlanItem {
@@ -46,6 +49,7 @@ export interface PaymentPlanItem {
   customerId: string
   amount: number
   restaurantName: string
+  method: 'cash' | 'transfer'
   /**
    * true = 这笔核销的**不是当日订单**，而是该客户的历史欠款（台账 C9）。
    * 需求原文：「若金额超出当日订单额，需能标记出超出部分是回收的历史欠款并冲抵」。
@@ -161,7 +165,7 @@ export function allocateCollections(
       if (take <= 0) continue
       payments.push({
         invoiceId: invc.id, invoiceName: invc.name, customerId: invc.customerId,
-        amount: take, restaurantName: stop.restaurantName,
+        amount: take, restaurantName: stop.restaurantName, method: stop.method ?? 'cash',
       })
       invc.amountDue = round2(invc.amountDue - take)
       remaining = round2(remaining - take)
@@ -190,7 +194,7 @@ export function allocateCollections(
         if (take <= 0) continue
         payments.push({
           invoiceId: invc.id, invoiceName: invc.name, customerId: invc.customerId,
-          amount: take, restaurantName: stop.restaurantName,
+          amount: take, restaurantName: stop.restaurantName, method: stop.method ?? 'cash',
           isHistoricalDebt: true,
         })
         invc.amountDue = round2(invc.amountDue - take)
@@ -269,16 +273,17 @@ export async function postCollections(
   }
 
   const rests = (Array.isArray(source.restaurants) ? source.restaurants : []) as Array<{
-    restaurantId?: string; restaurantName?: string; payment?: number; orderIds?: string[]
+    restaurantId?: string; restaurantName?: string; payment?: number; amount?: number; method?: string; orderIds?: string[]
   }>
 
   const stops: StopCollection[] = rests
-    .filter(r => typeof r.payment === 'number' && r.payment > 0)
+    .filter(r => typeof (r.amount ?? r.payment) === 'number' && Number(r.amount ?? r.payment) > 0)
     .map(r => ({
       restaurantId: r.restaurantId ?? '',
       restaurantName: r.restaurantName ?? '(未知站点)',
-      amount: Number(r.payment),
+      amount: Number(r.amount ?? r.payment),
       orderIds: r.orderIds ?? [],
+      method: r.method === 'transfer' ? 'transfer' : 'cash',
     }))
 
   if (stops.length === 0) {
@@ -342,15 +347,17 @@ export async function postCollections(
   const paymentIds: string[] = []
   const historicalDebtInvoices: SettlementPostingResult['historicalDebtInvoices'] = []
   for (const p of plan.payments) {
-    await prisma.$transaction(async (tx: any) => {
-      const cashJournal = await tx.paymentJournal.findUnique({ where: { code: 'CASH' }, select: { id: true } })
-      const created = await tx.payment.create({
+      const journalConfig = paymentJournalByMethod(p.method)
+      const paymentJournal = journalConfig
+        ? await prisma.paymentJournal.findUnique({ where: { code: journalConfig.code }, select: { id: true } })
+        : null
+      const created = await prisma.payment.create({
         data: {
           invoiceId: p.invoiceId,
           customerId: p.customerId,
           amount: p.amount,
-          method: 'cash',
-          paymentJournalId: cashJournal?.id ?? null,
+          method: p.method,
+          paymentJournalId: paymentJournal?.id ?? null,
           // ⛔ 历史欠款回收要**在备注里写明**：对账单明细的「经手/摘要」列直接显示这一行，
           // 财务翻账时必须一眼看出这笔钱不是今天送的货收的
           note: p.isHistoricalDebt
@@ -364,16 +371,15 @@ export async function postCollections(
         historicalDebtInvoices.push({ name: p.invoiceName, amount: p.amount })
       }
       // 余额从明细重算，付清自动转 PAID（20261014 L2：以前这里自己 increment/decrement）
-      const inv = await recomputeInvoiceBalance(tx, p.invoiceId)
+      const inv = await recomputeInvoiceBalance(prisma, p.invoiceId)
       if (String(inv.status) === 'PAID') paidOff.push(inv.name)
       // 总账：Dr Bank / Cr AR。此前司机收款核销只写 Payment、不出凭证，总账应收一直虚高（20261014 L2 补）
       await postPaymentToJournal(
-        tx,
-        { id: created.id, invoiceName: p.invoiceName, customerId: p.customerId, amount: p.amount, paymentJournalId: cashJournal?.id ?? null, method: 'cash' },
+        prisma,
+        { id: created.id, invoiceName: p.invoiceName, customerId: p.customerId, amount: p.amount, paymentJournalId: paymentJournal?.id ?? null, method: p.method },
         actorUserId ?? 'system',
         { narration: `Driver cash collected for ${p.invoiceName}` },
       )
-    })
   }
 
   return {

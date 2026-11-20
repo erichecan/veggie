@@ -698,6 +698,8 @@ export interface TripRestaurant {
   items: OrderItem[]
   delivered: boolean
   payment?: number
+  /** Driver-reported way this stop's actual collection was received. */
+  paymentMethod?: 'CASH' | 'ONLINE'
   returns: ReturnItem[]
   pods: string[]
   cargoVerified: boolean

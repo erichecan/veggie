@@ -6,7 +6,7 @@ import type { DriverCashGroup } from '@/lib/accounting/driver-cash'
 interface DriverCashResponse {
   businessDate: string
   groups: DriverCashGroup[]
-  summary: { pendingGroups: number; pendingCash: number; pendingTransfer: number; oldestDays: number; lateGroups: number }
+  summary: { pendingGroups: number; pendingCash: number; pendingTransfer: number; oldestDays: number; lateGroups: number; unreportedOrders?: number }
 }
 
 const ACCENT = '#875A7B'
@@ -17,7 +17,7 @@ function dmy(day: string): string {
 }
 
 /**
- * 会计核销页「钱」板块：按「司机 × 送货日」汇总系统算出的应收，会计核对现金/转账无误后
+ * 会计核销页「钱」板块：按「司机 × 送货日」汇总司机手机报告的实收，会计核对后
  * 点「确认」——这一步会真正入账（生成 Payment、核销发票），所以做成两次点击才
  * 生效，且不提供撤销：写错了要走人工冲正，不是这个按钮的事（DEV-PLAN 20260924 风险点 1）。
  * 20261021 起跨天：前几天没确认的一直列着，24 小时内刚确认的也留着看（lib/accounting/driver-cash.ts）。
@@ -74,8 +74,8 @@ export function DriverCashBoard({ onBusinessDate }: { onBusinessDate?: (date: st
   return (
     <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center flex-wrap gap-x-3 gap-y-1">
-        <span className="font-semibold text-gray-700 text-sm">💰 钱 · 司机收款确认</span>
-        <span className="text-xs text-gray-400">按司机 × 送货日自动算出（只算已出车的单），不限日期；会计核对无误后确认——确认即入账，不可撤销</span>
+        <span className="font-semibold text-gray-700 text-sm">💰 钱 · 司机实收核对</span>
+        <span className="text-xs text-gray-400">司机手机报告是实收来源，订单金额只作参考；补齐所有回单并核对纸质凭据后确认，确认即入账</span>
         {s && s.pendingGroups > 0 && (
           <span className="ml-auto text-xs font-medium text-red-600" data-testid="cash-pending-summary">
             待确认 {s.pendingGroups} 笔 · 现金 €{s.pendingCash.toFixed(2)} · 转账 €{s.pendingTransfer.toFixed(2)}{s.oldestDays > 0 ? ` · 最早 ${s.oldestDays} 天前` : ''}
@@ -127,6 +127,15 @@ export function DriverCashBoard({ onBusinessDate }: { onBusinessDate?: (date: st
                       <span className="font-mono font-semibold">€{d.total.toFixed(2)}</span>
                     </span>
                     <span className="text-xs text-gray-400">{d.orderCount} 单</span>
+                    {!d.confirmed && (
+                      <span className={`text-xs ${d.unreportedOrderCount ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                        司机报告实收 · 订单参考 €{d.expectedTotal.toFixed(2)}
+                        {d.unreportedOrderCount === 0 && Math.abs(d.total - d.expectedTotal) > 0.009
+                          ? ` · 差额 ${d.total > d.expectedTotal ? '+' : ''}€${(d.total - d.expectedTotal).toFixed(2)}`
+                          : ''}
+                        {d.unreportedOrderCount > 0 ? ` · ${d.unreportedOrderCount} 单未完成手机回单` : ''}
+                      </span>
+                    )}
                     {d.lateOrderCount > 0 && (
                       <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700" title="这一天确认之后又补进来的单，同一司机同一天只能确认一次，请人工处理">
                         ⚠️ 确认后又补进 {d.lateOrderCount} 单 €{d.lateAmount.toFixed(2)}，需人工处理
@@ -143,7 +152,7 @@ export function DriverCashBoard({ onBusinessDate }: { onBusinessDate?: (date: st
                           <span className="text-xs text-red-600 font-medium">确定要确认 {dmy(d.businessDate)} {d.driverName} 的收款吗？入账后不可撤销</span>
                           <button
                             onClick={() => confirm(d)}
-                            disabled={isConfirming}
+                            disabled={isConfirming || d.unreportedOrderCount > 0}
                             className="px-3 py-1 text-white rounded text-xs font-medium disabled:opacity-50"
                             style={{ background: '#dc2626' }}
                             data-testid="cash-confirm-final"
@@ -161,6 +170,7 @@ export function DriverCashBoard({ onBusinessDate }: { onBusinessDate?: (date: st
                       ) : (
                         <button
                           onClick={() => setArmedKey(key)}
+                          disabled={d.unreportedOrderCount > 0}
                           className="px-3 py-1 text-white rounded text-xs font-medium"
                           style={{ background: ACCENT }}
                           data-testid="cash-confirm"

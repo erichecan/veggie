@@ -19,6 +19,7 @@ type RestaurantJson = { restaurantId: string; returns?: Array<{ productId: strin
 type PaymentRestaurantJson = {
   restaurantId: string
   payment?: unknown
+  paymentMethod?: 'CASH' | 'ONLINE' | null
   delivered?: boolean
   orderIds?: string[]
   orderTimings?: Record<string, { endedAt?: string }>
@@ -213,11 +214,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (!old) continue
           const completed = !!old.delivered || !!restaurant.delivered
             || (old.orderIds ?? []).some(orderId => !!old.orderTimings?.[orderId]?.endedAt)
+          const amount = Number(restaurant.payment)
+          if (Number.isFinite(amount) && amount > 0 && restaurant.paymentMethod !== 'CASH' && restaurant.paymentMethod !== 'ONLINE') {
+            return NextResponse.json({ error: '实收金额大于 0 时，必须选择实际收款方式' }, { status: 400 })
+          }
           if (completed && restaurant.payment !== old.payment) {
             return NextResponse.json(
               { error: '订单完成后，实收金额不可修改' },
               { status: 409 },
             )
+          }
+          if (completed && restaurant.paymentMethod !== old.paymentMethod) {
+            return NextResponse.json({ error: '订单完成后，收款方式不可修改' }, { status: 409 })
           }
         }
 
@@ -249,6 +257,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         )
         if (unprocessedStops.length > 0) {
           return NextResponse.json({ error: '请先完成每个站点：送达或报告异常后，再结束行程' }, { status: 409 })
+        }
+        const unreportedCollections = restaurants.filter(r => {
+          const processed = !!r.delivered || (r.returns?.length ?? 0) > 0 || (r.orderIds ?? []).some(orderId => returnedOrderIds.has(orderId))
+          const payment = Number((r as PaymentRestaurantJson).payment)
+          return processed && (!Number.isFinite(payment) || payment < 0 || (payment > 0 && !['CASH', 'ONLINE'].includes(String((r as PaymentRestaurantJson).paymentMethod))))
+        })
+        if (unreportedCollections.length > 0) {
+          return NextResponse.json({ error: `还有 ${unreportedCollections.length} 个客户站点未填写实际收款金额或收款方式，请填写实收（未收款填 0）后再结束行程` }, { status: 409 })
         }
         const unfinished = restaurants.flatMap(r => r.orderIds ?? []).filter(orderId =>
           !restaurants.some(r => !!r.orderTimings?.[orderId]?.endedAt),
