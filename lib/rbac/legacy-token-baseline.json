@@ -5010,5 +5010,61 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "DELETE /api/fleet-vehicles/[id]": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "PUT /api/fleet-vehicles/[id]": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "GET /api/fleet-vehicles": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "POST /api/fleet-vehicles": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

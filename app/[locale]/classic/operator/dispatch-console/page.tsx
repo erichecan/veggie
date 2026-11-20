@@ -7,6 +7,7 @@ import DriversPage from '../drivers/page'
 import TripsPage from '../trips/page'
 import BatchTab from './_components/BatchTab'
 import DriverDispatchTab from './_components/DriverDispatchTab'
+import VehicleManagement from './_components/VehicleManagement'
 
 const PURPLE = '#875A7B'
 
@@ -43,6 +44,7 @@ function DispatchConsoleInner() {
   const initialTab: TabKey = TAB_KEYS.includes(initialTabParam as TabKey) ? (initialTabParam as TabKey) : 'waves'
   const initialDateParam = searchParams.get('date')
   const [tab, setTab] = useState<TabKey>(initialTab)
+  const [configTab, setConfigTab] = useState<'drivers' | 'vehicles'>('drivers')
   const [date, setDate] = useState(initialDateParam && /^\d{4}-\d{2}-\d{2}$/.test(initialDateParam) ? initialDateParam : today)
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -79,7 +81,16 @@ function DispatchConsoleInner() {
       {tab === 'waves' && <BatchTab date={date} onPickDate={setDate} />}
       {tab === 'dispatch' && <DriverDispatchTab date={date} />}
       {tab === 'trips' && <TripsPage />}
-      {tab === 'config' && <DriversPage />}
+      {tab === 'config' && <>
+        <div className="mb-3 flex gap-2 border-b pb-2">
+          {(['drivers', 'vehicles'] as const).map(key => {
+            const active = configTab === key
+            const label = key === 'drivers' ? (isEn ? 'Drivers' : '司机配置') : (isEn ? 'Vehicle Management' : '车辆管理')
+            return <button key={key} onClick={() => setConfigTab(key)} className="rounded-lg px-3 py-2 text-sm font-medium" style={active ? { background: PURPLE, color: '#fff' } : { color: '#6b7280', background: '#f9fafb' }}>{label}</button>
+          })}
+        </div>
+        {configTab === 'drivers' ? <DriversPage /> : <VehicleManagement />}
+      </>}
     </div>
   )
 }

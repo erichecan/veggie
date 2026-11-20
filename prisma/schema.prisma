@@ -1909,6 +1909,18 @@ model DriverSlot {
   @@index([userId])
 }
 
+/// 车队车辆档案；配送批次保存车牌快照，避免车辆档案修改影响历史配送记录。
+model FleetVehicle {
+  id        String   @id @default(cuid())
+  plate     String   @unique
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, plate])
+}
+
 /// 采购建议（P0-2：系统根据需求-库存自动生成）
 model PurchaseSuggestion {
   id               String    @id @default(cuid())

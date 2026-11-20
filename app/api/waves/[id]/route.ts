@@ -33,6 +33,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (before.dispatchedAt || before.completedAt) return NextResponse.json({ error: '已出发的车牌快照不可修改，请在出发前设置' }, { status: 409 })
         const plate = String(data.vehiclePlate ?? '').trim().toUpperCase()
         if (plate.length > 24 || (plate && !/^[A-Z0-9 -]+$/.test(plate))) return NextResponse.json({ error: '车牌只能包含字母、数字、空格和短横线，最多 24 字符' }, { status: 400 })
+        if (plate) {
+          const vehicle = await prisma.fleetVehicle.findUnique({ where: { plate }, select: { isActive: true } })
+          if (!vehicle?.isActive) return NextResponse.json({ error: '请从车辆管理中选择一辆启用车辆' }, { status: 400 })
+        }
         data.vehiclePlate = plate || null
       }
       // SSOT: orderIds 成员变更只能走 assign/unassign（会原子同步 Order.status）。

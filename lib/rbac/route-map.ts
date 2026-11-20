@@ -228,6 +228,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/driver-slots', methods: R, permission: 'dispatch.driver_slot.read' },
   { pattern: '/api/driver-slots/**', methods: W, permission: 'dispatch.driver_slot.manage' },
   { pattern: '/api/driver-slots', methods: ['POST'], permission: 'dispatch.driver_slot.manage' },
+  { pattern: '/api/fleet-vehicles', methods: R, permission: 'dispatch.driver_slot.read' },
+  { pattern: '/api/fleet-vehicles/**', methods: W, permission: 'dispatch.driver_slot.manage' },
+  { pattern: '/api/fleet-vehicles', methods: ['POST'], permission: 'dispatch.driver_slot.manage' },
 
   // ── 财务 ────────────────────────────────────────────────────────────────
   { pattern: '/api/invoices/*/post', permission: 'finance.invoice.pay' },
