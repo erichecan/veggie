@@ -118,6 +118,17 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
   'POST /api/statements/bulk [FINANCE]': '同上',
   // Sage 导出始终按 finance.invoice.read 授权；销售角色旧范围只允许读取发票，不应继续持有 POST 导出能力。
   'POST /api/invoices/sage-export [SALES]': '按既有 Finance 权限边界收紧；无位图旧 token 已于 2026-09-29 前过期',
+  // 20261120 车辆档案新接口：BOSS/OPERATOR 的旧角色兜底会放行新 fleet-vehicles 路由，
+  // 但旧 token 最长 7 天，2026-09-29 起已不再存在无权限位图 token；权限快照已确认
+  // 新 token 仅按 dispatch.driver_slot.read/manage 授权。
+  'GET /api/fleet-vehicles [BOSS]': '新接口；无位图旧 token 已于 2026-09-29 前过期',
+  'GET /api/fleet-vehicles [OPERATOR]': '同上',
+  'POST /api/fleet-vehicles [BOSS]': '同上',
+  'POST /api/fleet-vehicles [OPERATOR]': '同上',
+  'PUT /api/fleet-vehicles/[id] [BOSS]': '同上',
+  'PUT /api/fleet-vehicles/[id] [OPERATOR]': '同上',
+  'DELETE /api/fleet-vehicles/[id] [BOSS]': '同上',
+  'DELETE /api/fleet-vehicles/[id] [OPERATOR]': '同上',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */
