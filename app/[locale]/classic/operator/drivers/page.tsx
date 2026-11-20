@@ -273,6 +273,9 @@ export default function DriversPage() {
 
   return (
     <div className="w-full p-6 space-y-4">
+      <datalist id="dispatch-driver-name-options">
+        {[...new Set([...rows.map(row => row.driverName), ...driverUsers.map(user => user.name)].filter(Boolean))].map(name => <option key={name} value={name} />)}
+      </datalist>
       {/* 页头 */}
       <div className="flex items-center justify-between">
         <div>
@@ -442,6 +445,7 @@ export default function DriversPage() {
                     value={row.driverName}
                     onChange={e => updateRow(idx, 'driverName', e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') saveRow(idx) }}
+                    list="dispatch-driver-name-options"
                     placeholder={isEn ? 'Enter driver name' : '输入司机名字'}
                     className={inputCls}
                     style={{ ...inputStyle, ...focusStyle }}
