@@ -3,17 +3,14 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { round2 } from '@/lib/decimal-helpers'
-import { orderIncTaxTotal } from '@/lib/order-items'
-import { attachWaveDisplay } from '@/lib/wave-assign'
-import { driverNameFromOrder } from '@/lib/driver-slot'
 import { businessDayRange, toDayKey } from '@/lib/analytics/metrics'
 import { postCollections, driverCashConfirmationMarker } from '@/lib/trip-settlement-payment'
-import { ACTIVE_STATUSES } from '../route'
+import { getDriverCashPostingData } from '@/lib/accounting/driver-cash'
 
 /**
- * 会计核了一遍这个司机某一天（body.businessDate，20261021 起可以是前几天）的现金/转账没问题，点「确认」——**真正入账**：
- * 生成 Payment、核销到发票上。不可撤销，写错了要走人工冲正，这里不提供反向操作
- * （见 DEV-PLAN 20260924 风险点 1）。金额由服务端重新计算，不信任客户端传的数字。
+ * 会计对照纸质回单核实司机手机端报告的实际收款后确认——**真正入账**：
+ * 按司机报告金额和方式生成 Payment，并核销到发票。订单应收只作差异参考。
+ * 确认不可撤销；有未完成手机回单、草稿发票或超出可核销余额时拒绝入账。
  */
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
@@ -31,7 +28,7 @@ export async function POST(req: Request) {
       if (isNaN(at.getTime())) {
         return NextResponse.json({ error: 'businessDate 格式无效' }, { status: 400 })
       }
-      const { start, end } = businessDayRange(at)
+      const { start } = businessDayRange(at)
       const businessDate = toDayKey(start)
 
       const existing = await prisma.driverCashConfirmation.findUnique({
@@ -41,75 +38,62 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '这个司机这一天已经确认过了，不能重复确认' }, { status: 409 })
       }
 
-      const orders = await prisma.order.findMany({
-        where: {
-          status: { in: [...ACTIVE_STATUSES] },
-          deliveryDate: { gte: start, lt: end },
-        },
-        select: {
-          id: true,
-          restaurantId: true,
-          restaurantName: true,
-          paymentMethod: true,
-          driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
-          lines: { select: { subtotal: true, taxRate: true } },
-        },
-      })
-      const withDriver = await attachWaveDisplay(serializeApi(orders))
-      // 跨天之后（20261021）同一张单可能因改派司机出现在别人这一天的确认快照里，已入过账的不再计一次
-      const alreadyConfirmed = new Set((await prisma.driverCashConfirmation.findMany({
-        where: { businessDate }, select: { orderIds: true },
-      })).flatMap(c => c.orderIds))
-      const mine = withDriver.filter(o => driverNameFromOrder(o) === driverName && !alreadyConfirmed.has(o.id))
-      if (mine.length === 0) {
+      const report = await getDriverCashPostingData(driverName, businessDate)
+      if (report.orderIds.length === 0) {
         return NextResponse.json({ error: `这个司机 ${businessDate} 没有待确认的已出车订单，没什么可确认的` }, { status: 400 })
       }
+      if (report.unreportedOrderCount > 0) {
+        return NextResponse.json({ error: `司机回单尚未完整：还有 ${report.unreportedOrderCount} 张订单没有填写实收金额/收款方式或未完成签收，请先补齐手机报告` }, { status: 409 })
+      }
 
-      // 按客户分组，拼成 postCollections 需要的 shape（每个客户一"站"）
-      const byCustomer = new Map<string, { restaurantId: string; restaurantName: string; payment: number; orderIds: string[] }>()
-      let cashTotal = 0
-      let transferTotal = 0
-      for (const o of mine) {
-        const amount = orderIncTaxTotal(o.lines ?? [])
-        if (String(o.paymentMethod).toUpperCase() === 'CASH') cashTotal += amount
-        else transferTotal += amount
-        const key = o.restaurantId
-        const g = byCustomer.get(key) ?? {
-          restaurantId: o.restaurantId, restaurantName: o.restaurantName ?? '', payment: 0, orderIds: [] as string[],
+      const allCollections = report.cashTotal + report.transferTotal
+      if (allCollections > 0) {
+        const drafts = await prisma.invoice.findMany({ where: { saleOrderIds: { hasSome: report.orderIds }, status: 'DRAFT' }, select: { name: true } })
+        if (drafts.length) return NextResponse.json({ error: `司机报告有实收，但关联发票仍是草稿（${drafts.map(row => row.name).join('、')}）。请先核对并过账发票，再确认收款，避免收款无法分配。` }, { status: 409 })
+
+        // The posting routine deliberately leaves money unmatched when no posted AR exists.
+        // Do not lock the day confirmation in that case; an accountant must resolve the
+        // prepayment/overpayment explicitly first.
+        const customerCollections = new Map<string, { name: string; amount: number; orderIds: string[] }>()
+        for (const collection of report.collections) {
+          const current = customerCollections.get(collection.restaurantId) ?? { name: collection.restaurantName, amount: 0, orderIds: [] as string[] }
+          current.amount = round2(current.amount + collection.amount)
+          current.orderIds = [...new Set([...current.orderIds, ...collection.orderIds])]
+          customerCollections.set(collection.restaurantId, current)
         }
-        g.payment = round2(g.payment + amount)
-        g.orderIds.push(o.id)
-        byCustomer.set(key, g)
+        for (const [customerId, collection] of customerCollections) {
+          const currentIds = await prisma.invoice.findMany({ where: { saleOrderIds: { hasSome: collection.orderIds }, customerId, status: 'POSTED', amountDue: { gt: 0 } }, select: { id: true } })
+          const currentIdSet = new Set(currentIds.map(row => row.id))
+          const [current, history] = await Promise.all([
+            prisma.invoice.aggregate({ where: { id: { in: [...currentIdSet] } }, _sum: { amountDue: true } }),
+            prisma.invoice.aggregate({ where: { customerId, status: 'POSTED', amountDue: { gt: 0 }, id: { notIn: [...currentIdSet] } }, _sum: { amountDue: true } }),
+          ])
+          const available = Number(current._sum.amountDue ?? 0) + Number(history._sum.amountDue ?? 0)
+          if (collection.amount > available + 0.005) return NextResponse.json({ error: `${collection.name} 报告实收 €${collection.amount.toFixed(2)}，超过当前可核销发票余额 €${available.toFixed(2)}。请先处理预收/超收，再确认司机交账。` }, { status: 409 })
+        }
       }
 
       const actorName = user.name ?? user.email ?? user.userId
-      const confirmation = await prisma.driverCashConfirmation.create({
-        data: {
-          driverName,
-          businessDate,
-          cashTotal: round2(cashTotal),
-          transferTotal: round2(transferTotal),
-          orderIds: mine.map(o => o.id),
-          paymentIds: [],
-          confirmedById: user.userId,
-          confirmedByName: actorName,
-        },
-      })
-
-      const marker = driverCashConfirmationMarker(confirmation.id)
-      const posting = await postCollections(
-        prisma,
-        { marker, restaurants: [...byCustomer.values()] },
-        actorName,
-        user.userId,
-      )
-
-      if (posting.paymentIds.length > 0) {
-        await prisma.driverCashConfirmation.update({
-          where: { id: confirmation.id },
-          data: { paymentIds: posting.paymentIds },
+      const { confirmation, posting } = await prisma.$transaction(async tx => {
+        const created = await tx.driverCashConfirmation.create({
+          data: {
+            driverName,
+            businessDate,
+            cashTotal: round2(report.cashTotal),
+            transferTotal: round2(report.transferTotal),
+            orderIds: report.orderIds,
+            paymentIds: [],
+            confirmedById: user.userId,
+            confirmedByName: actorName,
+          },
         })
-      }
+        const marker = driverCashConfirmationMarker(created.id)
+        const result = await postCollections(tx, { marker, restaurants: report.collections }, actorName, user.userId)
+        if (result.paymentIds.length > 0) {
+          await tx.driverCashConfirmation.update({ where: { id: created.id }, data: { paymentIds: result.paymentIds } })
+        }
+        return { confirmation: created, posting: result }
+      }, { timeout: 60000, maxWait: 10000 })
 
       return NextResponse.json(serializeApi({
         confirmation,

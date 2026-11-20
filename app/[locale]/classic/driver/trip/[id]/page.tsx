@@ -225,6 +225,23 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     }
   }
 
+  async function setPaymentMethod(restId: string, method: 'CASH' | 'ONLINE') {
+    if (!trip) return
+    const current = trip.restaurants.find(r => r.restaurantId === restId)
+    if (!current || current.delivered) return
+    const updated = cloneTrip()
+    const restaurant = updated.restaurants.find(r => r.restaurantId === restId)
+    if (restaurant) restaurant.paymentMethod = method
+    setPaymentSavingRestId(restId)
+    try {
+      await saveTrip(updated)
+    } catch {
+      // saveTrip already reports the error.
+    } finally {
+      setPaymentSavingRestId(null)
+    }
+  }
+
   function openExceptionModal(restId: string) {
     if (!trip) return
     const rest = trip.restaurants.find(r => r.restaurantId === restId)
@@ -300,29 +317,23 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         })),
       })
       returnRecorded = true
-      // Re-read after the dedicated return endpoint writes the return records. If a
-      // previous amount was already saved, replace it with the new recommended amount.
+      // Re-read after the dedicated return endpoint writes the return records. A return
+      // changes the expected invoice total, but must never invent the driver's actual cash.
       const latestTrip = await apiGet<Trip>(`/api/trips/${trip.id}`)
       const updatedTrip = JSON.parse(JSON.stringify(latestTrip)) as Trip
-      const restaurant = updatedTrip.restaurants.find(r => r.restaurantId === exceptionModal.restId)
-      if (restaurant) {
-        const returnAdjustment = calculateReturnAdjustment(restaurant.items, restaurant.returns ?? [])
-        const grossDue = orderIncTaxTotal(restaurant.items)
-        restaurant.payment = Math.max(0, Math.round((grossDue - returnAdjustment.incTax) * 100) / 100)
-      }
       updatedTrip.totalPayment = updatedTrip.restaurants.reduce((sum, r) => sum + (r.payment ?? 0), 0)
       await apiPut(`/api/trips/${updatedTrip.id}`, updatedTrip)
       setTrip(updatedTrip)
       setExceptionModal(null)
       toast.success(isEn
         ? 'Exception recorded — collection amount recalculated'
-        : '异常已记录，实收金额已按退货重新计算')
+        : '异常已记录。请按客户实际支付金额核对实收；退货会调整发票参考金额，不会自动改写实收')
     } catch (e) {
       if (returnRecorded) {
         await load()
         toast.error(isEn
           ? 'Return was recorded, but the collection amount could not be refreshed. Please check the amount before sign-off.'
-          : '退货已记录，但实收金额未能刷新；请签收前核对金额。')
+          : '退货已记录，但行程刷新失败；请签收前核对实收金额。')
       } else {
         toast.error(e instanceof Error ? e.message : (isEn ? 'Submit failed' : '提交失败'))
       }
@@ -608,7 +619,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const canEditPayment = canContinueStopActions
           const canReportException = canContinueStopActions && !hasException
           const canUploadPod = canContinueStopActions
-          const canSignOff = canEditPayment && !r.delivered && hasValidPayment && paymentSavingRestId !== r.restaurantId
+          const needsCollectionMethod = Number(r.payment ?? 0) > 0
+          const canSignOff = canEditPayment && !r.delivered && hasValidPayment && (!needsCollectionMethod || !!r.paymentMethod) && paymentSavingRestId !== r.restaurantId
           const navigationOrderId = (activeOrderAtRest ? activeOrderId : null)
             ?? orderIds.find(orderId => !orderTimingById[orderId]?.endedAt)
             ?? orderIds[0]
@@ -666,6 +678,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                           && !!r.signerName?.trim()
                           && !!r.signedAt
                           && hasValidPayment
+                          && (Number(r.payment ?? 0) <= 0 || !!r.paymentMethod)
                           && paymentSavingRestId !== r.restaurantId
                         const orderLabel = r.orderCodes?.[orderIndex] ?? orderId.slice(-8).toUpperCase()
                         const buttonLabel = isCurrent
@@ -705,6 +718,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                                   ? (isEn ? 'Saving collected amount…' : '正在保存实收金额…')
                                   : !hasValidPayment
                                     ? (isEn ? 'Enter and save the amount collected (0 is allowed) before ending.' : '请先输入并保存实收金额（可以填写 0），再结束订单。')
+                                    : Number(r.payment ?? 0) > 0 && !r.paymentMethod
+                                      ? (isEn ? 'Select the actual collection method before ending.' : '请先选择实际收款方式，再结束订单。')
                                     : (isEn ? 'Get the customer signature before ending this order.' : '请先完成顾客签名，才能结束订单。')}
                               </p>
                             )}
@@ -787,6 +802,22 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                           : !canOperateRest || paymentLocked || paymentSavingRestId === r.restaurantId}
                         className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
                       />
+                      {Number(r.payment ?? 0) > 0 && (
+                        <div className="mt-3">
+                          <label className="mb-1 block text-xs font-medium text-gray-600">{isEn ? 'Collection method' : '收款方式'}</label>
+                          <select
+                            value={r.paymentMethod ?? ''}
+                            onChange={e => e.target.value && void setPaymentMethod(r.restaurantId, e.target.value as 'CASH' | 'ONLINE')}
+                            disabled={tripStatus === 'in_progress' ? !canEditPayment || paymentLocked || paymentSavingRestId === r.restaurantId : !canOperateRest || paymentLocked || paymentSavingRestId === r.restaurantId}
+                            className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-base text-gray-800 disabled:bg-gray-100"
+                            required
+                          >
+                            <option value="">{isEn ? 'Select how payment was received' : '请选择实际收款方式'}</option>
+                            <option value="CASH">{isEn ? 'Cash' : '现金'}</option>
+                            <option value="ONLINE">{isEn ? 'Bank transfer / online' : '银行转账 / 在线'}</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                   )}
 

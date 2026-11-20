@@ -248,12 +248,12 @@ export async function POST(req: Request) {
                 await recalcTripDriverCommission(ownerTrip.id, prisma).catch((e: unknown) => console.error('[write-off: trip commission sync]', e))
               }
             } catch (e) {
-              if ((e as { status?: number }).status === 409 && (e as Error).message.includes('退货')) { invoiceDeferred.push(o.restaurantName ?? o.id.slice(-8)); continue }
+              if ((e as { status?: number }).status === 409 && ((e as Error).message.includes('退货') || (e as Error).message.includes('贷记申请'))) { invoiceDeferred.push(o.restaurantName ?? o.id.slice(-8)); continue }
               console.error('[write-off: invoice/commission]', o.id, e)
               invoiceFailed.push(o.restaurantName ?? o.id.slice(-8))
             }
           }
-          if (invoiceDeferred.length) detail += `；${invoiceDeferred.length} 单已核销，因退货处理中暂缓开票，处理完毕后自动补开`
+          if (invoiceDeferred.length) detail += `；${invoiceDeferred.length} 单已核销，因退货或贷记申请处理中暂缓开票，处理完毕后自动补开`
           if (invoiceFailed.length > 0) {
             detail += `；⚠️ ${invoiceFailed.length} 单开票/提成失败（${invoiceFailed.join('、')}），可用「补开漏开的发票」补`
           }
