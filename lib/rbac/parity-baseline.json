@@ -4996,5 +4996,19 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "GET /api/order-returns/delivery-checklist": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "y",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }
