@@ -154,6 +154,39 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
       }
 
+      // 一键核货是独立业务动作，不接受司机端把 GET 返回的整份 Trip JSON 原样 PUT 回来。
+      // 详情包含 returnIntakes/orderCodes 等只读关系字段，直接整包写入会触发 Prisma 500。
+      if (data.action === 'verifyAllCargo') {
+        const status = String(before.status).toUpperCase()
+        if (!['PENDING', 'PENDING_ASSIGNMENT', 'VERIFYING'].includes(status)) {
+          return NextResponse.json({ error: `当前状态 ${before.status} 不允许核货操作` }, { status: 400 })
+        }
+        const currentRestaurants = Array.isArray(before.restaurants)
+          ? before.restaurants as Array<{ restaurantId: string; cargoVerified?: boolean; items?: Array<Record<string, unknown>> }>
+          : []
+        if (currentRestaurants.length === 0) {
+          return NextResponse.json({ error: '行程没有客户，无法完成核货' }, { status: 400 })
+        }
+        const restaurants = currentRestaurants.map(restaurant => ({
+          ...restaurant,
+          items: (restaurant.items ?? []).map(item => ({ ...item, verifiedQty: item.quantity })),
+          cargoVerified: true,
+        }))
+        const updated = await prisma.trip.update({
+          where: { id },
+          data: {
+            restaurants: restaurants as never,
+            status: 'VERIFYING',
+          },
+        })
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'trip', resourceId: id,
+          detail: `一键核货完成: ${restaurants.length} 个客户`,
+        })
+        return NextResponse.json(serializeApi(updated))
+      }
+
       // `GET /api/trips/:id` projects canonical OrderReturn rows into restaurants[].returns
       // for display/calculation. Never persist that projection back into the legacy Trip JSON.
       if (Array.isArray(data.restaurants) && Array.isArray(before.restaurants)) {
