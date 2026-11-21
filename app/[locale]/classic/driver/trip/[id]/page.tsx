@@ -125,8 +125,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     return null
   }
 
-  // 唯一落库出口：verifyAllCargo/startDelivery/setPayment/endTrip/confirmDelivery/
-  // handlePodUpload 全部经过这里却都没包 try/catch，PUT 失败（蜂窝网络差/后端 409）时
+  // 行程 JSON 保存出口：setPayment/endTrip/confirmDelivery/handlePodUpload 等经过这里。
+  // PUT 失败（蜂窝网络差/后端 409）时
   // 异常直接从 onClick 里飞出去，司机看到的是点了按钮毫无反应——跟没点一样，还可能
   // 误以为已经送达/收款成功。统一在这里兜底报错，调用方原有的"成功后才执行"的代码
   // （toast.success/router.push/关弹窗）天然不会跑，不用逐个改调用方。
@@ -179,12 +179,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (!trip || startingDelivery) return
     setStartingDelivery(true)
     try {
-      const updated = cloneTrip()
-      updated.status = 'in_progress'
-      await saveTrip(updated)
+      // Departure only needs a status transition. Sending the whole GET response
+      // also includes read-only relation fields and causes Prisma to reject the PUT.
+      await apiPut<Trip>(`/api/trips/${trip.id}`, { status: 'IN_PROGRESS' })
+      await load()
       toast.success(isEn ? 'Departure confirmed, delivery started' : '已确认出发，开始配送')
-    } catch {
-      // saveTrip displays the server conflict, including the currently active trip name.
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Could not confirm departure' : '确认出发失败'))
     } finally {
       setStartingDelivery(false)
     }
