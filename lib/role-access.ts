@@ -122,6 +122,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
   WAREHOUSE: [
     ...COMMON,
     { pattern: '/api/order-returns', methods: ['POST'] },
+    { pattern: '/api/order-returns/intakes', methods: ['POST'] },
     { pattern: '/api/order-returns/intakes/*', methods: ['PUT'] },
     // 本人提交的贷记申请只含本人创建的记录，可用于追踪仓库验收后的处理进度。
     { pattern: '/api/credit-note-requests/mine', methods: READ },
@@ -248,6 +249,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   SALES: [
     ...COMMON,
+    // Sales identifies the restaurant and source order for warehouse-recorded unreported goods.
+    { pattern: '/api/order-returns/intakes/*', methods: ['PUT'] },
     { pattern: '/api/credit-note-requests', methods: ['POST'] },
     { pattern: '/api/credit-note-requests/mine', methods: READ },
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
