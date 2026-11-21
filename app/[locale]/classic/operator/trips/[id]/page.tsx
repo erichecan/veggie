@@ -159,7 +159,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   async function saveStop(updated: Trip) {
-    const saved = await apiPut<Record<string, unknown>>(`/api/trips/${id}`, updated)
+    const saved = await apiPut<Record<string, unknown>>(`/api/trips/${id}`, {
+      restaurants: updated.restaurants,
+      totalPayment: updated.totalPayment,
+    })
     setTrip(normalizeTrip(saved))
   }
 

@@ -5,6 +5,12 @@ import { withAuth, userHasPermission } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 
 const WAVE_TRACKED_FIELDS = ['status', 'orderIds', 'zones', 'driverName', 'waveType', 'vehiclePlate']
+// GET includes the `pallets` relation. Only accept editable PickingWave scalars here;
+// included relations and client supplied ids/timestamps must never reach Prisma.update.
+const WAVE_WRITABLE_FIELDS = new Set([
+  'name', 'zones', 'status', 'waveDate', 'waveNumber', 'waveType',
+  'driverSlotId', 'driverName', 'timeOfDay', 'assignmentDoneAt', 'vehiclePlate',
+])
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -22,7 +28,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const data = await req.json()
+      const requestData = await req.json() as Record<string, unknown>
+      const data: Record<string, unknown> = Object.fromEntries(
+        Object.entries(requestData).filter(([key]) => WAVE_WRITABLE_FIELDS.has(key)),
+      )
       const before = await prisma.pickingWave.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
       if (data.status !== undefined && (before.dispatchedAt || before.completedAt)) {
@@ -41,12 +50,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
       // SSOT: orderIds 成员变更只能走 assign/unassign（会原子同步 Order.status）。
       // 通用 PUT 剥掉 orderIds，防止绕过状态同步造成两套真相不一致。
-      const { orderIds: _ignoredOrderIds, ...safeData } = data
       const wave = await prisma.pickingWave.update({
         where: { id },
         data: {
-          ...safeData,
-          status: data.status?.toUpperCase() ?? undefined,
+          ...data,
+          status: data.status === undefined ? undefined : String(data.status).toUpperCase() as never,
         },
       })
       const changes = diffChanges(

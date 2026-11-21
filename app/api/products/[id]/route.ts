@@ -11,6 +11,14 @@ const PRODUCT_TRACKED_FIELDS = [
   'active', 'categoryId', 'customerTaxRate', 'commissionPrice', 'status',
   'variantAttributes', 'images', 'weight', 'safetyStockMin',
 ]
+const PRODUCT_WRITABLE_FIELDS = new Set([
+  'name', 'variantAttributes', 'internalRef', 'listPrice', 'standardPrice', 'active',
+  'categoryId', 'customerTaxRate', 'commissionPrice', 'images', 'spec', 'price',
+  'safetyStockMin', 'status', 'type', 'sequence', 'canBeSold', 'showInPortal',
+  'canBePurchased', 'description', 'saleDescription', 'weight', 'netWeight', 'volume',
+  'isPackaging', 'canBeExpensed', 'uomId', 'purchaseUomId', 'unitOfMeasure',
+  'purchaseUoM', 'tracking', 'websitePublished', 'websiteName', 'vendorTaxRate', 'barcode',
+])
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -28,14 +36,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      // qtyOnHand 不走这条通用编辑接口——它是 StockMove 流水表在同一事务里维护的缓存余额
-      // (见 /api/stock-moves 的 $transaction：写流水的同时原子更新这个字段)，不是可以直接
-      // 改的"内容"字段。这里之前把请求体原样展开进 Prisma update，等于留了个后门：
-      // 只要调用方(不管前端有没有暴露对应输入框)在 PUT body 里带上 qtyOnHand，就能绕开流水表
-      // 直接覆盖库存余额，账本和余额就对不上了。商品详情页目前没有任何输入框会触发这条路径
-      // (手动调库存走的是专门的 /api/stock-moves)，但接口本身不该允许——20261001 客户反馈 #17
-      // 评估后明确要求关掉这个后门，强制所有库存数量变化都必须经过有完整流水记录的那条路径。
-      const { qtyOnHand: _qtyOnHand, ...data } = await req.json()
+      // qtyOnHand and all unknown/derived/relation fields are deliberately excluded from
+      // this editor contract. Inventory must still move through /api/stock-moves; the
+      // allowlist also protects against GET projections later being sent back wholesale.
+      const requestData = await req.json() as Record<string, unknown>
+      const data: Record<string, unknown> = Object.fromEntries(
+        Object.entries(requestData).filter(([key]) => PRODUCT_WRITABLE_FIELDS.has(key)),
+      )
 
       // 服务端校验数值字段
       if (data.listPrice !== undefined) {
@@ -67,11 +74,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           // data.internalRef 是 null(字段本来是空的，前端整对象回传)时不能走 String(null)，
           // 那会把字面字符串 "null" 写进数据库——见 product-templates/[id]/route.ts 同款修复。
           internalRef: data.internalRef === undefined ? undefined : (data.internalRef == null || String(data.internalRef).trim() === '' ? null : String(data.internalRef).trim().slice(0, 100)),
-          status: data.status?.toUpperCase() ?? undefined,
+          status: data.status === undefined ? undefined : String(data.status).toUpperCase() as 'ACTIVE' | 'DRAFT' | 'ARCHIVED',
           // ⛔ 20260825 合表重构遗留 bug：商品详情页把 tmpl.type 标准化成小写显示('product'/'consu'/'service')，
           // 保存时整对象回传，这里原来没跟 status 一样转大写 —— Prisma 枚举校验直接 500，
           // 商品详情页整页保存(Edit→Save)必现失败(实测复现)。
-          type: data.type !== undefined ? String(data.type).toUpperCase() : undefined,
+          type: data.type === undefined ? undefined : String(data.type).toUpperCase() as 'PRODUCT' | 'CONSU' | 'SERVICE',
           variantAttributes: data.variantAttributes ?? undefined,
           images: data.images ?? undefined,
           // 只是导入时的一次性快照，此前编辑商品从不回写，"最后更新人"永远停在

@@ -67,7 +67,7 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
       ...wave,
       status: wave.status.toLowerCase() === 'picked' ? 'sorting' : wave.status,
     }
-    await apiPut(`/api/waves/${updated.id}`, updated)
+    await apiPut(`/api/waves/${updated.id}`, { status: updated.status })
     setWave(updated)
   }
 
@@ -81,7 +81,7 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
       if (!confirm(msg)) return
     }
     const updated: PickingWave = { ...wave, status: 'sorted' }
-    await apiPut(`/api/waves/${updated.id}`, updated)
+    await apiPut(`/api/waves/${updated.id}`, { status: updated.status })
     toast.success(isEn ? 'Sorting complete! Driver notified' : '分货完成！已通知司机')
     router.push(`${prefix}/classic/sorter`)
   }
