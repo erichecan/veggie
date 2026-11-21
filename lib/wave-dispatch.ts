@@ -40,6 +40,33 @@ export async function dispatchWave(
     ?? (fallbackDateStr ? new Date(`${fallbackDateStr}T00:00:00Z`) : null)
   if (!deliveryDate) return { ok: false, waveId, reason: '缺少排程日期，无法确定交货日期' }
 
+  // 出发时把司机当前默认车辆写入波次快照；之后调整司机车辆关联不会改写配送历史。
+  const driverSlot = wave.driverSlotId
+    ? await prisma.driverSlot.findUnique({
+        where: { id: wave.driverSlotId },
+        select: { driverUser: { select: { defaultFleetVehicle: { select: { plate: true, isActive: true } } } } },
+      })
+    : wave.driverName
+      ? await prisma.driverSlot.findFirst({
+          where: { driverName: wave.driverName },
+          select: { driverUser: { select: { defaultFleetVehicle: { select: { plate: true, isActive: true } } } } },
+        })
+      : null
+  const fallbackDriver = !driverSlot?.driverUser && wave.driverName
+    ? await prisma.user.findFirst({
+        where: {
+          name: wave.driverName,
+          isActive: true,
+          OR: [{ role: 'DRIVER' }, { roles: { has: 'DRIVER' } }],
+        },
+        select: { defaultFleetVehicle: { select: { plate: true, isActive: true } } },
+      })
+    : null
+  const configuredVehicle = driverSlot?.driverUser?.defaultFleetVehicle ?? fallbackDriver?.defaultFleetVehicle
+  const defaultVehiclePlate = configuredVehicle?.isActive
+    ? configuredVehicle.plate
+    : null
+
   try {
     const { updated, trip, shippingIds } = await prisma.$transaction(async (tx) => {
       // 用「条件 updateMany」当互斥锁，而不是先查一次再单独 update：同一波次被并发调用两次
@@ -54,7 +81,10 @@ export async function dispatchWave(
       // 两个独立字段各管各的、互不联动是原本的缺口（20260924 补上）。
       const lockUpd = await tx.pickingWave.updateMany({
         where: { id: waveId, dispatchedAt: null },
-        data: { dispatchedAt: new Date(), pickLockedAt: null, pickLockedBy: null },
+        data: {
+          dispatchedAt: new Date(), pickLockedAt: null, pickLockedBy: null,
+          ...(defaultVehiclePlate ? { vehiclePlate: defaultVehiclePlate } : {}),
+        },
       })
       if (lockUpd.count === 0) throw new DispatchRaceLostError()
 

@@ -3,9 +3,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet } from '@/lib/api'
 import { DatePicker } from '@/components/ui/date-picker'
-import VehiclePlatePicker, { type FleetVehicleOption } from './VehiclePlatePicker'
 
 const PURPLE = '#875A7B'
 const WEEKDAYS_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -84,7 +83,6 @@ export default function DriverDispatchTab({ date }: { date: string }) {
 
   const [rows, setRows] = useState<SummaryRow[]>([])
   const [loading, setLoading] = useState(false)
-  const [vehicles, setVehicles] = useState<FleetVehicleOption[]>([])
 
   // 筛选状态
   const [from, setFrom] = useState(date)
@@ -112,12 +110,6 @@ export default function DriverDispatchTab({ date }: { date: string }) {
   }, [from, to, isEn])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    apiGet<FleetVehicleOption[]>('/api/fleet-vehicles').then(data => setVehicles(Array.isArray(data) ? data : [])).catch(() => {
-      toast.error(isEn ? 'Failed to load vehicle list' : '加载车辆列表失败')
-    })
-  }, [isEn])
-
   // 可选项（从已加载数据提取）
   const driverOpts = [...new Set(rows.map(r => r.driverName).filter(Boolean))].sort()
   const batchOpts = [...new Set(rows.flatMap(r => r.batchNums))].sort((a, b) => a - b)
@@ -254,10 +246,7 @@ export default function DriverDispatchTab({ date }: { date: string }) {
               const st = WAVE_STATUS_LABEL[r.status] ?? { text: r.status, cls: 'bg-gray-100 text-gray-500' }
               return (
                 <tr key={r.waveId} className="border-t hover:bg-gray-50" style={{ borderColor: '#f0f0f0' }}>
-                  <td className="px-3 py-2.5 font-medium">{r.driverName || '—'}<label className="block text-xs text-gray-500">{isEn ? 'Vehicle plate' : '车牌'}<VehiclePlatePicker key={`${r.waveId}:${r.vehiclePlate}`} value={r.vehiclePlate} vehicles={vehicles} isEn={isEn} disabled={r.status === 'IN_DELIVERY' || r.status === 'COMPLETED'} onSelect={async plate => {
-                    if (plate === (r.vehiclePlate ?? '')) return
-                    try { await apiPut(`/api/waves/${r.waveId}`, { vehiclePlate: plate }); toast.success(isEn ? 'Vehicle saved' : '车牌已保存'); await load() } catch (error) { toast.error(error instanceof Error ? error.message : 'Failed'); await load() }
-                  }} /></label></td>
+                  <td className="px-3 py-2.5 font-medium">{r.driverName || '—'}<span className="mt-1 block text-xs font-normal text-gray-500">{isEn ? 'Default vehicle' : '默认车牌'}：{r.vehiclePlate || (isEn ? 'Not assigned · configure in Vehicle Management' : '未关联，请在车辆管理中设置')}</span></td>
                   <td className="px-3 py-2.5 text-gray-500">{r.waveDate ?? '—'}{r.weekday != null ? ` ${WEEKDAYS[r.weekday]}` : ''}</td>
                   <td className="px-3 py-2.5">{timePill(r.timeOfDay, isEn)}</td>
                   <td className="px-3 py-2.5">{r.batchNums.length > 0 ? (isEn ? `Batch ${r.batchNums.join('·')}` : `批次 ${r.batchNums.join('·')}`) : (isEn ? 'No Pallet' : '未分托盘')}</td>
