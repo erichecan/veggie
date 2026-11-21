@@ -47,7 +47,12 @@ export async function PUT(
           { status: 409 },
         )
       }
-      if (action === 'verify' && (!note?.trim() || !['SELLABLE', 'SCRAP'].includes(String(disposition)))) return NextResponse.json({ error: '核实通过须描述质量，并选择可再售或报废' }, { status: 400 })
+      if (action === 'verify' && !note?.trim()) {
+        return NextResponse.json({ error: '请填写质量说明，记录实收商品、数量及外观/质量检查结果后再核实通过' }, { status: 400 })
+      }
+      if (action === 'verify' && !['SELLABLE', 'SCRAP'].includes(String(disposition))) {
+        return NextResponse.json({ error: '请先选择货物去向：可再售（回补库存）或报废（计入损耗）' }, { status: 400 })
+      }
       let confirmedQuantity: number | undefined
       let actualProduct: { id: string; name: string } | null = null
       const actualName = String(actualReturnedProductName ?? ret.actualReturnedProductName ?? '').trim()
