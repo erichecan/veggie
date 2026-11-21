@@ -53,5 +53,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/order-returns/intakes]', error)
       return NextResponse.json({ error: '仓库登记退回商品失败' }, { status: 500 })
     }
-  }, { require: 'dispatch.goods_return.warehouse_verify' })
+  }, ['BOSS', 'OPERATOR', 'WAREHOUSE'])
 }

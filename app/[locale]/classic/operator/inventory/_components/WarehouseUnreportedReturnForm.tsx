@@ -6,6 +6,7 @@ import { apiPost } from '@/lib/api'
 
 export default function WarehouseUnreportedReturnForm({ isEn, onSaved }: { isEn: boolean; onSaved: () => void }) {
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
   const [photo, setPhoto] = useState<string | null>(null)
   const [form, setForm] = useState({ vehiclePlate: '', driverName: '', customerName: '', productName: '', spec: '', uomLabel: '', quantity: '', reason: '' })
 
@@ -20,6 +21,7 @@ export default function WarehouseUnreportedReturnForm({ isEn, onSaved }: { isEn:
       toast.success(isEn ? 'Unreported goods recorded for Sales matching' : '漏报货物已登记，等待销售匹配餐馆/订单')
       setForm({ vehiclePlate: '', driverName: '', customerName: '', productName: '', spec: '', uomLabel: '', quantity: '', reason: '' })
       setPhoto(null)
+      setOpen(false)
       onSaved()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : (isEn ? 'Could not save the intake' : '登记失败'))
@@ -46,10 +48,16 @@ export default function WarehouseUnreportedReturnForm({ isEn, onSaved }: { isEn:
 
   return (
     <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-      <div className="mb-2">
-        <h3 className="text-sm font-semibold text-amber-900">{isEn ? 'Warehouse entry — unreported returned goods' : '仓库手动登记司机漏报货物'}</h3>
-        <p className="mt-1 text-xs text-amber-800">{isEn ? 'Record the vehicle and goods. Sales will identify the restaurant and original order in the Returns tab.' : '先记录车牌和实物；销售会在“退换货”Tab 补充餐馆及原订单。登记时间由系统自动记录。'}</p>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-amber-900">{isEn ? 'Unreported goods on a vehicle' : '车辆漏报货物登记'}</h3>
+          <p className="mt-1 text-xs text-amber-800">{isEn ? 'Record the plate and goods. Sales will identify the restaurant and original order in Returns.' : '仓库先记录车牌和实物；销售在“退换货”Tab 补充餐馆及原订单。系统自动记录登记时间。'}</p>
+        </div>
+        <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)} className="rounded bg-[#875A7B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#714B67]">
+          {open ? (isEn ? 'Close entry' : '收起登记') : (isEn ? '+ Manual entry' : '+ 手动登记')}
+        </button>
       </div>
+      {open && <>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {field('vehiclePlate', isEn ? 'Vehicle plate' : '车牌号', true)}
         {field('driverName', isEn ? 'Driver (if known)' : '司机（知道时填写）')}
@@ -62,6 +70,7 @@ export default function WarehouseUnreportedReturnForm({ isEn, onSaved }: { isEn:
         <label className="block text-xs text-gray-600">{isEn ? 'Photo (optional)' : '现场照片（选填）'}<input type="file" accept="image/*" capture="environment" onChange={event => void attachPhoto(event.target.files?.[0])} className="mt-1 block w-full text-xs" />{photo && <span className="text-green-700">{isEn ? 'Photo attached' : '已附照片'}</span>}</label>
       </div>
       <button type="button" disabled={busy} onClick={() => void submit()} className="mt-3 rounded bg-[#875A7B] px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? (isEn ? 'Saving…' : '登记中…') : (isEn ? 'Save warehouse intake' : '登记并交销售匹配')}</button>
+      </>}
     </section>
   )
 }
