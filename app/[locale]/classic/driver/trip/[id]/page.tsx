@@ -44,6 +44,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [trip, setTrip] = useState<Trip | null>(null)
   const [orderTimingBusy, setOrderTimingBusy] = useState<string | null>(null)
   const [paymentSavingRestId, setPaymentSavingRestId] = useState<string | null>(null)
+  const [verifyingAllCargo, setVerifyingAllCargo] = useState(false)
   const [startingDelivery, setStartingDelivery] = useState(false)
   const [showEndTripConfirm, setShowEndTripConfirm] = useState(false)
   const [endingTrip, setEndingTrip] = useState(false)
@@ -153,12 +154,25 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   }
 
   async function verifyAllCargo() {
-    if (!trip) return
-    const updated = cloneTrip()
-    updated.restaurants = updated.restaurants.map(r => ({ ...r, cargoVerified: true }))
-    updated.status = 'verifying'
-    await saveTrip(updated)
-    toast.success(isEn ? 'Cargo verification complete' : '货物核查完成')
+    if (!trip || verifyingAllCargo) return
+    setVerifyingAllCargo(true)
+    try {
+      // Use a narrow verification action. The generic trip PUT cannot safely replace
+      // the full GET response because it also contains read-only relation fields.
+      if (trip.restaurants.some(restaurant => !restaurant.cargoVerified)) {
+        // Submit a narrow server-side action instead of PUT-ing the whole trip returned
+        // by GET (which also contains read-only relations such as returnIntakes/orderCodes).
+        await apiPut(`/api/trips/${trip.id}`, { action: 'verifyAllCargo' })
+      }
+      await load()
+      toast.success(isEn ? 'Cargo verification complete' : '货物核查完成')
+    } catch (e) {
+      // Some customers may already have been verified; reload to show the saved progress.
+      await load()
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Cargo verification failed' : '货物核查失败'))
+    } finally {
+      setVerifyingAllCargo(false)
+    }
   }
 
   async function startDelivery() {
@@ -552,8 +566,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
             ))}
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Button variant="outline" onClick={verifyAllCargo} className="min-h-14 w-full text-base font-semibold sm:flex-1">
-              {isEn ? 'Verify All' : '一键核货完成'}
+            <Button variant="outline" onClick={verifyAllCargo} disabled={verifyingAllCargo} className="min-h-14 w-full text-base font-semibold sm:flex-1">
+              {verifyingAllCargo
+                ? (isEn ? 'Verifying cargo…' : '正在核货…')
+                : (isEn ? 'Verify All' : '一键核货完成')}
             </Button>
             <Button
               onClick={startDelivery}
