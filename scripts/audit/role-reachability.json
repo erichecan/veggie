@@ -2380,6 +2380,20 @@
   "OTHER": "n"
  },
  "PUT /api/order-returns/intakes/[id]": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
+ "POST /api/order-returns/intakes": {
   "BOSS": "n",
   "OPERATOR": "n",
   "FINANCE": "n",

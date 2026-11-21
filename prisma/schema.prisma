@@ -1196,6 +1196,9 @@ model OrderReturn {
   orderLine               OrderLine?               @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
   sourceTripId            String?
   sourceTrip              Trip?                    @relation(fields: [sourceTripId], references: [id], onDelete: SetNull)
+  /// Snapshot is retained when a warehouse report cannot be tied to a recent trip.
+  vehiclePlateSnapshot    String?
+  driverNameSnapshot      String?
   productId               String
   productName             String
   /// 送错商品时记录实际退回商品；productId/productName 保留原订单应送商品
@@ -1238,6 +1241,7 @@ model OrderReturn {
   @@index([orderId])
   @@index([orderLineId, status])
   @@index([sourceTripId, status])
+  @@index([vehiclePlateSnapshot, createdAt])
   @@index([status])
 }
 
@@ -2477,9 +2481,13 @@ model StockLocation {
 /// Physical quarantine intake only: never a credit or saleable-stock posting.
 model ReturnIntake {
   id String @id @default(cuid())
-  sourceTripId String
-  sourceTrip Trip @relation(fields: [sourceTripId], references: [id])
-  customerId String
+  sourceTripId String?
+  sourceTrip Trip? @relation(fields: [sourceTripId], references: [id])
+  /// DRIVER = driver-reported historical intake; WAREHOUSE = next-morning unreported cargo.
+  sourceType String @default("DRIVER")
+  vehiclePlate String?
+  driverName String?
+  customerId String?
   customerName String
   productName String
   spec String
@@ -2496,4 +2504,5 @@ model ReturnIntake {
   reviewedAt DateTime?
   @@index([status, createdAt])
   @@index([sourceTripId])
+  @@index([sourceType, status, createdAt])
 }
