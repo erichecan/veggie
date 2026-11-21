@@ -1,14 +1,34 @@
 'use client'
 
 import { useState } from 'react'
+import { useEffect } from 'react'
 import { toast } from 'sonner'
-import { apiPost } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 
-export default function WarehouseUnreportedReturnForm({ isEn, onSaved }: { isEn: boolean; onSaved: () => void }) {
+interface ProductOption {
+  id: string
+  name: string
+  internalRef?: string | null
+  category?: string | null
+  spec?: string | null
+  purchaseUomSpec?: string | null
+  uomName?: string | null
+}
+
+export default function WarehouseUnreportedReturnForm({ isEn, onSaved, vehiclePlates }: { isEn: boolean; onSaved: () => void; vehiclePlates: string[] }) {
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [photo, setPhoto] = useState<string | null>(null)
+  const [products, setProducts] = useState<ProductOption[]>([])
   const [form, setForm] = useState({ vehiclePlate: '', driverName: '', customerName: '', productName: '', spec: '', uomLabel: '', quantity: '', reason: '' })
+
+  useEffect(() => {
+    if (!open || products.length) return
+    apiGet<ProductOption[]>('/api/products?status=ACTIVE&sellable=1&slim=1')
+      .then(rows => setProducts(Array.isArray(rows) ? rows : []))
+      .catch(error => toast.error(error instanceof Error ? error.message : (isEn ? 'Could not load products' : '加载商品失败')))
+  }, [open, products.length, isEn])
 
   async function submit() {
     if (!form.vehiclePlate.trim() || !form.productName.trim() || !form.spec.trim() || !form.uomLabel.trim() || !(Number(form.quantity) > 0)) {
@@ -59,10 +79,30 @@ export default function WarehouseUnreportedReturnForm({ isEn, onSaved }: { isEn:
       </div>
       {open && <>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {field('vehiclePlate', isEn ? 'Vehicle plate' : '车牌号', true)}
+        <label className="block text-xs text-gray-600">{isEn ? 'Vehicle plate' : '车牌号'}<span className="text-red-500"> *</span>
+          <ProductSearchInput
+            value={form.vehiclePlate}
+            onChange={value => setForm(current => ({ ...current, vehiclePlate: value }))}
+            onSelect={vehicle => setForm(current => ({ ...current, vehiclePlate: vehicle.name }))}
+            products={vehiclePlates.map(plate => ({ id: plate, name: plate }))}
+            placeholder={isEn ? 'Search plate or enter manually…' : '输入车牌号搜索，也可手动输入…'}
+            inputClassName="mt-1 w-full rounded border px-2.5 py-2 text-sm"
+            portalDropdown
+          />
+        </label>
         {field('driverName', isEn ? 'Driver (if known)' : '司机（知道时填写）')}
         {field('customerName', isEn ? 'Restaurant hint (optional)' : '餐馆线索（选填）')}
-        {field('productName', isEn ? 'Goods received' : '实际收到商品', true)}
+        <label className="block text-xs text-gray-600">{isEn ? 'Goods received' : '实际收到商品'}<span className="text-red-500"> *</span>
+          <ProductSearchInput
+            value={form.productName}
+            onChange={value => setForm(current => ({ ...current, productName: value, spec: '', uomLabel: '' }))}
+            onSelect={product => setForm(current => ({ ...current, productName: product.name, spec: product.purchaseUomSpec ?? product.spec ?? '', uomLabel: product.uomName ?? '' }))}
+            products={products}
+            placeholder={isEn ? 'Search products…' : '输入商品名称搜索并选择…'}
+            inputClassName="mt-1 w-full rounded border px-2.5 py-2 text-sm"
+            portalDropdown
+          />
+        </label>
         {field('spec', isEn ? 'Specification' : '规格', true)}
         {field('uomLabel', isEn ? 'Unit' : '单位', true)}
         {field('quantity', isEn ? 'Quantity received' : '实收数量', true, 'number')}

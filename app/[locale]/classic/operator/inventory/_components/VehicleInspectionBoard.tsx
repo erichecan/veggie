@@ -67,12 +67,29 @@ export default function VehicleInspectionBoard() {
   const [manifestDate, setManifestDate] = useState(yesterdayDateString)
   const [manifest, setManifest] = useState<ChecklistResponse | null>(null)
   const [manifestLoading, setManifestLoading] = useState(false)
+  const [fleetPlates, setFleetPlates] = useState<string[]>([])
   const [returnRegistration, setReturnRegistration] = useState<{ orderCode: string; orderLineId: string; sourceTripId: string } | null>(null)
 
   const ability = useAbility()
   const canVerify = hasPermission(ability, 'dispatch.goods_return.warehouse_verify')
+  const canReadFleet = hasPermission(ability, 'dispatch.driver_slot.read')
 
   const { trips, orderReturns, loading, reload: load } = useGoodsReturnData(isEn)
+
+  useEffect(() => {
+    if (!canReadFleet) { setFleetPlates([]); return }
+    let active = true
+    apiGet<Array<{ plate: string }>>('/api/fleet-vehicles')
+      .then(rows => { if (active) setFleetPlates(Array.isArray(rows) ? rows.map(row => row.plate) : []) })
+      .catch(() => { if (active) setFleetPlates([]) })
+    return () => { active = false }
+  }, [canReadFleet])
+
+  const vehiclePlates = Array.from(new Set([
+    ...fleetPlates,
+    ...trips.map(trip => trip.vehiclePlate ?? ''),
+    ...(manifest?.trips ?? []).map(trip => trip.vehiclePlate ?? ''),
+  ].map(plate => plate.trim()).filter(Boolean)))
 
   useEffect(() => {
     if (!canVerify) return
@@ -120,7 +137,7 @@ export default function VehicleInspectionBoard() {
 
   return (
     <div>
-      <WarehouseUnreportedReturnForm isEn={isEn} onSaved={load} />
+      <WarehouseUnreportedReturnForm isEn={isEn} onSaved={load} vehiclePlates={vehiclePlates} />
       {canVerify && <section className="mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-gray-50 px-3 py-3">
           <div><h3 className="text-sm font-semibold text-gray-800">{isEn ? 'Delivery reconciliation manifest' : '昨日配送核对清单'}</h3><p className="text-xs text-gray-500">{isEn ? 'Review each driver, vehicle, customer, order and delivered item.' : '按司机和车牌逐项核对配送客户、订单、商品和实送数量。'}</p></div>
