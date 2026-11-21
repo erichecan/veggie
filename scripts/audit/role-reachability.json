@@ -2394,8 +2394,8 @@
   "OTHER": "n"
  },
  "POST /api/order-returns/intakes": {
-  "BOSS": "n",
-  "OPERATOR": "n",
+  "BOSS": "y",
+  "OPERATOR": "y",
   "FINANCE": "n",
   "WAREHOUSE": "y",
   "DISPATCH": "n",
