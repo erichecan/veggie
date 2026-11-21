@@ -43,7 +43,7 @@ export async function GET(req: Request) {
             ] },
             select: {
               id: true, driverName: true, timeOfDay: true,
-              driverUser: { select: { defaultFleetVehicle: { select: { plate: true, isActive: true } } } },
+              driverUser: { select: { id: true, defaultFleetVehicle: { select: { id: true, plate: true, isActive: true } } } },
             },
           })
         : []
@@ -57,7 +57,7 @@ export async function GET(req: Request) {
               isActive: true,
               OR: [{ role: 'DRIVER' }, { roles: { has: 'DRIVER' } }],
             },
-            select: { name: true, defaultFleetVehicle: { select: { plate: true, isActive: true } } },
+            select: { id: true, name: true, defaultFleetVehicle: { select: { id: true, plate: true, isActive: true } } },
           })
         : []
       const fallbackDriverMap = new Map(fallbackDrivers.map(driver => [driver.name, driver]))
@@ -77,6 +77,8 @@ export async function GET(req: Request) {
           ?? (w.driverName ? driverNameSlotMap.get(w.driverName) : undefined)
         const configuredVehicle = slot?.driverUser?.defaultFleetVehicle
           ?? (slot ? fallbackDriverMap.get(slot.driverName)?.defaultFleetVehicle : undefined)
+        const driverUserId = slot?.driverUser?.id
+          ?? (slot ? fallbackDriverMap.get(slot.driverName)?.id : undefined)
         const defaultPlate = configuredVehicle?.isActive ? configuredVehicle.plate : null
         const restaurants = new Set<string>()
         let totalQty = 0
@@ -93,6 +95,8 @@ export async function GET(req: Request) {
         return {
           waveId: w.id,
           vehiclePlate: w.dispatchedAt || w.completedAt ? w.vehiclePlate : (defaultPlate ?? w.vehiclePlate),
+          defaultVehicleId: configuredVehicle?.id ?? null,
+          driverUserId: driverUserId ?? null,
           driverName: w.driverName || slot?.driverName || '',
           timeOfDay: w.timeOfDay || slot?.timeOfDay || null,
           batchNums,

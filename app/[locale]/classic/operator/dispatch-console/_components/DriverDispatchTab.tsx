@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPut } from '@/lib/api'
 import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
@@ -12,6 +12,8 @@ const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 interface SummaryRow {
   vehiclePlate?: string | null
+  defaultVehicleId?: string | null
+  driverUserId?: string | null
   waveId: string
   driverName: string
   timeOfDay: string | null
@@ -24,6 +26,15 @@ interface SummaryRow {
   status: string
   waveDate: string | null
   weekday: number | null
+}
+
+interface FleetVehicleOption {
+  id: string
+  plate: string
+  note: string | null
+  isActive: boolean
+  defaultDriverId: string | null
+  defaultDriver: { id: string; name: string; isActive: boolean } | null
 }
 
 interface SummaryResp {
@@ -82,7 +93,12 @@ export default function DriverDispatchTab({ date }: { date: string }) {
   const WAVE_STATUS_LABEL = isEn ? WAVE_STATUS_LABEL_EN : WAVE_STATUS_LABEL_ZH
 
   const [rows, setRows] = useState<SummaryRow[]>([])
+  const [vehicles, setVehicles] = useState<FleetVehicleOption[]>([])
+  const [vehiclesReady, setVehiclesReady] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [editingWaveId, setEditingWaveId] = useState<string | null>(null)
+  const [selectedVehicleId, setSelectedVehicleId] = useState('')
+  const [savingDriverId, setSavingDriverId] = useState<string | null>(null)
 
   // 筛选状态
   const [from, setFrom] = useState(date)
@@ -102,6 +118,15 @@ export default function DriverDispatchTab({ date }: { date: string }) {
     try {
       const data = await apiGet<SummaryResp>(`/api/dispatch/driver-summary?from=${from}&to=${to || from}`)
       setRows(Array.isArray(data.rows) ? data.rows : [])
+      try {
+        const fleet = await apiGet<FleetVehicleOption[]>('/api/fleet-vehicles?includeInactive=true')
+        setVehicles(Array.isArray(fleet) ? fleet : [])
+        setVehiclesReady(true)
+      } catch {
+        setVehicles([])
+        setVehiclesReady(false)
+        toast.error(isEn ? 'Failed to load vehicle options' : '加载车辆选项失败')
+      }
     } catch {
       toast.error(isEn ? 'Failed to load driver summary' : '加载司机汇总失败')
     } finally {
@@ -110,6 +135,46 @@ export default function DriverDispatchTab({ date }: { date: string }) {
   }, [from, to, isEn])
 
   useEffect(() => { load() }, [load])
+
+  async function saveDefaultVehicle(row: SummaryRow) {
+    if (!row.driverUserId || editingWaveId !== row.waveId) return
+    const oldVehicle = vehicles.find(vehicle => vehicle.id === row.defaultVehicleId)
+    const newVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId && vehicle.isActive)
+    if (selectedVehicleId && !newVehicle) {
+      toast.error(isEn ? 'Selected vehicle is unavailable' : '所选车辆不可用')
+      return
+    }
+    const otherDriver = newVehicle?.defaultDriver
+    if (otherDriver && otherDriver.id !== row.driverUserId) {
+      const confirmed = window.confirm(isEn
+        ? `${newVehicle.plate} is currently assigned to ${otherDriver.name}. Reassign it to ${row.driverName}?`
+        : `${newVehicle.plate} 当前默认关联司机 ${otherDriver.name}。确定改为关联 ${row.driverName} 吗？`)
+      if (!confirmed) return
+    }
+    setSavingDriverId(row.driverUserId)
+    try {
+      if (newVehicle) {
+        await apiPut(`/api/fleet-vehicles/${newVehicle.id}`, {
+          plate: newVehicle.plate,
+          note: newVehicle.note,
+          defaultDriverId: row.driverUserId,
+        })
+      } else if (oldVehicle) {
+        await apiPut(`/api/fleet-vehicles/${oldVehicle.id}`, {
+          plate: oldVehicle.plate,
+          note: oldVehicle.note,
+          defaultDriverId: null,
+        })
+      }
+      setEditingWaveId(null)
+      await load()
+      toast.success(isEn ? 'Default vehicle updated' : '默认车牌已更新')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (isEn ? 'Failed to update default vehicle' : '更新默认车牌失败'))
+    } finally {
+      setSavingDriverId(null)
+    }
+  }
   // 可选项（从已加载数据提取）
   const driverOpts = [...new Set(rows.map(r => r.driverName).filter(Boolean))].sort()
   const batchOpts = [...new Set(rows.flatMap(r => r.batchNums))].sort((a, b) => a - b)
@@ -246,7 +311,21 @@ export default function DriverDispatchTab({ date }: { date: string }) {
               const st = WAVE_STATUS_LABEL[r.status] ?? { text: r.status, cls: 'bg-gray-100 text-gray-500' }
               return (
                 <tr key={r.waveId} className="border-t hover:bg-gray-50" style={{ borderColor: '#f0f0f0' }}>
-                  <td className="px-3 py-2.5 font-medium">{r.driverName || '—'}<span className="mt-1 block text-xs font-normal text-gray-500">{isEn ? 'Default vehicle' : '默认车牌'}：{r.vehiclePlate || (isEn ? 'Not assigned · configure in Vehicle Management' : '未关联，请在车辆管理中设置')}</span></td>
+                  <td className="px-3 py-2.5 font-medium">
+                    {r.driverName || '—'}
+                    <span className="mt-1 flex flex-wrap items-center gap-2 text-xs font-normal text-gray-500">
+                      <span>{['IN_DELIVERY', 'COMPLETED'].includes(r.status) ? (isEn ? 'Departure snapshot' : '出发车牌快照') : (isEn ? 'Default vehicle' : '默认车牌')}：{r.vehiclePlate || (isEn ? 'Not assigned' : '未关联')}</span>
+                      {vehiclesReady && r.driverUserId && !['IN_DELIVERY', 'COMPLETED'].includes(r.status) && (editingWaveId === r.waveId ? <>
+                        <select aria-label={isEn ? `Default vehicle for ${r.driverName}` : `${r.driverName} 默认车牌`} value={selectedVehicleId} onChange={event => setSelectedVehicleId(event.target.value)} disabled={savingDriverId === r.driverUserId} className="rounded border bg-white px-2 py-1 text-xs">
+                          <option value="">{isEn ? 'No default vehicle' : '不设置默认车辆'}</option>
+                          {vehicles.filter(vehicle => vehicle.isActive).map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate}{vehicle.defaultDriver && vehicle.defaultDriver.id !== r.driverUserId ? ` · ${isEn ? 'currently' : '当前'} ${vehicle.defaultDriver.name}` : ''}</option>)}
+                        </select>
+                        <button onClick={() => saveDefaultVehicle(r)} disabled={savingDriverId === r.driverUserId} className="rounded px-2 py-1 font-medium text-white disabled:opacity-50" style={{ background: PURPLE }}>{savingDriverId === r.driverUserId ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}</button>
+                        <button onClick={() => setEditingWaveId(null)} disabled={savingDriverId === r.driverUserId} className="rounded border px-2 py-1 disabled:opacity-50">{isEn ? 'Cancel' : '取消'}</button>
+                      </> : <button onClick={() => { setEditingWaveId(r.waveId); setSelectedVehicleId(r.defaultVehicleId ?? '') }} className="rounded border px-2 py-1 text-[#714B67]">{isEn ? 'Change' : '修改'}</button>)}
+                      {!r.driverUserId && <span className="text-amber-700">{isEn ? 'Driver account not linked' : '司机未关联账号，无法修改'}</span>}
+                    </span>
+                  </td>
                   <td className="px-3 py-2.5 text-gray-500">{r.waveDate ?? '—'}{r.weekday != null ? ` ${WEEKDAYS[r.weekday]}` : ''}</td>
                   <td className="px-3 py-2.5">{timePill(r.timeOfDay, isEn)}</td>
                   <td className="px-3 py-2.5">{r.batchNums.length > 0 ? (isEn ? `Batch ${r.batchNums.join('·')}` : `批次 ${r.batchNums.join('·')}`) : (isEn ? 'No Pallet' : '未分托盘')}</td>
@@ -276,8 +355,8 @@ export default function DriverDispatchTab({ date }: { date: string }) {
 
       <p className="text-xs text-gray-400 px-4 py-3">
         {isEn
-          ? 'Filter by date range / driver / slot / batch / weekday combined; shares conventions with the daily sales report.'
-          : '支持按日期范围 / 司机 / 时段 / 批次 / 星期组合筛选；与日销售报表共用口径。'}
+          ? 'Filters combine date range / driver / slot / batch / weekday. Changing a default vehicle applies to this driver’s future, not-yet-departed waves; departed trips retain their vehicle snapshot.'
+          : '支持按日期范围 / 司机 / 时段 / 批次 / 星期组合筛选。修改默认车牌会用于该司机未出发的波次；已出发记录保留原车牌快照。'}
       </p>
     </div>
   )
