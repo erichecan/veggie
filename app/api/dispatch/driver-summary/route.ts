@@ -31,7 +31,8 @@ export async function GET(req: Request) {
       if (waves.length === 0) return NextResponse.json({ from: fromStr, to: toStr, rows: [], totals: emptyTotals })
 
       // 调度页显示默认车牌：优先按波次绑定的 DriverSlot → User 身份取默认车辆，
-      // 早期缺少 driverSlotId 的波次再按司机名回退。未出发波次跟随当前车辆配置；
+      // 早期缺少 driverSlotId 的波次再按司机名回退。未出发波次优先显示单波次覆盖，
+      // 没有覆盖时跟随当前默认配置；
       // 已出发波次仍显示保存的车牌快照，确保历史配送不被主数据变更改写。
       const driverSlotIds = Array.from(new Set(waves.map(w => w.driverSlotId).filter((id): id is string => !!id)))
       const driverNames = Array.from(new Set(waves.map(w => w.driverName).filter((name): name is string => !!name)))
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
             ] },
             select: {
               id: true, driverName: true, timeOfDay: true,
-              driverUser: { select: { id: true, defaultFleetVehicle: { select: { id: true, plate: true, isActive: true } } } },
+              driverUser: { select: { defaultFleetVehicle: { select: { plate: true, isActive: true } } } },
             },
           })
         : []
@@ -57,7 +58,7 @@ export async function GET(req: Request) {
               isActive: true,
               OR: [{ role: 'DRIVER' }, { roles: { has: 'DRIVER' } }],
             },
-            select: { id: true, name: true, defaultFleetVehicle: { select: { id: true, plate: true, isActive: true } } },
+            select: { name: true, defaultFleetVehicle: { select: { plate: true, isActive: true } } },
           })
         : []
       const fallbackDriverMap = new Map(fallbackDrivers.map(driver => [driver.name, driver]))
@@ -77,8 +78,6 @@ export async function GET(req: Request) {
           ?? (w.driverName ? driverNameSlotMap.get(w.driverName) : undefined)
         const configuredVehicle = slot?.driverUser?.defaultFleetVehicle
           ?? (slot ? fallbackDriverMap.get(slot.driverName)?.defaultFleetVehicle : undefined)
-        const driverUserId = slot?.driverUser?.id
-          ?? (slot ? fallbackDriverMap.get(slot.driverName)?.id : undefined)
         const defaultPlate = configuredVehicle?.isActive ? configuredVehicle.plate : null
         const restaurants = new Set<string>()
         let totalQty = 0
@@ -94,9 +93,8 @@ export async function GET(req: Request) {
         const batchNums = [...new Set(w.pallets.map(p => p.seq))].sort((a, b) => a - b)
         return {
           waveId: w.id,
-          vehiclePlate: w.dispatchedAt || w.completedAt ? w.vehiclePlate : (defaultPlate ?? w.vehiclePlate),
-          defaultVehicleId: configuredVehicle?.id ?? null,
-          driverUserId: driverUserId ?? null,
+          vehiclePlate: w.dispatchedAt || w.completedAt ? w.vehiclePlate : (w.vehiclePlate ?? defaultPlate),
+          defaultVehiclePlate: defaultPlate,
           driverName: w.driverName || slot?.driverName || '',
           timeOfDay: w.timeOfDay || slot?.timeOfDay || null,
           batchNums,

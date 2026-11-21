@@ -83,7 +83,8 @@ export async function dispatchWave(
         where: { id: waveId, dispatchedAt: null },
         data: {
           dispatchedAt: new Date(), pickLockedAt: null, pickLockedBy: null,
-          ...(defaultVehiclePlate ? { vehiclePlate: defaultVehiclePlate } : {}),
+          // Dispatch-row overrides are per-wave and must survive departure as the vehicle snapshot.
+          vehiclePlate: wave.vehiclePlate ?? defaultVehiclePlate,
         },
       })
       if (lockUpd.count === 0) throw new DispatchRaceLostError()
