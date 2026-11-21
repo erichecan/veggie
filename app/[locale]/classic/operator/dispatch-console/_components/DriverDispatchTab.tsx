@@ -12,8 +12,7 @@ const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 interface SummaryRow {
   vehiclePlate?: string | null
-  defaultVehicleId?: string | null
-  driverUserId?: string | null
+  defaultVehiclePlate?: string | null
   waveId: string
   driverName: string
   timeOfDay: string | null
@@ -29,12 +28,8 @@ interface SummaryRow {
 }
 
 interface FleetVehicleOption {
-  id: string
   plate: string
-  note: string | null
   isActive: boolean
-  defaultDriverId: string | null
-  defaultDriver: { id: string; name: string; isActive: boolean } | null
 }
 
 interface SummaryResp {
@@ -97,8 +92,8 @@ export default function DriverDispatchTab({ date }: { date: string }) {
   const [vehiclesReady, setVehiclesReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [editingWaveId, setEditingWaveId] = useState<string | null>(null)
-  const [selectedVehicleId, setSelectedVehicleId] = useState('')
-  const [savingDriverId, setSavingDriverId] = useState<string | null>(null)
+  const [selectedVehiclePlate, setSelectedVehiclePlate] = useState('')
+  const [savingWaveId, setSavingWaveId] = useState<string | null>(null)
 
   // 筛选状态
   const [from, setFrom] = useState(date)
@@ -119,8 +114,8 @@ export default function DriverDispatchTab({ date }: { date: string }) {
       const data = await apiGet<SummaryResp>(`/api/dispatch/driver-summary?from=${from}&to=${to || from}`)
       setRows(Array.isArray(data.rows) ? data.rows : [])
       try {
-        const fleet = await apiGet<FleetVehicleOption[]>('/api/fleet-vehicles?includeInactive=true')
-        setVehicles(Array.isArray(fleet) ? fleet : [])
+        const fleet = await apiGet<FleetVehicleOption[]>('/api/fleet-vehicles')
+        setVehicles(Array.isArray(fleet) ? fleet.filter(vehicle => vehicle.isActive) : [])
         setVehiclesReady(true)
       } catch {
         setVehicles([])
@@ -136,43 +131,23 @@ export default function DriverDispatchTab({ date }: { date: string }) {
 
   useEffect(() => { load() }, [load])
 
-  async function saveDefaultVehicle(row: SummaryRow) {
-    if (!row.driverUserId || editingWaveId !== row.waveId) return
-    const oldVehicle = vehicles.find(vehicle => vehicle.id === row.defaultVehicleId)
-    const newVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId && vehicle.isActive)
-    if (selectedVehicleId && !newVehicle) {
+  async function saveWaveVehicle(row: SummaryRow) {
+    if (editingWaveId !== row.waveId) return
+    const plate = selectedVehiclePlate.trim().toUpperCase()
+    if (plate && !vehicles.some(vehicle => vehicle.plate === plate)) {
       toast.error(isEn ? 'Selected vehicle is unavailable' : '所选车辆不可用')
       return
     }
-    const otherDriver = newVehicle?.defaultDriver
-    if (otherDriver && otherDriver.id !== row.driverUserId) {
-      const confirmed = window.confirm(isEn
-        ? `${newVehicle.plate} is currently assigned to ${otherDriver.name}. Reassign it to ${row.driverName}?`
-        : `${newVehicle.plate} 当前默认关联司机 ${otherDriver.name}。确定改为关联 ${row.driverName} 吗？`)
-      if (!confirmed) return
-    }
-    setSavingDriverId(row.driverUserId)
+    setSavingWaveId(row.waveId)
     try {
-      if (newVehicle) {
-        await apiPut(`/api/fleet-vehicles/${newVehicle.id}`, {
-          plate: newVehicle.plate,
-          note: newVehicle.note,
-          defaultDriverId: row.driverUserId,
-        })
-      } else if (oldVehicle) {
-        await apiPut(`/api/fleet-vehicles/${oldVehicle.id}`, {
-          plate: oldVehicle.plate,
-          note: oldVehicle.note,
-          defaultDriverId: null,
-        })
-      }
+      await apiPut(`/api/waves/${row.waveId}`, { vehiclePlate: plate || null })
       setEditingWaveId(null)
       await load()
-      toast.success(isEn ? 'Default vehicle updated' : '默认车牌已更新')
+      toast.success(isEn ? 'Wave vehicle updated' : '本波次车牌已更新')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : (isEn ? 'Failed to update default vehicle' : '更新默认车牌失败'))
+      toast.error(error instanceof Error ? error.message : (isEn ? 'Failed to update wave vehicle' : '更新本波次车牌失败'))
     } finally {
-      setSavingDriverId(null)
+      setSavingWaveId(null)
     }
   }
   // 可选项（从已加载数据提取）
@@ -314,16 +289,19 @@ export default function DriverDispatchTab({ date }: { date: string }) {
                   <td className="px-3 py-2.5 font-medium">
                     {r.driverName || '—'}
                     <span className="mt-1 flex flex-wrap items-center gap-2 text-xs font-normal text-gray-500">
-                      <span>{['IN_DELIVERY', 'COMPLETED'].includes(r.status) ? (isEn ? 'Departure snapshot' : '出发车牌快照') : (isEn ? 'Default vehicle' : '默认车牌')}：{r.vehiclePlate || (isEn ? 'Not assigned' : '未关联')}</span>
-                      {vehiclesReady && r.driverUserId && !['IN_DELIVERY', 'COMPLETED'].includes(r.status) && (editingWaveId === r.waveId ? <>
-                        <select aria-label={isEn ? `Default vehicle for ${r.driverName}` : `${r.driverName} 默认车牌`} value={selectedVehicleId} onChange={event => setSelectedVehicleId(event.target.value)} disabled={savingDriverId === r.driverUserId} className="rounded border bg-white px-2 py-1 text-xs">
-                          <option value="">{isEn ? 'No default vehicle' : '不设置默认车辆'}</option>
-                          {vehicles.filter(vehicle => vehicle.isActive).map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate}{vehicle.defaultDriver && vehicle.defaultDriver.id !== r.driverUserId ? ` · ${isEn ? 'currently' : '当前'} ${vehicle.defaultDriver.name}` : ''}</option>)}
+                      <span>{['IN_DELIVERY', 'COMPLETED'].includes(r.status)
+                        ? (isEn ? 'Departure snapshot' : '出发车牌快照')
+                        : r.vehiclePlate && r.vehiclePlate !== r.defaultVehiclePlate
+                          ? (isEn ? 'This wave only' : '本波次临时车牌')
+                          : (isEn ? 'Default vehicle' : '默认车牌')}：{r.vehiclePlate || (isEn ? 'Not assigned' : '未关联')}</span>
+                      {vehiclesReady && !['IN_DELIVERY', 'COMPLETED'].includes(r.status) && (editingWaveId === r.waveId ? <>
+                        <select aria-label={isEn ? `Vehicle for ${r.driverName}` : `${r.driverName} 本波次车牌`} value={selectedVehiclePlate} onChange={event => setSelectedVehiclePlate(event.target.value)} disabled={savingWaveId === r.waveId} className="rounded border bg-white px-2 py-1 text-xs">
+                          <option value="">{r.defaultVehiclePlate ? `${isEn ? 'Use default' : '使用默认'} · ${r.defaultVehiclePlate}` : (isEn ? 'No vehicle / clear override' : '无默认车牌 / 清除临时车牌')}</option>
+                          {vehicles.map(vehicle => <option key={vehicle.plate} value={vehicle.plate}>{vehicle.plate}</option>)}
                         </select>
-                        <button onClick={() => saveDefaultVehicle(r)} disabled={savingDriverId === r.driverUserId} className="rounded px-2 py-1 font-medium text-white disabled:opacity-50" style={{ background: PURPLE }}>{savingDriverId === r.driverUserId ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}</button>
-                        <button onClick={() => setEditingWaveId(null)} disabled={savingDriverId === r.driverUserId} className="rounded border px-2 py-1 disabled:opacity-50">{isEn ? 'Cancel' : '取消'}</button>
-                      </> : <button onClick={() => { setEditingWaveId(r.waveId); setSelectedVehicleId(r.defaultVehicleId ?? '') }} className="rounded border px-2 py-1 text-[#714B67]">{isEn ? 'Change' : '修改'}</button>)}
-                      {!r.driverUserId && <span className="text-amber-700">{isEn ? 'Driver account not linked' : '司机未关联账号，无法修改'}</span>}
+                        <button onClick={() => saveWaveVehicle(r)} disabled={savingWaveId === r.waveId} className="rounded px-2 py-1 font-medium text-white disabled:opacity-50" style={{ background: PURPLE }}>{savingWaveId === r.waveId ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}</button>
+                        <button onClick={() => setEditingWaveId(null)} disabled={savingWaveId === r.waveId} className="rounded border px-2 py-1 disabled:opacity-50">{isEn ? 'Cancel' : '取消'}</button>
+                      </> : <button onClick={() => { setEditingWaveId(r.waveId); setSelectedVehiclePlate(r.vehiclePlate ?? '') }} className="rounded border px-2 py-1 text-[#714B67]">{isEn ? 'Change' : '修改'}</button>)}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-gray-500">{r.waveDate ?? '—'}{r.weekday != null ? ` ${WEEKDAYS[r.weekday]}` : ''}</td>
@@ -355,8 +333,8 @@ export default function DriverDispatchTab({ date }: { date: string }) {
 
       <p className="text-xs text-gray-400 px-4 py-3">
         {isEn
-          ? 'Filters combine date range / driver / slot / batch / weekday. Changing a default vehicle applies to this driver’s future, not-yet-departed waves; departed trips retain their vehicle snapshot.'
-          : '支持按日期范围 / 司机 / 时段 / 批次 / 星期组合筛选。修改默认车牌会用于该司机未出发的波次；已出发记录保留原车牌快照。'}
+          ? 'Filters combine date range / driver / slot / batch / weekday. A vehicle change applies to this wave only and does not change the driver default; departed trips retain their vehicle snapshot.'
+          : '支持按日期范围 / 司机 / 时段 / 批次 / 星期组合筛选。修改车牌只作用于当前波次，不会修改司机默认车辆；已出发记录保留原车牌快照。'}
       </p>
     </div>
   )
