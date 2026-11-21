@@ -654,6 +654,8 @@ export interface OrderReturn {
   orderId: string
   orderLineId?: string | null
   sourceTripId?: string | null
+  vehiclePlateSnapshot?: string | null
+  driverNameSnapshot?: string | null
   unitPrice?: number | null
   photo?: string | null
   lateReportNote?: string | null

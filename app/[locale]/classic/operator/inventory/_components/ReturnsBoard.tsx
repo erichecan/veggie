@@ -19,6 +19,7 @@ import {
 } from './TripReturnReviewDialog'
 import { OrderReturnDialog } from './OrderReturnDialog'
 import { buildWarehousePendingRows } from './warehouse-pending-rows'
+import UnmatchedReturnIntakes from '@/components/warehouse/UnmatchedReturnIntakes'
 
 /**
  * 退货/报废整合 M1：`warehouse/returns`（仓库核实）+ `operator/returns`（销售审核+disposition）
@@ -191,7 +192,7 @@ export default function ReturnsBoard() {
           <span className="text-orange-700 font-semibold flex-shrink-0">×{card.quantity}</span>
         </div>
         {card.reason && <div className="text-xs text-gray-400 truncate">{isEn ? 'Reason: ' : '原因：'}{card.reason}</div>}
-        {card.orderReturnRow?.sourceTrip && <div className="text-[11px] text-blue-700">{isEn ? 'Driver / Vehicle' : '司机 / 车牌'}: {card.orderReturnRow.sourceTrip.driverName || '—'} · {card.orderReturnRow.sourceTrip.vehiclePlate || '—'}</div>}
+        {card.orderReturnRow && (card.orderReturnRow.sourceTrip || card.orderReturnRow.vehiclePlateSnapshot || card.orderReturnRow.driverNameSnapshot) && <div className="text-[11px] text-blue-700">{isEn ? 'Driver / Vehicle' : '司机 / 车牌'}: {card.orderReturnRow.driverNameSnapshot || card.orderReturnRow.sourceTrip?.driverName || '—'} · {card.orderReturnRow.vehiclePlateSnapshot || card.orderReturnRow.sourceTrip?.vehiclePlate || '—'}</div>}
         <div className="text-[11px] text-gray-400">{isEn ? 'Return record time' : '退货登记时间'}: {new Date(card.createdAt).toLocaleString('en-GB', { timeZone: 'Europe/Dublin' })}</div>
         {card.orderReturnRow?.order?.code && <div className="text-[11px] text-gray-500">{isEn ? 'Order' : '订单'}: {card.orderReturnRow.order.code}</div>}
         <div className="flex items-center justify-between text-[11px] text-gray-400">
@@ -235,6 +236,7 @@ export default function ReturnsBoard() {
 
   return (
     <div>
+      {canReview && <UnmatchedReturnIntakes isEn={isEn} canReview={canReview} onSaved={load} />}
       {loading && trips.length === 0 && orderReturns.length === 0 ? (
         <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (

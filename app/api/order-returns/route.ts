@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
-      if (searchParams.get('intakes') === '1') return NextResponse.json(serializeApi(await prisma.returnIntake.findMany({ where: { status: 'OPEN' }, include: { sourceTrip: { select: { driverName: true, vehiclePlate: true } } }, orderBy: { createdAt: 'asc' }, take: 300 })))
+      if (searchParams.get('intakes') === '1') return NextResponse.json(serializeApi(await prisma.returnIntake.findMany({ where: { status: { in: ['OPEN', 'CUSTOMER_IDENTIFIED'] } }, include: { sourceTrip: { select: { driverName: true, vehiclePlate: true } } }, orderBy: { createdAt: 'asc' }, take: 300 })))
       const status = searchParams.get('status')
       const orderId = searchParams.get('orderId')
 
