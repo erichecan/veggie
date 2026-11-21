@@ -98,7 +98,7 @@ export default function ClassicSortingDetailPage({
     if (!wave || updating || wave.dispatchedAt || wave.completedAt) return
     setUpdating(true)
     try {
-      await apiPut(`/api/waves/${wave.id}`, { ...wave, status: targetStatus })
+      await apiPut(`/api/waves/${wave.id}`, { status: targetStatus })
       toast.success(targetStatus === 'sorting'
         ? (isEn ? 'Sorting started' : '已开始分货')
         : (isEn ? 'Sorting completed' : '分货完成'))

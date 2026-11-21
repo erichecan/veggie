@@ -13,6 +13,14 @@ const TRIP_TRACKED_FIELDS = [
   'totalPayment', 'driverCommission', 'waveId',
 ]
 
+// Never pass a client object (which may be a GET projection with relation fields such as
+// returnIntakes/orderCodes) straight to Prisma. Keep the update contract explicit so a
+// future GET enrichment cannot turn an otherwise valid save into a 500.
+const TRIP_WRITABLE_FIELDS = new Set([
+  'name', 'status', 'driverId', 'driverName', 'timeSlot', 'totalPayment',
+  'driverCommission', 'waveId', 'restaurants',
+])
+
 const DECIDED_RETURN_STATUSES = new Set(['APPROVED', 'REJECTED', 'SETTLED'])
 
 type RestaurantJson = { restaurantId: string; returns?: Array<{ productId: string; createdAt?: string; status?: string }> }
@@ -146,7 +154,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const data = await req.json()
+      const requestData = await req.json() as Record<string, unknown>
+      const data: Record<string, unknown> = Object.fromEntries(
+        Object.entries(requestData).filter(([key]) => TRIP_WRITABLE_FIELDS.has(key)),
+      )
+      // Keep named workflow actions separate from Prisma update fields.
+      if (requestData.action === 'verifyAllCargo') data.action = requestData.action
       const before = await prisma.trip.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '行程不存在' }, { status: 404 })
       const driverScope = driverRowScope(user)
@@ -269,7 +282,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }, 0)
       }
 
-      const newStatus = data.status?.toUpperCase()
+      const newStatus = data.status === undefined ? undefined : String(data.status).toUpperCase() as
+        'PENDING' | 'PENDING_ASSIGNMENT' | 'VERIFYING' | 'IN_PROGRESS' | 'COMPLETED'
       const beforeStatus = String(before.status).toUpperCase()
       if (driverScope && newStatus === 'COMPLETED') {
         if (beforeStatus !== 'IN_PROGRESS') {

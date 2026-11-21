@@ -133,7 +133,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   async function saveTrip(updated: Trip) {
     let saved: Trip | undefined
     try {
-      saved = await apiPut<Trip>(`/api/trips/${updated.id}`, updated)
+      // Only send fields this driver action can change. The GET response also contains
+      // projected relations (returnIntakes, orderCodes and canonical returns).
+      saved = await apiPut<Trip>(`/api/trips/${updated.id}`, {
+        status: updated.status,
+        restaurants: updated.restaurants,
+        totalPayment: updated.totalPayment,
+      })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed, please try again' : '保存失败，请重试'))
       throw e
@@ -332,13 +338,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         })),
       })
       returnRecorded = true
-      // Re-read after the dedicated return endpoint writes the return records. A return
-      // changes the expected invoice total, but must never invent the driver's actual cash.
-      const latestTrip = await apiGet<Trip>(`/api/trips/${trip.id}`)
-      const updatedTrip = JSON.parse(JSON.stringify(latestTrip)) as Trip
-      updatedTrip.totalPayment = updatedTrip.restaurants.reduce((sum, r) => sum + (r.payment ?? 0), 0)
-      await apiPut(`/api/trips/${updatedTrip.id}`, updatedTrip)
-      setTrip(updatedTrip)
+      // Return records are written by the dedicated endpoint. Reload the projection; do
+      // not round-trip the enriched GET object through the generic Trip PUT.
+      await load()
       setExceptionModal(null)
       toast.success(isEn
         ? 'Exception recorded — collection amount recalculated'
