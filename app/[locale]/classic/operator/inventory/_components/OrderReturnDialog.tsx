@@ -45,8 +45,20 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
   const status = item.status as ReturnStatus
 
   async function verify(action: 'verify' | 'reject') {
-    if (action === 'reject' && !note.trim()) {
-      toast.error(isEn ? 'A reason is required to reject' : '核实不通过必须填写原因')
+    if (!note.trim()) {
+      toast.error(action === 'verify'
+        ? (isEn
+          ? 'Enter the quality and physical check results in “Quality / warehouse note” before verifying.'
+          : '请先填写“质量说明”，记录实物和质量检查结果，再核实通过。')
+        : (isEn
+          ? 'Enter the rejection reason in “Quality / warehouse note” before rejecting.'
+          : '请先在“质量说明”中填写核实不通过的原因。'))
+      return
+    }
+    if (action === 'verify' && !['SELLABLE', 'SCRAP'].includes(disposition)) {
+      toast.error(isEn
+        ? 'Choose a disposition: Sellable (Restock) or Scrap (Record as Loss).'
+        : '请先选择货物去向：“可再售（回补库存）”或“报废（计入损耗）”。')
       return
     }
     setSaving(true)
@@ -131,14 +143,17 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
         )}
         {status === 'WAREHOUSE_PENDING' && !readOnly && (
           <div className="space-y-1">
-            <label className="text-xs text-gray-500 font-medium">{isEn ? 'Quality / warehouse note (required)' : '质量说明（通过或拒绝均必填）'}</label>
+            <label className="text-xs text-gray-500 font-medium">{isEn ? 'Quality / warehouse note (required for verification)' : '质量说明（核实必填）'}</label>
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
+              required
+              aria-required="true"
               rows={2}
-              placeholder={isEn ? 'Describe the physical check result…' : '说明实物核对结果…'}
+              placeholder={isEn ? 'For example: received 1, item matches the return record, packaging intact.' : '例如：实收 1 件，商品与登记一致，外包装完好。'}
               className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-400 resize-none"
             />
+            <p className="text-[11px] text-gray-400">{isEn ? 'Record the received item, quantity, and its condition.' : '请记录实收商品、数量及外观/质量情况。'}</p>
           </div>
         )}
 
