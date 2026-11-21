@@ -4987,7 +4987,7 @@
     "BOSS": "y",
     "OPERATOR": "y",
     "FINANCE": "n",
-    "WAREHOUSE": "y",
+    "WAREHOUSE": "n",
     "DISPATCH": "n",
     "SALES": "y",
     "EXTERNAL_SALES": "n",
