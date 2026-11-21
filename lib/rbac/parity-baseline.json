@@ -4998,18 +4998,18 @@
     "OTHER": "n"
   },
   "POST /api/order-returns/intakes": {
-    "BOSS": "n",
-    "OPERATOR": "n",
-    "FINANCE": "n",
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "y",
     "WAREHOUSE": "y",
-    "DISPATCH": "n",
-    "SALES": "n",
-    "EXTERNAL_SALES": "n",
-    "SORTER": "n",
-    "PICKER": "n",
-    "DRIVER": "n",
-    "RESTAURANT": "n",
-    "OTHER": "n"
+    "DISPATCH": "y",
+    "SALES": "y",
+    "EXTERNAL_SALES": "y",
+    "SORTER": "y",
+    "PICKER": "y",
+    "DRIVER": "y",
+    "RESTAURANT": "y",
+    "OTHER": "y"
   },
   "GET /api/order-returns/delivery-checklist": {
     "BOSS": "n",

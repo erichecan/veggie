@@ -120,7 +120,7 @@ export default function VehicleInspectionBoard() {
 
   return (
     <div>
-      {canVerify && <WarehouseUnreportedReturnForm isEn={isEn} onSaved={load} />}
+      <WarehouseUnreportedReturnForm isEn={isEn} onSaved={load} />
       {canVerify && <section className="mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-gray-50 px-3 py-3">
           <div><h3 className="text-sm font-semibold text-gray-800">{isEn ? 'Delivery reconciliation manifest' : '昨日配送核对清单'}</h3><p className="text-xs text-gray-500">{isEn ? 'Review each driver, vehicle, customer, order and delivered item.' : '按司机和车牌逐项核对配送客户、订单、商品和实送数量。'}</p></div>
