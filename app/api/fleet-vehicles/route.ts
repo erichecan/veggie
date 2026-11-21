@@ -11,6 +11,7 @@ export async function GET(req: Request) {
     const vehicles = await prisma.fleetVehicle.findMany({
       where: includeInactive ? undefined : { isActive: true },
       orderBy: { plate: 'asc' },
+      include: { defaultDriver: { select: { id: true, name: true, isActive: true } } },
     })
     return NextResponse.json(vehicles)
   }, { require: 'dispatch.driver_slot.read' })

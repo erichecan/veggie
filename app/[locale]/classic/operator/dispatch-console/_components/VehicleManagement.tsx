@@ -5,12 +5,14 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api'
 
-type Vehicle = { id: string; plate: string; note: string | null; isActive: boolean }
+type DriverOption = { id: string; name: string; isActive: boolean }
+type Vehicle = { id: string; plate: string; note: string | null; isActive: boolean; defaultDriverId: string | null; defaultDriver: Pick<DriverOption, 'id' | 'name' | 'isActive'> | null }
 const PURPLE = '#875A7B'
 
 export default function VehicleManagement() {
   const isEn = useLocale() !== routing.defaultLocale
   const [rows, setRows] = useState<Vehicle[]>([])
+  const [drivers, setDrivers] = useState<DriverOption[]>([])
   const [plate, setPlate] = useState('')
   const [note, setNote] = useState('')
   const [includeInactive, setIncludeInactive] = useState(false)
@@ -29,6 +31,11 @@ export default function VehicleManagement() {
   }
 
   useEffect(() => { load() }, [includeInactive])
+  useEffect(() => {
+    apiGet<DriverOption[]>('/api/users?role=DRIVER').then(data => {
+      setDrivers(Array.isArray(data) ? data.filter(driver => driver.isActive) : [])
+    }).catch(() => toast.error(isEn ? 'Failed to load drivers' : '加载司机列表失败'))
+  }, [isEn])
 
   async function addVehicle() {
     if (!plate.trim()) return
@@ -60,10 +67,25 @@ export default function VehicleManagement() {
     finally { setBusy(false) }
   }
 
+  async function assignDriver(row: Vehicle, driverId: string) {
+    setBusy(true)
+    try {
+      await apiPut(`/api/fleet-vehicles/${row.id}`, {
+        plate: row.plate,
+        note: row.note,
+        defaultDriverId: driverId || null,
+      })
+      await load()
+      toast.success(isEn ? 'Default vehicle assignment saved' : '默认司机车辆已保存')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (isEn ? 'Failed to assign driver' : '关联司机失败'))
+    } finally { setBusy(false) }
+  }
+
   return <section className="space-y-4">
     <div>
       <h2 className="text-base font-semibold" style={{ color: PURPLE }}>{isEn ? 'Vehicle Management' : '车辆管理'}</h2>
-      <p className="mt-1 text-sm text-gray-500">{isEn ? 'Register fleet plates once, then search and select them when assigning a delivery.' : '先在这里登记车牌，安排配送时即可输入部分车牌字符并选择匹配车辆。'}</p>
+      <p className="mt-1 text-sm text-gray-500">{isEn ? 'Assign a default driver to each vehicle. Dispatch uses the assigned vehicle automatically; changing assignments here handles leave or maintenance cover.' : '在这里设置每辆车的默认司机。司机调度会自动显示关联车牌；司机休假或车辆维修时，在此调整司机与车辆的关联即可。'}</p>
     </div>
     <div className="flex flex-wrap items-end gap-2 rounded-lg border bg-white p-3">
       <label className="min-w-48 flex-1 text-xs text-gray-500">{isEn ? 'Registration plate' : '车牌号'}
@@ -76,10 +98,11 @@ export default function VehicleManagement() {
     </div>
     <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={includeInactive} onChange={e => setIncludeInactive(e.target.checked)} />{isEn ? 'Show inactive vehicles' : '显示已停用车辆'}</label>
     <div className="overflow-x-auto rounded-lg border bg-white">
-      <table className="w-full min-w-[520px] text-sm">
-        <thead className="bg-[#faf5fb] text-xs" style={{ color: PURPLE }}><tr><th className="p-3 text-left">{isEn ? 'Registration plate' : '车牌号'}</th><th className="p-3 text-left">{isEn ? 'Note' : '备注'}</th><th className="p-3 text-left">{isEn ? 'Status' : '状态'}</th><th className="p-3 text-right">{isEn ? 'Actions' : '操作'}</th></tr></thead>
+      <table className="w-full min-w-[680px] text-sm">
+        <thead className="bg-[#faf5fb] text-xs" style={{ color: PURPLE }}><tr><th className="p-3 text-left">{isEn ? 'Registration plate' : '车牌号'}</th><th className="p-3 text-left">{isEn ? 'Default driver' : '默认司机'}</th><th className="p-3 text-left">{isEn ? 'Note' : '备注'}</th><th className="p-3 text-left">{isEn ? 'Status' : '状态'}</th><th className="p-3 text-right">{isEn ? 'Actions' : '操作'}</th></tr></thead>
         <tbody className="divide-y">{rows.map(row => <tr key={row.id} className={!row.isActive ? 'text-gray-400' : ''}>
           <td className="p-3 font-medium">{editingId === row.id ? <input autoFocus value={editPlate} maxLength={24} onChange={e => setEditPlate(e.target.value.toUpperCase())} className="w-full rounded border px-2 py-1" /> : row.plate}</td>
+          <td className="p-3"><select aria-label={isEn ? `Default driver for ${row.plate}` : `${row.plate} 默认司机`} value={row.defaultDriverId ?? ''} disabled={busy || !row.isActive} onChange={event => assignDriver(row, event.target.value)} className="max-w-48 rounded border bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"><option value="">{isEn ? 'Not assigned' : '未关联'}</option>{row.defaultDriver && !row.defaultDriver.isActive && <option value={row.defaultDriver.id}>{row.defaultDriver.name} ({isEn ? 'inactive' : '已停用'})</option>}{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select>{row.defaultDriver && !row.defaultDriver.isActive && <span className="ml-2 text-xs text-red-500">{isEn ? 'Driver inactive' : '司机已停用'}</span>}</td>
           <td className="p-3">{editingId === row.id ? <input value={editNote} onChange={e => setEditNote(e.target.value)} className="w-full rounded border px-2 py-1" /> : row.note || '—'}</td>
           <td className="p-3">{row.isActive ? (isEn ? 'Active' : '启用') : (isEn ? 'Inactive' : '停用')}</td>
           <td className="p-3 text-right">{editingId === row.id ? <><button disabled={busy} onClick={() => saveVehicle(row)} className="mr-3 text-[#714B67] disabled:opacity-50">{isEn ? 'Save' : '保存'}</button><button disabled={busy} onClick={() => setEditingId(null)} className="mr-3 text-gray-500 disabled:opacity-50">{isEn ? 'Cancel' : '取消'}</button></> : <button disabled={busy} onClick={() => { setEditingId(row.id); setEditPlate(row.plate); setEditNote(row.note ?? '') }} className="mr-3 text-[#714B67] disabled:opacity-50">{isEn ? 'Edit' : '编辑'}</button>}<button disabled={busy} onClick={() => toggleActive(row)} className="text-gray-500 disabled:opacity-50">{row.isActive ? (isEn ? 'Disable' : '停用') : (isEn ? 'Restore' : '恢复')}</button></td>

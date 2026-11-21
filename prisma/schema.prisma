@@ -223,6 +223,8 @@ model User {
   customersAsSalesUser  Customer[]            @relation("CustomerSalesUser")
   /// 反向关系：绑定到该用户的司机配送批次(DriverSlot.userId)
   driverSlots           DriverSlot[]          @relation("DriverSlotUser")
+  /// 该司机默认使用的车辆；车辆调整只影响后续未出发的配送波次
+  defaultFleetVehicle   FleetVehicle?          @relation("FleetVehicleDefaultDriver")
   /// 反向关系：该用户作为负责人的采购品类分组
   categoryGroupsOwned   CategoryGroup[]       @relation("CategoryGroupOwner")
   /// 反向关系：该用户发布的信息广场帖子
@@ -1911,12 +1913,14 @@ model DriverSlot {
 
 /// 车队车辆档案；配送批次保存车牌快照，避免车辆档案修改影响历史配送记录。
 model FleetVehicle {
-  id        String   @id @default(cuid())
-  plate     String   @unique
-  note      String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  plate           String   @unique
+  note            String?
+  isActive        Boolean  @default(true)
+  defaultDriverId String?  @unique
+  defaultDriver   User?    @relation("FleetVehicleDefaultDriver", fields: [defaultDriverId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([isActive, plate])
 }

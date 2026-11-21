@@ -30,17 +30,37 @@ export async function GET(req: Request) {
       })
       if (waves.length === 0) return NextResponse.json({ from: fromStr, to: toStr, rows: [], totals: emptyTotals })
 
-      // legacy 兜底：极少数早期波次的司机或时段快照字段为空，用 driverSlotId 补齐显示分组。
-      const legacySlotIds = Array.from(
-        new Set(waves.filter(w => (!w.driverName || !w.timeOfDay) && w.driverSlotId).map(w => w.driverSlotId) as string[]),
-      )
-      const legacySlots = legacySlotIds.length
+      // 调度页显示默认车牌：优先按波次绑定的 DriverSlot → User 身份取默认车辆，
+      // 早期缺少 driverSlotId 的波次再按司机名回退。未出发波次跟随当前车辆配置；
+      // 已出发波次仍显示保存的车牌快照，确保历史配送不被主数据变更改写。
+      const driverSlotIds = Array.from(new Set(waves.map(w => w.driverSlotId).filter((id): id is string => !!id)))
+      const driverNames = Array.from(new Set(waves.map(w => w.driverName).filter((name): name is string => !!name)))
+      const driverSlots = driverSlotIds.length || driverNames.length
         ? await prisma.driverSlot.findMany({
-            where: { id: { in: legacySlotIds } },
-            select: { id: true, driverName: true, timeOfDay: true },
+            where: { OR: [
+              ...(driverSlotIds.length ? [{ id: { in: driverSlotIds } }] : []),
+              ...(driverNames.length ? [{ driverName: { in: driverNames } }] : []),
+            ] },
+            select: {
+              id: true, driverName: true, timeOfDay: true,
+              driverUser: { select: { defaultFleetVehicle: { select: { plate: true, isActive: true } } } },
+            },
           })
         : []
-      const legacySlotMap = new Map(legacySlots.map(s => [s.id, s]))
+      const driverSlotMap = new Map(driverSlots.map(s => [s.id, s]))
+      const driverNameSlotMap = new Map(driverSlots.map(s => [s.driverName, s]))
+      const unboundDriverNames = [...new Set(driverSlots.filter(s => !s.driverUser).map(s => s.driverName))]
+      const fallbackDrivers = unboundDriverNames.length
+        ? await prisma.user.findMany({
+            where: {
+              name: { in: unboundDriverNames },
+              isActive: true,
+              OR: [{ role: 'DRIVER' }, { roles: { has: 'DRIVER' } }],
+            },
+            select: { name: true, defaultFleetVehicle: { select: { plate: true, isActive: true } } },
+          })
+        : []
+      const fallbackDriverMap = new Map(fallbackDrivers.map(driver => [driver.name, driver]))
 
       const allOrderIds = Array.from(new Set(waves.flatMap(w => (w.orderIds as string[]) ?? [])))
       const orders = allOrderIds.length
@@ -53,6 +73,11 @@ export async function GET(req: Request) {
 
       const rows = waves.map(w => {
         const ids = (w.orderIds as string[]) ?? []
+        const slot = (w.driverSlotId ? driverSlotMap.get(w.driverSlotId) : undefined)
+          ?? (w.driverName ? driverNameSlotMap.get(w.driverName) : undefined)
+        const configuredVehicle = slot?.driverUser?.defaultFleetVehicle
+          ?? (slot ? fallbackDriverMap.get(slot.driverName)?.defaultFleetVehicle : undefined)
+        const defaultPlate = configuredVehicle?.isActive ? configuredVehicle.plate : null
         const restaurants = new Set<string>()
         let totalQty = 0
         let totalAmount = 0
@@ -67,9 +92,9 @@ export async function GET(req: Request) {
         const batchNums = [...new Set(w.pallets.map(p => p.seq))].sort((a, b) => a - b)
         return {
           waveId: w.id,
-          vehiclePlate: w.vehiclePlate,
-          driverName: w.driverName || (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.driverName : undefined) || '',
-          timeOfDay: w.timeOfDay || (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.timeOfDay : undefined) || null,
+          vehiclePlate: w.dispatchedAt || w.completedAt ? w.vehiclePlate : (defaultPlate ?? w.vehiclePlate),
+          driverName: w.driverName || slot?.driverName || '',
+          timeOfDay: w.timeOfDay || slot?.timeOfDay || null,
           batchNums,
           restaurantCount: restaurants.size,
           orderCount: ids.length,
