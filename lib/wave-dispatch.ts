@@ -1,3 +1,4 @@
+import { freezeReceiptManifest } from '@/lib/receipt-manifest'
 import { prisma } from '@/lib/db'
 import { createTripFromWave } from '@/lib/trip-from-wave'
 import { toDayKey } from '@/lib/analytics/metrics'
@@ -79,10 +80,11 @@ export async function dispatchWave(
       // 出发即视为拣货阶段结束：一并清掉 pickLockedAt/pickLockedBy，否则波次会一直
       // 挂着「拣货中」标签（BatchTab.tsx 的 locked 判定），跟「已出发」同时显示，
       // 两个独立字段各管各的、互不联动是原本的缺口（20260924 补上）。
+      const departedAt = new Date()
       const lockUpd = await tx.pickingWave.updateMany({
         where: { id: waveId, dispatchedAt: null },
         data: {
-          dispatchedAt: new Date(), pickLockedAt: null, pickLockedBy: null,
+          dispatchedAt: departedAt, pickLockedAt: null, pickLockedBy: null,
           // Dispatch-row overrides are per-wave and must survive departure as the vehicle snapshot.
           vehiclePlate: wave.vehiclePlate ?? defaultVehiclePlate,
         },
@@ -110,6 +112,7 @@ export async function dispatchWave(
         data: { deliveryDate },
       })
       const t = await createTripFromWave(tx as never, waveId)
+      if (t) await freezeReceiptManifest(tx, await tx.trip.findUniqueOrThrow({ where: { id: t.id } }), departedAt)
       return { updated: upd, trip: t, shippingIds }
     })
     // 确认出发 = 货离仓：On Hand 在这一刻减少（与采购「收货才加 On Hand」对称，20261015）

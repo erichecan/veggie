@@ -643,6 +643,8 @@ export interface ReturnItem {
 /** Shared driver/manual return ledger. Driver reports have sourceTripId and refund/evidence fields;
  * manual registrations omit those. Both retain the exact original orderLineId. */
 export interface OrderReturn {
+  reviewOutcome?: string | null
+  scrapQuantity?: number | null
   workflowVersion?: number
   returnKind?: string
   approvedQuantity?: number | null

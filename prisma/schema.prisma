@@ -854,6 +854,7 @@ model Order {
   returnStatus          OrderReturnStatus @default(PENDING)
   /// 「退回核实」时会计填的问题说明（少货/字迹不清等），仅 returnStatus=ISSUE 时有意义
   returnIssueNote       String?
+  returnIssueAt         DateTime?
   /// 回单确认核销的时间 / 人（20261021）：核销管理页「已核销的在主列表留 24 小时，之后移到『已核销』tab」靠它判断；
   /// 撤销核销时清空
   returnConfirmedAt     DateTime?
@@ -1234,6 +1235,10 @@ model OrderReturn {
   approvedByName          String?
   approvedAt              DateTime?
   settledAt               DateTime?
+  reviewOutcome           String?
+  duplicateOfReturnId     String?
+  scrapQuantity           Decimal?                 @db.Decimal(14, 3)
+  preservedOriginalOrder  Boolean                  @default(false)
   registeredById          String
   registeredByName        String?
   createdAt               DateTime                 @default(now())
@@ -1320,6 +1325,7 @@ model Invoice {
   @@index([status])
   @@index([createdAt])
   @@index([invoiceDate])
+  @@index([saleOrderIds], type: Gin, map: "Invoice_saleOrderIds_receipt_idx")
 }
 
 /**
@@ -1447,6 +1453,7 @@ model StockMove {
   productName         String
   type                StockMoveType
   qty                 Decimal        @db.Decimal(14, 3)
+  physicalQty         Decimal?       @db.Decimal(14, 3)
   note                String?
   /// 来源单据类型：SO / PO / RETURN / ADJUSTMENT / CREDIT_NOTE
   sourceType          String?
@@ -2505,4 +2512,41 @@ model ReturnIntake {
   @@index([status, createdAt])
   @@index([sourceTripId])
   @@index([sourceType, status, createdAt])
+  candidateOrderIds String[] @default([])
+  @@index([candidateOrderIds], type: Gin, map: "ReturnIntake_candidateOrderIds_idx")
+}
+
+model ReceiptManifest {
+  tripId             String @id
+  businessDate       String
+  driverId           String?
+  driverName         String?
+  vehiclePlate       String?
+  departedAt         DateTime
+  handedOverAt       DateTime?
+  handedOverBy       String?
+  actualReceived     Decimal? @db.Decimal(14, 2)
+  returnPieces       Decimal? @db.Decimal(14, 3)
+  scanClosedAt       DateTime?
+  entries            ReceiptManifestEntry[]
+
+  @@index([businessDate, driverId])
+}
+
+model ReceiptManifestEntry {
+  manifest          ReceiptManifest @relation(fields: [tripId], references: [tripId])
+  tripId            String
+  orderId           String
+  orderCode         String?
+  customerName      String
+  expectedAmount    Decimal @db.Decimal(14, 2)
+  scannedAt         DateTime?
+  unreportedDetectedAt DateTime?
+  paperIssue        String?
+  paperReviewedAt   DateTime?
+  paperReviewedBy   String?
+  paperReviewNote   String?
+
+  @@id([tripId, orderId])
+  @@index([orderId])
 }

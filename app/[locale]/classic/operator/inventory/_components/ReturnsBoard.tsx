@@ -1,4 +1,6 @@
 'use client'
+
+import ReceiptManifestBoard from '@/components/accounting/ReceiptManifestBoard'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -26,8 +28,7 @@ import UnmatchedReturnIntakes from '@/components/warehouse/UnmatchedReturnIntake
  * 两个独立孤儿页面合并成这一个三栏看板，数据源同时查 Trip.restaurants[].returns（司机上报）
  * 和 OrderReturn（日销售中心手动登记，M3），标明来源但共用同一套核实/审核/disposition 规则。
  *
- * 三栏固定对应状态机阶段：待核实(WAREHOUSE_PENDING) / 待审核(PENDING_REVIEW) /
- * 已处理(APPROVED+REJECTED+SETTLED 合并展示，这三种都已走完流程，不需要再分栏)。
+ * 三栏按实物退货的处理进度展示。销售审核完成后进入「完成」，卡片标明尚待处理的贷记单。
  */
 
 type DialogState =
@@ -106,7 +107,7 @@ export default function ReturnsBoard() {
   ].sort(byDateDesc)
 
   const DONE_STATUSES: ReturnStatus[] = ['APPROVED', 'REJECTED', 'SETTLED']
-  const processed: CardRow[] = [
+  const done: CardRow[] = [
     ...allTripRows.filter(r => DONE_STATUSES.includes(r.status)).map(r => ({
       key: r.id,
       source: 'trip' as const,
@@ -135,9 +136,6 @@ export default function ReturnsBoard() {
     })),
   ].sort(byDateDesc)
 
-  const financePending = processed.filter(row => row.status === 'APPROVED' && row.orderReturnRow?.workflowVersion === 2)
-  const done = processed.filter(row => !financePending.includes(row))
-
   // 退换货补全 M4：消息广场自动发帖的 linkUrl 带 ?highlight=<id>&source=，跳转过来直接
   // 弹出对应记录，不用用户自己在三栏里找。只在第一次成功匹配时打开一次，避免数据刷新
   // （useRefetchOnFocus）时反复弹窗。
@@ -146,7 +144,7 @@ export default function ReturnsBoard() {
     const highlight = searchParams.get('highlight')
     const source = searchParams.get('source')
     if (!highlight || !source) return
-    const match = [...warehousePending, ...pendingReview, ...financePending, ...done].find(r => {
+    const match = [...warehousePending, ...pendingReview, ...done].find(r => {
       if (source === 'order_return') return r.source === 'order_return' && r.orderReturnRow?.id === highlight
       // tripRow 是 FlatReturn：.id 是 `${tripId}-${ri}-${ei}` 合成行 key，不是真实
       // ReturnItem.id（真实 id 存在 .returnId，跟 bulletin linkUrl 里带的 highlight 同源，
@@ -160,7 +158,7 @@ export default function ReturnsBoard() {
       openCard(match)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, warehousePending, pendingReview, financePending, done])
+  }, [loading, warehousePending, pendingReview, done])
 
 
   function openCard(card: CardRow) {
@@ -173,6 +171,7 @@ export default function ReturnsBoard() {
   }
 
   function renderCard(card: CardRow) {
+    const creditPending = card.status === 'APPROVED' && card.orderReturnRow?.workflowVersion === 2
     return (
       <button
         key={card.key}
@@ -191,6 +190,7 @@ export default function ReturnsBoard() {
           <span className="text-gray-700 truncate mr-2">{card.productName}</span>
           <span className="text-orange-700 font-semibold flex-shrink-0">×{card.quantity}</span>
         </div>
+        {creditPending && <div className="text-xs text-amber-700">{isEn ? 'Credit note pending' : '贷记单待处理'}</div>}
         {card.reason && <div className="text-xs text-gray-400 truncate">{isEn ? 'Reason: ' : '原因：'}{card.reason}</div>}
         {card.orderReturnRow && (card.orderReturnRow.sourceTrip || card.orderReturnRow.vehiclePlateSnapshot || card.orderReturnRow.driverNameSnapshot) && <div className="text-[11px] text-blue-700">{isEn ? 'Driver / Vehicle' : '司机 / 车牌'}: {card.orderReturnRow.driverNameSnapshot || card.orderReturnRow.sourceTrip?.driverName || '—'} · {card.orderReturnRow.vehiclePlateSnapshot || card.orderReturnRow.sourceTrip?.vehiclePlate || '—'}</div>}
         <div className="text-[11px] text-gray-400">{isEn ? 'Return record time' : '退货登记时间'}: {new Date(card.createdAt).toLocaleString('en-GB', { timeZone: 'Europe/Dublin' })}</div>
@@ -213,34 +213,32 @@ export default function ReturnsBoard() {
   const columns: { key: string; title: string; rows: CardRow[]; emptyText: string }[] = [
     {
       key: 'warehouse_pending',
-      title: isEn ? `Pending Warehouse Check (${warehousePending.length})` : `待核实 (${warehousePending.length})`,
+      title: isEn ? `Pending Warehouse Check (${warehousePending.length})` : `待仓库核实 (${warehousePending.length})`,
       rows: warehousePending,
       emptyText: isEn ? 'Nothing pending check' : '暂无待核实记录',
     },
     {
       key: 'pending_review',
-      title: isEn ? `Pending Review (${pendingReview.length})` : `待审核 (${pendingReview.length})`,
+      title: isEn ? `Pending Sales Review (${pendingReview.length})` : `待销售审核 (${pendingReview.length})`,
       rows: pendingReview,
       emptyText: isEn ? 'Nothing pending review' : '暂无待审核记录',
     },
     {
-      key: 'finance_pending', title: isEn ? `Pending Finance (${financePending.length})` : `待会计确认 (${financePending.length})`, rows: financePending, emptyText: isEn ? 'Nothing pending Finance' : '暂无待会计确认记录',
-    },
-    {
       key: 'done',
-      title: isEn ? `Processed (${done.length})` : `已处理 (${done.length})`,
+      title: isEn ? `Completed (${done.length})` : `完成 (${done.length})`,
       rows: done,
-      emptyText: isEn ? 'No processed records yet' : '暂无已处理记录',
+      emptyText: isEn ? 'No completed returns yet' : '暂无已完成记录',
     },
   ]
 
   return (
     <div>
+      <ReceiptManifestBoard salesOnly />
       {canReview && <UnmatchedReturnIntakes isEn={isEn} canReview={canReview} onSaved={load} />}
       {loading && trips.length === 0 && orderReturns.length === 0 ? (
         <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {columns.map(col => (
             <div key={col.key} className="space-y-2">
               <div className="flex items-center justify-between px-1">

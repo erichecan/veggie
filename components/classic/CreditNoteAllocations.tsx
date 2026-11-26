@@ -38,6 +38,7 @@ interface CreditNoteDetail {
   name: string
   status: string
   totalIncTax: number | string
+  refundAllowed?: boolean
   amountAllocated: number
   amountRemaining: number
   allocations: Allocation[]
@@ -200,7 +201,7 @@ export default function CreditNoteAllocations({ creditNoteId, isEn, onChanged }:
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+          {data.refundAllowed !== false && <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="w-full font-medium text-gray-600 sm:w-auto">{isEn ? 'Refund to customer' : '退款给客户'}</span>
             <input
               type="number" step="0.01" min="0"
@@ -225,7 +226,7 @@ export default function CreditNoteAllocations({ creditNoteId, isEn, onChanged }:
             >
               {isEn ? 'Record refund' : '登记退款'}
             </Button>
-          </div>
+          </div>}
         </>
       )}
     </div>

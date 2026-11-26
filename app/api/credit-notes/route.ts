@@ -1,3 +1,6 @@
+import { confirmReturnCredit } from '@/lib/return-workflow'
+import { createDraftCreditNotesForReturns } from '@/lib/finance/return-credit-note'
+import { assertReturnReviewComplete, lockReturnOrders, returnError } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -68,6 +71,47 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const data = await req.json()
+      if (data.action === 'historical_complaint') {
+        const orderId = String(data.orderId ?? '').trim()
+        const orderLineId = String(data.orderLineId ?? '').trim()
+        const complaintId = String(data.complaintId ?? '')
+        const reason = String(data.reason ?? '').trim().slice(0, 500)
+        const amount = data.creditAmountExTax
+        if (!orderId || !orderLineId || !reason || !/^[a-f0-9-]{36}$/i.test(complaintId) || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || amount >= 1e10 || Math.abs(amount - round2(amount)) > 0.000001) {
+          returnError('请选择历史订单行并填写投诉原因和有效未税贷记金额', 400)
+        }
+        const sourceReturnId = `HISTORICAL_COMPLAINT:${complaintId}`
+        const credit = await prisma.$transaction(async tx => {
+          await lockReturnOrders(tx, [orderId])
+          const existing = await tx.creditNoteLine.findUnique({ where: { sourceReturnId }, select: { sourceOrderId: true, sourceOrderLineId: true, creditNote: { select: { id: true, name: true } } } })
+          if (existing) {
+            if (existing.sourceOrderId !== orderId || existing.sourceOrderLineId !== orderLineId) returnError('此投诉已关联其他订单行')
+            return existing.creditNote
+          }
+          const order = await tx.order.findUnique({ where: { id: orderId }, select: { restaurantId: true, restaurantName: true } })
+          const line = await tx.orderLine.findFirst({ where: { id: orderLineId, orderId }, select: { productId: true, productName: true } })
+          if (!order || !line) returnError('原订单行不存在', 404)
+          await assertReturnReviewComplete(tx, [orderId])
+          const invoices = await tx.invoice.findMany({
+            where: { saleOrderIds: { has: orderId }, customerId: order.restaurantId, status: { in: ['POSTED', 'PAID'] } },
+            select: { id: true, lines: true },
+          })
+          const matches = invoices.flatMap(invoice => (Array.isArray(invoice.lines) ? invoice.lines : []).flatMap(row =>
+            row && typeof row === 'object' && !Array.isArray(row) && row.orderLineId === orderLineId ? [{ invoiceId: invoice.id, taxRate: toNum(row.taxRate) }] : []))
+          if (matches.length !== 1) returnError('请先核对该订单行对应的唯一已过账发票')
+          const [{ invoiceId, taxRate }] = matches
+          const [note] = await createDraftCreditNotesForReturns(tx, [{
+            sourceReturnId, sourceOrderId: orderId, sourceOrderLineId: orderLineId, sourceInvoiceId: invoiceId,
+            customerId: order.restaurantId, customerName: order.restaurantName, ...line,
+            quantity: 1, amountExTax: amount, taxRate: taxRate > 1 ? taxRate / 100 : taxRate, reason,
+          }], user.userId)
+          if (!note) returnError('无法生成贷记单')
+          await confirmReturnCredit(tx, note.id, user.userId)
+          return note
+        })
+        await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name, action: 'CREATE', resource: 'credit-note', resourceId: credit.id, detail: `历史单客诉贷记 ${credit.name}：${reason}` })
+        return NextResponse.json(serializeApi(credit), { status: 201 })
+      }
       const customerId = String(data.customerId ?? '').trim()
       const customerName = String(data.customerName ?? '').trim()
       const notes = data.notes ? String(data.notes).trim().slice(0, 1000) : null
@@ -148,6 +192,8 @@ export async function POST(req: Request) {
 
       return NextResponse.json(serializeApi(creditNote), { status: 201 })
     } catch (error) {
+      const err = error as { status?: number; message?: string }
+      if (err.status) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/credit-notes]', error)
       return NextResponse.json({ error: '创建退款单失败' }, { status: 500 })
     }

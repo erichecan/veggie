@@ -1,4 +1,4 @@
-import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
+import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -30,11 +30,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
 
       const result = await p.$transaction(async (tx: typeof p) => {
-        await lockReturnOrders(tx, inv.saleOrderIds ?? [])
-        await assertReturnsResolved(tx, inv.saleOrderIds ?? [])
+        const orderIds = await invoiceSourceOrderIds(tx, [inv])
+        await lockReturnOrders(tx, orderIds)
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
         const current = await tx.invoice.findUnique({ where: { id } })
         if (current?.status !== 'DRAFT') throw Object.assign(new Error('发票已处理，请刷新'), { status: 409 })
+        await assertInvoiceReturnsResolved(tx, [current], orderIds)
         const entry = await postInvoiceToJournal(tx, current, user.userId)
         const updated = await tx.invoice.update({
           where: { id },

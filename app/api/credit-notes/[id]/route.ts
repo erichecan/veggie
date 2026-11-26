@@ -37,6 +37,7 @@ export async function GET(
     return NextResponse.json(serializeApi({
       ...cn,
       allocations: cn.allocations.map(a => ({ ...a, reversed: reversed.has(a.id) })),
+      refundAllowed: !cn.lines.some(line => line.sourceReturnId != null),
       amountAllocated: used,
       amountRemaining: remaining,
       // 可抵扣的发票（同客户、已过账未付清，来源订单对得上的排前面）

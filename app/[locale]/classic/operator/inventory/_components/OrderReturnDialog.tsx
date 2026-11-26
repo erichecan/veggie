@@ -16,6 +16,15 @@ import { TRIP_STATUS_COLORS, TRIP_STATUS_LABELS_ZH, TRIP_STATUS_LABELS_EN, type 
  * Approval queues Finance; this dialog never posts stock or financial effects.
  */
 
+const REVIEW_OUTCOMES = [
+  ['ALL_SELLABLE', '全部可售', 'All sellable'], ['ALL_SCRAP', '全部报废', 'All scrap'],
+  ['PARTIAL_SCRAP', '部分可售部分报废', 'Split sellable and scrap'], ['INSPECTION', '待质检', 'Pending inspection'],
+  ['SHORTAGE', '数量短少', 'Quantity shortage'], ['CUSTOMER_DISCOUNT', '客户原因退货折让', 'Customer return allowance'],
+  ['COMPANY_FULL', '公司原因退回全额', 'Full credit'], ['PRICE_ONLY', '只调价不退货', 'Price adjustment only'],
+  ['NO_GOODS', '无货调账', 'Adjustment without goods'], ['REJECTED', '驳回退货', 'Reject return'],
+  ['DUPLICATE', '重复登记合并', 'Close duplicate registration'],
+] as const
+
 export interface OrderReturnDialogProps {
   item: OrderReturn
   onClose: () => void
@@ -32,6 +41,9 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
   const [note, setNote] = useState('')
   const [disposition, setDisposition] = useState<'SELLABLE' | 'SCRAP'>(item.disposition ?? 'SELLABLE')
   const [scrapReason, setScrapReason] = useState<'CUSTOMER_RETURN_EXPIRED' | 'CUSTOMER_RETURN_DAMAGED' | 'OTHER'>('CUSTOMER_RETURN_DAMAGED')
+  const [outcome, setOutcome] = useState(item.reviewOutcome ?? (item.disposition === 'SCRAP' ? 'ALL_SCRAP' : 'ALL_SELLABLE'))
+  const [scrapQuantity, setScrapQuantity] = useState(String(item.scrapQuantity ?? ''))
+  const [creditAmount, setCreditAmount] = useState('')
   const [approvedQuantity, setApprovedQuantity] = useState(String(item.approvedQuantity ?? item.warehouseAcceptedQuantity ?? item.quantity))
   const [actualStockQuantity, setActualStockQuantity] = useState(String(item.actualReturnedStockQuantity ?? ''))
   const [saving, setSaving] = useState(false)
@@ -81,16 +93,20 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
   }
 
   async function review(action: 'approve' | 'reject') {
+    const decision = action === 'approve' && ['REJECTED', 'DUPLICATE'].includes(outcome) ? 'reject' : action
     setSaving(true)
     try {
       const result = await apiPut<{ creditNoteRequests?: Array<{ name: string }> }>(`/api/order-returns/${item.id}/review`, {
-        action, approvedQuantity: Number(approvedQuantity),
+        action: decision, reviewOutcome: decision === 'reject' ? (outcome === 'DUPLICATE' ? 'DUPLICATE' : 'REJECTED') : outcome,
+        scrapQuantity: scrapQuantity === '' ? undefined : Number(scrapQuantity),
+        creditAmountExTax: creditAmount === '' ? undefined : Number(creditAmount),
+        approvedQuantity: Number(approvedQuantity),
         disposition: action === 'approve' ? disposition : undefined,
-        scrapReason: action === 'approve' && disposition === 'SCRAP' ? scrapReason : undefined,
+        scrapReason: decision === 'approve' && (disposition === 'SCRAP' || outcome === 'ALL_SCRAP' || outcome === 'PARTIAL_SCRAP') ? scrapReason : undefined,
         exchangeOrderId: action === 'approve' && item.actionType === 'exchange' ? exchangeOrderId.trim() : undefined,
         note: note.trim() || undefined,
       })
-      toast.success(action === 'approve'
+      toast.success(outcome === 'INSPECTION' && decision === 'approve' ? (isEn ? 'Inspection pending' : '已标记待质检') : decision === 'approve'
         ? (result.creditNoteRequests?.length
           ? (isEn ? `Approved · sent to Finance ${result.creditNoteRequests.map(cn => cn.name).join(', ')}` : `已批准退货，申请 ${result.creditNoteRequests.map(cn => cn.name).join(', ')} 已提交会计审核`)
           : (isEn ? 'Return approved · no credit note is created for un-invoiced delivery' : '已提交会计确认'))
@@ -121,7 +137,7 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
           </div>
           {item.actualReturnedProductName && <div className="text-xs font-medium text-blue-700">{isEn ? 'Actual returned item: ' : '实际退回商品：'}{item.actualReturnedProductName}</div>}
           {status === 'WAREHOUSE_PENDING' && !readOnly && <div className="grid gap-2 border-t border-orange-200 pt-2 sm:grid-cols-2">
-            <label className="text-xs text-gray-600">{isEn ? 'Received quantity' : '仓库实收数量'}<input type="number" min="0.001" max={Number(item.quantity)} step="0.001" value={acceptedQuantity} onChange={e => setAcceptedQuantity(e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 text-sm" /></label>
+            <label className="text-xs text-gray-600">{isEn ? 'Received quantity' : '仓库实收数量'}<input type="number" min="0.001"  step="0.001" value={acceptedQuantity} onChange={e => setAcceptedQuantity(e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-gray-600">{isEn ? 'Actual product received (if different)' : '实际收到商品（送错商品时选择）'}<ProductSearchInput value={actualProduct?.name ?? item.actualReturnedProductName ?? ''} onChange={value => setActualProduct(current => current ? { ...current, name: value, id: '' } : { id: '', name: value })} onSelect={product => setActualProduct(product)} products={products} placeholder={isEn ? 'Search actual product…' : '搜索实际商品…'} inputClassName="mt-1 w-full rounded border px-2 py-1.5 text-sm" portalDropdown /></label>
           </div>}
           <div className="text-xs text-gray-500">{isEn ? 'Order' : '订单'} {item.order?.code ?? item.orderId}</div>
@@ -219,17 +235,34 @@ export function OrderReturnDialog({ item, onClose, onSaved, readOnly }: OrderRet
 
         {status === 'PENDING_REVIEW' && !readOnly && <div className="space-y-2">
           <p className="text-sm">{isEn ? 'Warehouse disposition: ' : '仓库验收去向：'}{item.disposition === 'SCRAP' ? (isEn ? 'Scrap' : '报废') : (isEn ? 'Sellable' : '可再售')}</p>
+          <label className="block text-sm">{isEn ? 'Review outcome' : '审核结论'}
+            <select className="mt-1 w-full rounded border p-2" value={outcome} onChange={event => setOutcome(event.target.value)}>
+              {REVIEW_OUTCOMES.map(([value, zh, en]) => <option value={value} key={value}>{isEn ? en : zh}</option>)}
+            </select>
+          </label>
+          {outcome === 'PARTIAL_SCRAP' && <label className="block text-sm">{isEn ? 'Scrap quantity in the received unit' : '报废数量（按实收单位）'}
+            <input className="mt-1 w-full rounded border p-2" type="number" min="0.001" step="0.001" value={scrapQuantity} onChange={event => setScrapQuantity(event.target.value)} />
+          </label>}
+          {['CUSTOMER_DISCOUNT', 'PRICE_ONLY', 'NO_GOODS'].includes(outcome) && <label className="block text-sm">{isEn ? 'Credit before tax (€)' : '贷记金额（未税，€）'}
+            <input className="mt-1 w-full rounded border p-2" type="number" min="0.01" step="0.01" value={creditAmount} onChange={event => setCreditAmount(event.target.value)} />
+          </label>}
+          <label className="block text-sm">{isEn ? 'Sales disposition' : '销售处置'}
+            <select className="mt-1 w-full rounded border p-2" value={disposition} onChange={event => setDisposition(event.target.value === 'SCRAP' ? 'SCRAP' : 'SELLABLE')}>
+              <option value="SELLABLE">{isEn ? 'Sellable' : '可再售'}</option>
+              <option value="SCRAP">{isEn ? 'Scrap' : '报废'}</option>
+            </select>
+          </label>
           <label className="block text-sm">{isEn ? 'Quantity approved for credit (less than received = partial approval)' : '批准退货数量（小于实收即部分批准）'}<input type="number" min="0.001" max={Number(item.warehouseAcceptedQuantity ?? item.quantity)} step="0.001" value={approvedQuantity} onChange={e => setApprovedQuantity(e.target.value)} className="mt-1 w-full rounded border px-2 py-2" /></label>
           <textarea aria-label={isEn ? 'Sales review note' : '销售审核备注'} value={note} onChange={e => setNote(e.target.value)} placeholder={isEn ? 'Reason required for partial approval or rejection' : '部分批准或拒绝时必须填写原因'} className="w-full rounded border p-2" />
           {item.actionType === 'exchange' && <input aria-label={isEn ? 'Replacement order' : '补送订单号'} value={exchangeOrderId} onChange={e => setExchangeOrderId(e.target.value)} className="w-full rounded border p-2" />}
-          <p className="text-xs text-amber-700">{isEn ? 'Approval submits a Finance request. Stock and delivered quantity remain unchanged until Finance confirms.' : '批准后提交会计确认，此时不调整库存或实送量。'}</p>
+          <p className="text-xs text-amber-700">{isEn ? 'Sales posts scrap now and sends the credit to Finance.' : '选择报废后由销售直接处理。贷记交会计处理。'}</p>
         </div>}
         {item.sourceTrip && <p className="text-sm text-gray-600">{isEn ? 'Driver / vehicle: ' : '司机 / 车牌：'}{item.sourceTrip.driverName || '—'} / {item.sourceTrip.vehiclePlate || '—'} · {new Date(item.sourceTrip.createdAt).toLocaleDateString('en-GB')}</p>}
         {item.photo && <img src={item.photo} alt={isEn ? 'Return photo' : '退货照片'} className="h-24 w-24 rounded object-cover" />}
         {status === 'WAREHOUSE_PENDING' && !readOnly && actualProduct?.id && actualProduct.id !== item.productId && <label className="text-sm">{isEn ? 'Actual item quantity in BASE STOCK unit (not the original product unit)' : '实际商品的基础库存单位数量（非原商品单位）'}<input type="number" min="0.001" step="0.001" value={actualStockQuantity} onChange={e => setActualStockQuantity(e.target.value)} className="w-full rounded border p-2" /></label>}
         {status === 'APPROVED' && item.disposition && (
           <p className="text-xs text-gray-500">
-            {isEn ? 'Disposition: ' : '货物去向：'}{item.disposition === 'SELLABLE' ? (isEn ? 'Sellable — awaiting Finance' : '可再售，待会计确认') : (isEn ? 'Scrap — awaiting Finance' : '报废，待会计确认')}
+            {isEn ? 'Disposition: ' : '货物去向：'}{item.disposition === 'SELLABLE' ? (isEn ? 'Sellable — awaiting Finance' : '可再售，待会计确认') : (isEn ? 'Scrap · credit pending' : '报废，贷记待处理')}
           </p>
         )}
         {/* 仓库备注/销售备注彼此独立展示，不互相覆盖——仓库核实不通过写 warehouseNote，

@@ -4,6 +4,7 @@
  */
 export const LOC = {
   STOCK: 'loc_wh_stock',
+  RETURN_QUARANTINE: 'loc_wh_return_quarantine',
   VENDORS: 'loc_partner_vendors',
   CUSTOMERS: 'loc_partner_customers',
   INVENTORY: 'loc_virtual_inventory',
@@ -16,6 +17,7 @@ export type LocationId = typeof LOC[keyof typeof LOC]
 export const INTERNAL_LOCATIONS: ReadonlySet<string> = new Set([LOC.STOCK])
 
 export const LOCATION_LABEL: Record<string, { zh: string; en: string }> = {
+  [LOC.RETURN_QUARANTINE]: { zh: '退货待检仓', en: 'WH/Return Quarantine' },
   [LOC.STOCK]: { zh: '仓库/库存', en: 'WH/Stock' },
   [LOC.VENDORS]: { zh: '供应商', en: 'Partners/Vendors' },
   [LOC.CUSTOMERS]: { zh: '客户', en: 'Partners/Customers' },

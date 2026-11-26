@@ -118,6 +118,11 @@ export async function refundCreditNote(
   }
   const { cn, remaining } = await lockCreditNote(db, params.creditNoteId)
   assertUsable(cn)
+  const linkedReturn = await db.creditNoteLine.findFirst({
+    where: { creditNoteId: cn.id, sourceReturnId: { not: null } },
+    select: { id: true },
+  })
+  if (linkedReturn) throw Object.assign(new Error('退货贷记单用于抵扣客户应收，不能退款'), { status: 409 })
   if (amount > remaining + EPS) {
     throw Object.assign(new Error(`退款超额：贷记单剩余 €${remaining.toFixed(2)}，本次 €${amount.toFixed(2)}`), { status: 400 })
   }

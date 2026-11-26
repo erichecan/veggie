@@ -135,14 +135,21 @@ async function scanOrderReturnsForDisposition(before: Date): Promise<Array<{
 }>> {
   const rows = await p.orderReturn.findMany({
     where: { createdAt: { lt: before } },
-    select: { quantity: true, disposition: true, status: true, approvedAt: true, createdAt: true },
+    select: { quantity: true, warehouseAcceptedQuantity: true, actualReturnedStockQuantity: true, scrapQuantity: true, disposition: true, status: true, approvedAt: true, createdAt: true },
   })
-  return rows.map((r: { quantity: unknown; disposition: string | null; status: string; approvedAt: Date | null; createdAt: Date }) => ({
-    quantity: r.quantity,
-    disposition: r.disposition,
-    status: r.status,
-    effectiveDate: r.disposition && r.approvedAt ? r.approvedAt : r.createdAt,
-  }))
+  return rows.flatMap((r: { quantity: unknown; warehouseAcceptedQuantity: unknown; actualReturnedStockQuantity: unknown; scrapQuantity: unknown; disposition: string | null; status: string; approvedAt: Date | null; createdAt: Date }) => {
+    if (r.status === 'REJECTED') return []
+    const quantity = toNum(r.actualReturnedStockQuantity ?? r.warehouseAcceptedQuantity ?? r.quantity)
+    if (r.status === 'WAREHOUSE_PENDING' || r.status === 'PENDING_REVIEW') {
+      return [{ quantity, disposition: null, status: 'PENDING_REVIEW', effectiveDate: r.createdAt }]
+    }
+    const scrap = r.scrapQuantity == null ? r.disposition === 'SCRAP' ? quantity : 0 : toNum(r.scrapQuantity)
+    const effectiveDate = r.approvedAt ?? r.createdAt
+    return [
+      ...(scrap > 0 ? [{ quantity: scrap, disposition: 'SCRAP', status: r.status, effectiveDate }] : []),
+      ...(quantity > scrap ? [{ quantity: quantity - scrap, disposition: 'SELLABLE', status: r.status, effectiveDate }] : []),
+    ]
+  })
 }
 
 /** 期内已审批退货按去向汇总数量（SELLABLE / SCRAP），以及期内待处置数量（DEV-PLAN 风险点3：合并 Trip 与 OrderReturn 两条入库路径） */
@@ -186,7 +193,7 @@ async function getPendingReturnCount(): Promise<number> {
  */
 async function getScrapValueSum(start: Date, end: Date): Promise<number> {
   const rows = (await p.$queryRawUnsafe(
-    `SELECT COALESCE(SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", 0)), 0)::float AS amount
+    `SELECT COALESCE(SUM(COALESCE(sm."physicalQty", ABS(sm.qty)) * COALESCE(l."unitCost", pr."standardPrice", 0)), 0)::float AS amount
      FROM "StockMove" sm
      LEFT JOIN "Lot" l ON l.id = sm."lotId"
      LEFT JOIN "Product" pr ON pr.id = sm."productId"
@@ -240,13 +247,13 @@ export async function getLossTrend(weeks = 8): Promise<LossTrendWeek[]> {
 
   const rows = await p.stockMove.findMany({
     where: { type: 'SCRAP', movedAt: { gte: rangeStart } },
-    select: { movedAt: true, qty: true, sourceType: true },
+    select: { movedAt: true, qty: true, physicalQty: true, sourceType: true },
   })
 
   const buckets = new Map<string, { scrapQty: number; returnScrapQty: number }>()
-  for (const row of rows as Array<{ movedAt: Date; qty: unknown; sourceType: string | null }>) {
+  for (const row of rows as Array<{ movedAt: Date; qty: unknown; physicalQty?: unknown; sourceType: string | null }>) {
     const weekKey = toDayKey(mondayStart(new Date(row.movedAt)))
-    const qty = Math.abs(toNum(row.qty))
+    const qty = Math.abs(toNum(row.physicalQty ?? row.qty))
     const bucket = buckets.get(weekKey) ?? { scrapQty: 0, returnScrapQty: 0 }
     bucket.scrapQty += qty
     if (row.sourceType?.endsWith('RETURN_SCRAP')) bucket.returnScrapQty += qty
@@ -301,15 +308,15 @@ export async function getLossReasonBreakdown(days: number): Promise<LossReasonRo
   const { start, end } = periodRange(days)
   const rows = await p.stockMove.findMany({
     where: { type: 'SCRAP', movedAt: { gte: start, lt: end } },
-    select: { qty: true, note: true, lossReason: true },
+    select: { qty: true, physicalQty: true, note: true, lossReason: true },
   })
 
   const byKey = new Map<string, number>()
-  for (const row of rows as Array<{ qty: unknown; note: string | null; lossReason: string | null }>) {
+  for (const row of rows as Array<{ qty: unknown; physicalQty?: unknown; note: string | null; lossReason: string | null }>) {
     // 结构化字段优先（台账 E4 起写入）；老数据仍从 note 反解 —— 反解是**兜底**，
     // 不再是唯一来源：写入时改一句文案就静默把统计打散，那正是这次要终结的问题
     const key = row.lossReason ?? reasonKeyFromLabel(parseReasonLabel(row.note))
-    byKey.set(key, (byKey.get(key) ?? 0) + Math.abs(toNum(row.qty)))
+    byKey.set(key, (byKey.get(key) ?? 0) + Math.abs(toNum(row.physicalQty ?? row.qty)))
   }
 
   return Array.from(byKey.entries())
@@ -326,11 +333,11 @@ export async function getLossStageBreakdown(days: number): Promise<StageBreakdow
   const { start, end } = periodRange(days)
   const rows = await p.stockMove.findMany({
     where: { type: 'SCRAP', movedAt: { gte: start, lt: end } },
-    select: { qty: true, note: true, lossStage: true, lossReason: true },
-  }) as Array<{ qty: unknown; note: string | null; lossStage: string | null; lossReason: string | null }>
+    select: { qty: true, physicalQty: true, note: true, lossStage: true, lossReason: true },
+  }) as Array<{ qty: unknown; physicalQty?: unknown; note: string | null; lossStage: string | null; lossReason: string | null }>
 
   return summarizeByStage(rows.map(r => ({
-    qty: toNum(r.qty),
+    qty: toNum(r.physicalQty ?? r.qty),
     lossStage: r.lossStage,
     lossReason: r.lossReason,
     fallbackReason: reasonKeyFromLabel(parseReasonLabel(r.note)),
@@ -348,14 +355,14 @@ export async function getTopLossProducts(days: number, limit: number): Promise<T
   const { start, end } = periodRange(days)
   const rows = (await p.$queryRawUnsafe(
     `SELECT sm."productId" AS product_id, MAX(sm."productName") AS product_name,
-            SUM(ABS(sm.qty))::float AS qty,
-            SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", 0))::float AS amount
+            SUM(COALESCE(sm."physicalQty", ABS(sm.qty)))::float AS qty,
+            SUM(COALESCE(sm."physicalQty", ABS(sm.qty)) * COALESCE(l."unitCost", pr."standardPrice", 0))::float AS amount
      FROM "StockMove" sm
      LEFT JOIN "Lot" l ON l.id = sm."lotId"
      LEFT JOIN "Product" pr ON pr.id = sm."productId"
      WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2 AND sm.type = 'SCRAP'
      GROUP BY sm."productId"
-     ORDER BY SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", 0)) DESC
+     ORDER BY SUM(COALESCE(sm."physicalQty", ABS(sm.qty)) * COALESCE(l."unitCost", pr."standardPrice", 0)) DESC
      LIMIT $3`,
     start, end, limit,
   )) as Array<{ product_id: string; product_name: string; qty: number; amount: number }>

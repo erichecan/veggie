@@ -22,7 +22,7 @@ export async function GET(req: Request) {
         lot: { select: { lotNumber: true, arrivedAt: true, sourceRef: true } },
       },
     })
-    return NextResponse.json(serializeApi(moves))
+    return NextResponse.json(serializeApi(moves.map((move: { physicalQty?: unknown; qty: unknown }) => ({ ...move, qty: move.physicalQty == null ? move.qty : -toNum(move.physicalQty) }))))
   } catch (error) {
     console.error('[GET /api/scrap]', error)
     return NextResponse.json({ error: '获取报废记录失败' }, { status: 500 })

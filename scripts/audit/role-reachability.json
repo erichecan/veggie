@@ -27,6 +27,34 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/accounting/receipt-manifests": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
+ "POST /api/accounting/receipt-manifests": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/accounting/returns/[id]/lines": {
   "BOSS": "y",
   "OPERATOR": "y",

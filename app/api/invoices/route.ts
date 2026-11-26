@@ -1,4 +1,4 @@
-import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
+import { assertReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -212,7 +212,10 @@ export async function POST(req: Request) {
       totalTax = round2(totalTax)
       const totalIncTax = round2(subtotalExTax + totalTax)
 
-      const saleOrderIds: string[] = Array.isArray(data.saleOrderIds) ? data.saleOrderIds : []
+      const suppliedOrderIds = Array.isArray(data.saleOrderIds)
+        ? data.saleOrderIds.filter((id: unknown): id is string => typeof id === 'string').map((id: string) => id.trim()).filter(Boolean)
+        : []
+      const saleOrderIds = await invoiceSourceOrderIds(prisma, [{ saleOrderIds: suppliedOrderIds, lines: recomputedLines }])
       const sourceOrders = saleOrderIds.length > 0 ? await prisma.order.findMany({
         where: { id: { in: saleOrderIds } },
         select: { id: true, restaurantId: true, deliveryDate: true },

@@ -1,3 +1,4 @@
+import { freezeReceiptManifest } from '@/lib/receipt-manifest'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -357,6 +358,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               where: { id },
               data: { ...data, status: newStatus },
             })
+            await freezeReceiptManifest(tx, started, new Date(started.departTime!))
             return { trip: started }
           })
           if ('error' in startResult) {
@@ -368,9 +370,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           trip = startResult.trip
         } else {
           data.departTime = new Date().toISOString()
-          trip = await prisma.trip.update({
-            where: { id },
-            data: { ...data, status: newStatus },
+          trip = await prisma.$transaction(async tx => {
+            const started = await tx.trip.update({ where: { id }, data: { ...data, status: newStatus } })
+            await freezeReceiptManifest(tx, started, new Date(started.departTime!))
+            return started
           })
         }
       } else {
