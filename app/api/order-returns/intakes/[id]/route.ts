@@ -13,7 +13,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const body = await req.json()
       if (!['link', 'identifyCustomer', 'reject'].includes(body.action) || !String(body.note ?? '').trim()) return NextResponse.json({ error: '请选择客户/原单或拒绝，并填写处理说明' }, { status: 400 })
       const result = await prisma.$transaction(async tx => {
-        if (body.action === 'link') await lockReturnOrders(tx, [String(body.orderId ?? '')])
+        const source = await tx.returnIntake.findUnique({ where: { id }, select: { candidateOrderIds: true } })
+        await lockReturnOrders(tx, [...(source?.candidateOrderIds ?? []), ...(body.action === 'link' && body.orderId ? [String(body.orderId)] : [])])
         await tx.$queryRaw`SELECT id FROM "ReturnIntake" WHERE id = ${id} FOR UPDATE`
         const intake = await tx.returnIntake.findUnique({ where: { id } })
         if (!intake || !['OPEN', 'CUSTOMER_IDENTIFIED'].includes(intake.status)) returnError('登记不存在或已处理')
@@ -25,7 +26,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (body.action === 'link') {
           const order = await tx.order.findUnique({ where: { id: String(body.orderId ?? '') }, select: { restaurantId: true } })
           if (!order || order.restaurantId !== customerId) returnError('必须匹配所选餐馆的原订单', 400)
-          const ret = await createOrderReturn(tx, { orderId: String(body.orderId), orderLineId: String(body.orderLineId ?? ''), quantity: Number(body.quantity), returnKind: 'HISTORICAL', sourceTripId: intake.sourceTripId ?? undefined, vehiclePlateSnapshot: intake.vehiclePlate ?? undefined, driverNameSnapshot: intake.driverName ?? undefined, actualReturnedProductName: intake.productName, reason: [intake.reason, `仓库登记：${intake.productName} ${intake.spec} × ${intake.quantity} ${intake.uomLabel}`, String(body.note)].filter(Boolean).join(' · '), photo: intake.photo ?? undefined }, user)
+          const ret = await createOrderReturn(tx, { orderId: String(body.orderId), orderLineId: String(body.orderLineId ?? ''), quantity: Number(body.quantity), returnKind: intake.candidateOrderIds.includes(String(body.orderId)) ? 'CURRENT' : 'HISTORICAL', sourceTripId: intake.sourceTripId ?? undefined, vehiclePlateSnapshot: intake.vehiclePlate ?? undefined, driverNameSnapshot: intake.driverName ?? undefined, actualReturnedProductName: Number(intake.quantity) > 0 ? intake.productName : undefined, reason: [intake.reason, `仓库登记：${intake.productName} ${intake.spec} × ${intake.quantity} ${intake.uomLabel}`, String(body.note)].filter(Boolean).join(' · '), photo: intake.photo ?? undefined }, user)
           returnId = ret.id
         }
         const nextStatus = body.action === 'reject' ? 'REJECTED' : returnId ? 'LINKED' : 'CUSTOMER_IDENTIFIED'

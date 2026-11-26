@@ -1,4 +1,4 @@
-import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
+import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -15,15 +15,15 @@ export async function POST(req: Request) {
       const ids: string[] = Array.from(new Set<string>((Array.isArray(data.invoiceIds) ? data.invoiceIds : []).map((id: unknown) => String(id).trim()).filter(Boolean)))
       if (ids.length < 1 || ids.length > 100) return NextResponse.json({ error: '请选择 1 至 100 张发票' }, { status: 400 })
       const result = await prisma.$transaction(async tx => {
-        const source = await tx.invoice.findMany({ where: { id: { in: ids } }, select: { saleOrderIds: true } })
-        const orderIds = source.flatMap(row => row.saleOrderIds)
+        const source = await tx.invoice.findMany({ where: { id: { in: ids } }, select: { saleOrderIds: true, lines: true } })
+        const orderIds = await invoiceSourceOrderIds(tx, source)
         await lockReturnOrders(tx, orderIds)
-        await assertReturnsResolved(tx, orderIds)
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ANY(${ids}::text[]) ORDER BY id FOR UPDATE`
         const invoices = await tx.invoice.findMany({ where: { id: { in: ids } }, orderBy: { id: 'asc' } })
         if (invoices.length !== ids.length) throw Object.assign(new Error('部分发票不存在'), { status: 404 })
         const invalid = invoices.find(invoice => invoice.status !== 'DRAFT')
         if (invalid) throw Object.assign(new Error(`${invalid.name} 不是草稿，未执行批量过账`), { status: 409 })
+        await assertInvoiceReturnsResolved(tx, invoices, orderIds)
         const posted = []
         for (const invoice of invoices) {
           const entry = await postInvoiceToJournal(tx as never, invoice, user.userId)

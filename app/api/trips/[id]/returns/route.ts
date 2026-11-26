@@ -32,11 +32,21 @@ export async function GET(
     if (scope && trip.driverId !== scope.userId) return NextResponse.json({ error: '行程不存在' }, { status: 404 })
     const query = new URL(req.url).searchParams
     const sourceCode = query.get('sourceOrderCode')?.trim()
-    if (sourceCode) {
+    const sourceProduct = query.get('sourceProduct')?.trim().slice(0, 120)
+    if (sourceCode || sourceProduct) {
       const restaurantId = query.get('restaurantId')
       const stops = trip.restaurants as unknown as TripRestaurant[]
       if (!stops.some(stop => stop.restaurantId === restaurantId)) return NextResponse.json({ error: '客户不属于本行程' }, { status: 403 })
-      const source = await prisma.order.findFirst({ where: { code: { equals: sourceCode, mode: 'insensitive' }, restaurantId: restaurantId!, status: 'COMPLETED' }, select: { id: true, code: true, lines: { select: { id: true, productId: true, productName: true, spec: true, deliveredQty: true } } } })
+      if (sourceProduct) {
+        const product = { productName: { contains: sourceProduct, mode: 'insensitive' as const }, deliveredQty: { gt: 0 } }
+        const sources = await prisma.order.findMany({
+          where: { restaurantId: restaurantId!, status: { in: ['COMPLETED', 'LOCKED'] }, lines: { some: product } },
+          select: { id: true, code: true, lines: { where: product, select: { id: true, productId: true, productName: true, spec: true, deliveredQty: true } } },
+          orderBy: { deliveryDate: 'desc' },
+        })
+        return NextResponse.json(serializeApi(sources))
+      }
+      const source = await prisma.order.findFirst({ where: { code: { equals: sourceCode, mode: 'insensitive' }, restaurantId: restaurantId!, status: { in: ['COMPLETED', 'LOCKED'] } }, select: { id: true, code: true, lines: { select: { id: true, productId: true, productName: true, spec: true, deliveredQty: true } } } })
       if (!source) return NextResponse.json({ error: '未找到该客户已配送完成的原订单，请核对单号；无法确认来源的货物交仓库核实' }, { status: 404 })
       return NextResponse.json(serializeApi(source))
     }
@@ -139,6 +149,7 @@ export async function POST(
         restaurantId: string
         returns: Array<{
           returnKind?: 'CURRENT' | 'HISTORICAL'
+          photoOnly?: boolean
           spec?: string
           uomLabel?: string
           orderId?: string
@@ -156,7 +167,7 @@ export async function POST(
         }>
       }
 
-      if (!restaurantId || !Array.isArray(returnItems) || returnItems.length === 0) {
+      if (!restaurantId || !Array.isArray(returnItems) || returnItems.length === 0 || returnItems.length > 100 || returnItems.some(item => !item || typeof item !== 'object')) {
         return NextResponse.json(
           { error: '缺少必填字段: restaurantId, returns[]' },
           { status: 400 },
@@ -181,18 +192,8 @@ export async function POST(
         )
       }
 
-      // 20261028 M3 的"照片必填/补报原因必填"此前只在司机端页面校验，直接调 API
-      // 能绕过去——仓库/销售核实时就会缺现场证据或缺"为什么现在才报"的说明，
-      // 规则必须在服务端也兜一道（code-review high 发现 #2）。
-      const missingPhoto = returnItems.find(ri => !ri.photo || !ri.photo.trim())
-      if (missingPhoto) {
-        return NextResponse.json(
-          { error: `商品「${missingPhoto.productName}」缺少异常照片，请先拍照再提交` },
-          { status: 400 },
-        )
-      }
       if (String(trip.status) === 'COMPLETED') {
-        const missingLateNote = returnItems.find(ri => !ri.lateReportNote || !ri.lateReportNote.trim())
+        const missingLateNote = returnItems.find(ri => !ri.photoOnly && (!ri.lateReportNote || !ri.lateReportNote.trim()))
         if (missingLateNote) {
           return NextResponse.json(
             { error: `商品「${missingLateNote.productName}」是补报（行程已完成），请填写补报原因` },
@@ -210,8 +211,22 @@ export async function POST(
         )
       }
       const newReturns = await prisma.$transaction(async tx => {
+        const historicalIds = returnItems.flatMap(item => item.returnKind === 'HISTORICAL' && typeof item.orderId === 'string' ? [item.orderId] : [])
+        await lockReturnOrders(tx, [...(restaurant.orderIds ?? []), ...historicalIds])
         const created = []
         for (const ri of returnItems) {
+          if (ri.photoOnly === true) {
+            const photo = typeof ri.photo === 'string' ? ri.photo.trim() : ''
+            if (!photo || photo.length > 8_000_000) throw new OrderReturnInputError('请上传有效的签收单与退货照片')
+            await tx.returnIntake.create({ data: {
+              sourceTripId: id, customerId: restaurantId, customerName: restaurant.restaurantName,
+              productName: '照片待识别', spec: '', uomLabel: '', quantity: 0,
+              candidateOrderIds: ri.returnKind === 'HISTORICAL' ? [] : [...new Set(restaurant.orderIds ?? [])],
+              photo, reason: ri.reason?.trim().slice(0, 500), reportedById: user.userId,
+            } })
+            continue
+          }
+          if (ri.actionType && ri.actionType !== 'return') throw new OrderReturnInputError('退货流程不支持换货，请另建新订单')
           if (ri.returnKind === 'HISTORICAL' && !ri.orderLineId) {
             if (!ri.productName?.trim() || !ri.spec?.trim() || !ri.uomLabel?.trim() || !Number.isFinite(ri.quantity) || ri.quantity <= 0 || Math.abs(ri.quantity * 1000 - Math.round(ri.quantity * 1000)) > 0.00001) throw new OrderReturnInputError('历史退货请填写商品名、规格、单位及有效数量')
             await tx.returnIntake.create({ data: { sourceTripId: id, customerId: restaurantId, customerName: restaurant.restaurantName, productName: ri.productName.trim().slice(0,200), spec: ri.spec.trim().slice(0,200), uomLabel: ri.uomLabel.trim().slice(0,40), quantity: ri.quantity, photo: ri.photo, reason: [ri.reason, ri.lateReportNote].filter(Boolean).join(' · '), reportedById: user.userId } })

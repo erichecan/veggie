@@ -160,6 +160,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    * 主数据只读，**不给任何写**（改客户信用额度、改商品价格不是财务的活）。
    */
   FINANCE: [
+    { pattern: '/api/accounting/receipt-manifests', methods: ['GET', 'POST'] },
     ...COMMON,
     { pattern: '/api/invoices/**' },
     { pattern: '/api/credit-note-requests/**' },
@@ -248,6 +249,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    * 不给 DELETE（删订单/删客户是运营的事），不给采购与库存，不给分析中心。
    */
   SALES: [
+    { pattern: '/api/accounting/receipt-manifests', methods: ['GET', 'POST'] },
     ...COMMON,
     // Sales identifies the restaurant and source order for warehouse-recorded unreported goods.
     { pattern: '/api/order-returns/intakes/*', methods: ['PUT'] },

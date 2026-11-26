@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
+import ReceiptManifestBoard from '@/components/accounting/ReceiptManifestBoard'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
@@ -14,6 +15,10 @@ import { DatePicker } from '@/components/ui/date-picker'
 
 const ACCENT = '#875A7B'
 const TIME_TEXT: Record<string, string> = { am: '上午', pm: '下午' }
+
+function awaitsReturnReview(row: ReturnRow) {
+  return row.goodsReturn?.stage === 'warehouse_pending' || row.goodsReturn?.stage === 'sales_pending'
+}
 
 type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'timeOfDay' | 'driver' | 'amount' | 'paymentMethod' | 'returnStatus' | 'scanOrder' | 'daysOut'
 type CardKey = 'open' | 'returned' | 'issue' | 'pending' | 'cashPending' | 'pendingConfirm'
@@ -202,8 +207,11 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
 
   function selectFound(target: ReturnRow) {
     if (target.returnStatus === 'RETURNED') flash('warn', `${target.code} 已经核销过了`)
-    else if (target.returnStatus === 'ISSUE') flash('warn', `${target.code} 之前标记了「有问题」，点该行「重新核对」`)
-    else {
+    else if (target.returnStatus === 'ISSUE') flash('warn', `${target.code} 之前标记了「有问题」，请电话联系销售处理`)
+    else if (awaitsReturnReview(target)) {
+      markScanned([target.id])
+      flash('warn', `${target.code} 的退货尚待审核，请电话联系处理人`)
+    } else {
       setSelected(prev => new Set(prev).add(target.id))
       markScanned([target.id])
       flash('ok', `✅ ${target.code} 已标记待确认`)
@@ -216,7 +224,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
     const code = scanInput.trim()
     if (!code) return
     const codeUpper = code.toUpperCase()
-    const local = rows.find(o => o.code?.toUpperCase() === codeUpper) ?? (visible.length === 1 ? visible[0] : undefined)
+    const local = rows.find(o => o.code?.toUpperCase() === codeUpper)
     if (local) {
       // 扫中的单如果被下拉筛选挡住了，清掉筛选让它露出来
       setFilterDriver(''); setFilterTime(''); setFilterPayment(''); setFilterStatus('all'); setActiveCard(null)
@@ -341,7 +349,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
     else { setSortKey(k); setSortDir('asc') }
   }
 
-  const selectableIds = sorted.filter(o => o.returnStatus === 'PENDING').map(o => o.id)
+  const selectableIds = sorted.filter(o => o.returnStatus === 'PENDING' && !awaitsReturnReview(o)).map(o => o.id)
   const visibleSelectedCount = visible.filter(o => selected.has(o.id)).length
   const allVisibleSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
 
@@ -359,6 +367,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
 
   return (
     <div className="space-y-4">
+      <ReceiptManifestBoard onReconciled={load} />
       <div className="grid grid-cols-6 gap-3">
         <StatCard label="未核销合计" value={openCount} sub={s ? `€${s.openAmount.toFixed(2)}${s.oldestDays ? ` · 最久 ${s.oldestDays} 天` : ''}` : undefined} urgent={openCount > 0} active={activeCard === 'open'} onClick={() => applyCardFilter('open')} testId="card-open" />
         <StatCard label="未回" value={s?.pending ?? 0} urgent={(s?.pending ?? 0) > 0} active={activeCard === 'pending'} onClick={() => applyCardFilter('pending')} testId="card-pending" />
@@ -568,18 +577,19 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
   onReset: () => void
 }) {
   const status = o.returnStatus
+  const reviewPending = awaitsReturnReview(o)
   const cash = isCash(o)
   let rowBg = ''
   if (isFlashing) rowBg = 'bg-purple-50 transition-colors duration-500'
   else if (isSelected) rowBg = 'bg-purple-50/50'
-  else if (status === 'ISSUE') rowBg = 'bg-amber-50'
+  else if (status === 'ISSUE' || reviewPending) rowBg = 'bg-amber-50'
   else if (status === 'PENDING' && cash) rowBg = 'bg-red-50'
   else if (status === 'PENDING') rowBg = 'bg-yellow-50'
 
   return (
     <tr ref={rowRef} className={`hover:bg-gray-50 transition-colors ${rowBg}`} data-testid={`writeoff-row-${o.code}`}>
       <td className="px-3 py-2.5 text-center">
-        <input type="checkbox" checked={isSelected} onChange={onToggle} disabled={status !== 'PENDING'}
+        <input type="checkbox" checked={isSelected} onChange={onToggle} disabled={status !== 'PENDING' || reviewPending}
           style={{ accentColor: ACCENT }} className="disabled:opacity-40 disabled:cursor-not-allowed" />
       </td>
       <td className="px-4 py-2.5 text-gray-500 text-xs">{scanOrder != null ? `#${scanOrder}` : <span className="text-gray-300">—</span>}</td>
@@ -611,18 +621,19 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
             {o.returnIssueNote && <div className="text-[11px] text-amber-600 mt-0.5">{o.returnIssueNote}</div>}
           </div>
         )}
-        {status === 'PENDING' && <span className="text-red-500 font-semibold text-xs">⚠️ 未回</span>}
+        {status === 'PENDING' && <span className={reviewPending ? 'text-amber-700 text-xs' : 'text-gray-500 text-xs'}>{reviewPending ? '待人工确认' : scanOrder != null ? '已扫码' : '未扫码'}</span>}
       </td>
       <td className="px-4 py-2.5 text-center">
         {status === 'RETURNED' && <button onClick={onReset} className="text-xs text-gray-400 hover:text-red-500 underline">撤销</button>}
-        {status === 'ISSUE' && <button onClick={onReset} className="text-xs text-gray-400 hover:text-purple-600 underline">重新核对</button>}
-        {status === 'PENDING' && isSelected && (
+        {status === 'ISSUE' && <span className="text-xs text-amber-700">请联系销售核对</span>}
+        {status === 'PENDING' && isSelected && !reviewPending && (
           <div className="flex gap-1 justify-center">
             <button onClick={onConfirm} className="px-2 py-1 text-white text-xs rounded font-medium" style={{ background: ACCENT }}>确认核销</button>
             <button onClick={onReturn} className="px-2 py-1 text-xs rounded font-medium bg-amber-50 text-amber-700">退回</button>
           </div>
         )}
-        {status === 'PENDING' && !isSelected && <span className="text-gray-300 text-xs">扫码后可操作</span>}
+        {status === 'PENDING' && reviewPending && <span className="text-amber-700 text-xs">电话催办</span>}
+        {status === 'PENDING' && !reviewPending && !isSelected && <span className="text-gray-300 text-xs">扫码后可操作</span>}
       </td>
     </tr>
   )

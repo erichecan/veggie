@@ -122,7 +122,6 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [exceptionModal, setExceptionModal] = useState<{ restId: string } | null>(null)
   const [exceptionProducts, setExceptionProducts] = useState<ExceptionProduct[]>([])
   const [exceptionReasons, setExceptionReasons] = useState<string[]>([])
-  const [exceptionAction, setExceptionAction] = useState<'return' | 'exchange'>('return')
 
   // P1-7 货物核验
   const [showVerify, setShowVerify] = useState(false)
@@ -202,7 +201,6 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       selected: false,
     })))
     setExceptionReasons([])
-    setExceptionAction('return')
     setExceptionModal({ restId })
   }
 
@@ -222,7 +220,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           productName: p.productName,
           quantity: p.quantity,
           reason: reasonText,
-          actionType: exceptionAction,
+          actionType: 'return',
         })),
       })
       await load()
@@ -1179,25 +1177,6 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             </div>
 
-            {/* 处理方式 */}
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">{isEn ? 'Resolution' : '处理方式'}</p>
-              <div className="flex gap-2">
-                {(['return', 'exchange'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setExceptionAction(type)}
-                    className="flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all"
-                    style={exceptionAction === type
-                      ? { background: PURPLE, borderColor: PURPLE, color: 'white' }
-                      : { background: 'white', borderColor: '#e5e7eb', color: '#6b7280' }
-                    }
-                  >
-                    {type === 'return' ? (isEn ? 'Return' : '退货') : (isEn ? 'Exchange' : '换货')}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
           <DialogFooter className="gap-2">

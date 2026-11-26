@@ -12,7 +12,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const body = await req.json()
       if (!['approve', 'reject'].includes(body.action)) return NextResponse.json({ error: '请选择批准或拒绝' }, { status: 400 })
       const result = await prisma.$transaction(tx => reviewOrderReturn(tx, id, body, user))
-      await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name, action: 'UPDATE', resource: 'order_return', resourceId: id, detail: body.action === 'approve' ? '销售批准退货并提交会计，尚未调整库存' : `销售拒绝退货：${body.note}` })
+      await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name, action: 'UPDATE', resource: 'order_return', resourceId: id, detail: body.action === 'approve' ? '销售完成退货审核并提交会计，报废已按适用规则处理' : `销售拒绝退货：${body.note}` })
       return NextResponse.json(serializeApi(result))
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : '审核失败' }, { status: Number((error as { status?: number }).status) || 500 })

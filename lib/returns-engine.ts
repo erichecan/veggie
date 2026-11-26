@@ -11,7 +11,7 @@ import { Prisma } from '@/lib/generated/prisma/client'
  * 司机端和日销售中心都写入 OrderReturn；旧 Trip/ReturnItem JSON 只保留历史兼容读取。
  * 所有退货共用「disposition → StockMove → OrderLine 回写」规则，不允许分叉：
  *   - SELLABLE：货回可售库存，FEFO 回补批次，StockMove(RETURN, +qty)
- *   - SCRAP：StockMove(RETURN, +qty) 记客退事实 + StockMove(SCRAP, -qty) 记报废损耗，qtyOnHand 净不变
+ *   - SCRAP：先转入退货待检仓，再按成本报损，不改变可售库存
  */
 
 export type ReturnDisposition = 'SELLABLE' | 'SCRAP'
@@ -56,7 +56,7 @@ export interface ReturnStockMovePlan {
 export function buildReturnStockMoves(input: ReturnDispositionInput): ReturnStockMovePlan[] {
   const moves: ReturnStockMovePlan[] = []
 
-  // 客退入库记账：无论去向如何，先记一笔「客户 → 仓库」
+  // 客退入库记账：无论去向如何，记录客户退回和实际库位
   moves.push({
     uomId: input.uomId,
     partnerId: input.partnerId,
@@ -72,7 +72,7 @@ export function buildReturnStockMoves(input: ReturnDispositionInput): ReturnStoc
   })
 
   if (input.disposition !== 'SELLABLE') {
-    // 报废：货回来了但不能再卖，紧接着一笔「仓库 → 报废」（计入损耗仪表盘 & 退货回收率）
+    // 报废：货回来了但不能再卖，紧接着一笔「退货待检仓 → 报废」（计入损耗仪表盘 & 退货回收率）
     const reasonKey = input.scrapReason ?? 'CUSTOMER_RETURN_DAMAGED'
     const reasonLabel = SCRAP_REASON_LABEL[reasonKey] ?? reasonKey
     moves.push({
@@ -109,8 +109,8 @@ export async function postReturnStockMoves(
       productId: sm.productId,
       productName: sm.productName,
       qty: stockQty,
-      from: isScrap ? LOC.STOCK : LOC.CUSTOMERS,
-      to: isScrap ? LOC.SCRAP : LOC.STOCK,
+      from: isScrap ? LOC.RETURN_QUARANTINE : LOC.CUSTOMERS,
+      to: isScrap ? LOC.SCRAP : sm.sellable ? LOC.STOCK : LOC.RETURN_QUARANTINE,
       type: sm.type,
       lot: sm.sellable ? { mode: 'fefo' } : { mode: 'none' },
       note: sm.note,
@@ -119,7 +119,7 @@ export async function postReturnStockMoves(
       sourceType: sm.sourceType,
       sourceId: sm.sourceId,
       sourceRef: sm.sourceRef,
-      partnerId: sm.partnerId,
+      partnerId: isScrap ? null : sm.partnerId,
       uomQty: Math.abs(sm.qty),
       uomId: sm.uomId,
       userId: user.userId,

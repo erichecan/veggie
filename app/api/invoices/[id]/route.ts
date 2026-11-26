@@ -1,4 +1,4 @@
-import { lockReturnOrders, assertReturnsResolved } from '@/lib/return-workflow'
+import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -135,8 +135,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         updateData.status = 'CANCELLED'
       }
       const invoice = await prisma.$transaction(async tx => {
-        await lockReturnOrders(tx, before.saleOrderIds)
-        if (editsFinancialContent) await assertReturnsResolved(tx, before.saleOrderIds)
+        const editedSource = { saleOrderIds: before.saleOrderIds, lines: updateData.lines }
+        const orderIds = await invoiceSourceOrderIds(tx, editsFinancialContent ? [before, editedSource] : [before])
+        await lockReturnOrders(tx, orderIds)
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
         const latest = await tx.invoice.findUnique({ where: { id } })
         if (!latest) throw Object.assign(new Error('发票不存在'), { status: 404 })
@@ -144,6 +145,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           throw Object.assign(new Error('发票已经过账，不能再编辑明细和金额'), { status: 409 })
         }
         if (editsFinancialContent) {
+          await assertInvoiceReturnsResolved(tx, [latest, editedSource], orderIds)
           const [paymentCount, allocationCount] = await Promise.all([
             tx.payment.count({ where: { invoiceId: id } }),
             tx.creditNoteAllocation.count({ where: { invoiceId: id, kind: 'INVOICE' } }),
@@ -168,6 +170,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         changes: Object.keys(changes).length > 0 ? changes : undefined })
       return NextResponse.json(serializeApi(invoice))
     } catch (error) {
+      const err = error as { status?: number; message?: string }
+      if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[PUT /api/invoices/[id]]', error)
       return NextResponse.json({ error: '更新发票失败' }, { status: 500 })
     }

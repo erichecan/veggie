@@ -21,7 +21,7 @@
  */
 import { consumeLotsFIFO, consumeLotsPreferring, restoreLotsFIFO, type LotMovement } from '@/lib/inventory'
 import { postStockValuation } from '@/lib/stock-valuation'
-import { INTERNAL_LOCATIONS } from '@/lib/stock-locations'
+import { INTERNAL_LOCATIONS, LOC } from '@/lib/stock-locations'
 
 export { LOC, INTERNAL_LOCATIONS, type LocationId } from '@/lib/stock-locations'
 
@@ -96,7 +96,11 @@ export function directionOf(from: string, to: string): 1 | -1 {
 export async function postStockMove(tx: Tx, p: StockPosting): Promise<PostedMove[]> {
   const qty = r3(p.qty)
   if (!(qty > 0)) return []
-  const sign = directionOf(p.from, p.to)
+  const quarantine = (p.from === LOC.CUSTOMERS && p.to === LOC.RETURN_QUARANTINE && p.type === 'RETURN')
+    || (p.from === LOC.RETURN_QUARANTINE && p.to === LOC.SCRAP && p.type === 'SCRAP')
+    || (p.from === LOC.RETURN_QUARANTINE && p.to === LOC.CUSTOMERS && p.type === 'RETURN')
+  const sign = quarantine ? 0 : directionOf(p.from, p.to)
+  if (quarantine && p.lot && p.lot.mode !== 'none') throw new Error('退货待检仓不使用可售批次')
 
   const product = await tx.product.findUnique({
     where: { id: p.productId },
@@ -138,7 +142,7 @@ export async function postStockMove(tx: Tx, p: StockPosting): Promise<PostedMove
     segments = [{ lotId: null, qty, lotCost: null }]
   }
 
-  await tx.product.update({ where: { id: p.productId }, data: { qtyOnHand: { increment: sign * qty } } })
+  if (sign) await tx.product.update({ where: { id: p.productId }, data: { qtyOnHand: { increment: sign * qty } } })
 
   const fallbackCost = product.standardPrice == null ? null : n(product.standardPrice)
   const out: PostedMove[] = []
@@ -150,6 +154,7 @@ export async function postStockMove(tx: Tx, p: StockPosting): Promise<PostedMove
         productName: p.productName ?? product.name ?? '',
         type: p.type,
         qty: sign * seg.qty,
+        ...(quarantine ? { physicalQty: seg.qty } : {}),
         fromLocationId: p.from,
         toLocationId: p.to,
         lotId: seg.lotId,
@@ -175,7 +180,8 @@ export async function postStockMove(tx: Tx, p: StockPosting): Promise<PostedMove
     out.push({ id: created.id, qty: sign * seg.qty, lotId: seg.lotId, unitCost })
   }
   await postStockValuation(tx, {
-    moves: out, from: p.from, to: p.to, type: p.type,
+    moves: quarantine ? out.map(move => ({ ...move, qty })) : out,
+    from: p.from, to: p.to, type: p.type,
     productName: p.productName ?? product.name ?? '', reference: p.sourceRef ?? null,
     partnerId: p.partnerId ?? null, movedAt: p.movedAt ?? new Date(),
   }, p.userId ?? 'system')

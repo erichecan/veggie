@@ -1,4 +1,6 @@
-import { maybeInvoiceAfterReturn, lockReturnOrders } from '@/lib/return-workflow'
+import { markUnreportedReceiptIssues } from '@/lib/receipt-manifest'
+import { receiveReturnIntoQuarantine } from '@/lib/return-quarantine'
+import { hasPostedReturnInvoice, maybeInvoiceAfterReturn, lockReturnOrders } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -58,8 +60,8 @@ export async function PUT(
       const actualName = String(actualReturnedProductName ?? ret.actualReturnedProductName ?? '').trim()
       if (action === 'verify') {
         confirmedQuantity = acceptedQuantity == null ? toNum(ret.quantity) : Number(acceptedQuantity)
-        if (!Number.isFinite(confirmedQuantity) || confirmedQuantity <= 0 || confirmedQuantity > toNum(ret.quantity) || Math.abs(confirmedQuantity * 1000 - Math.round(confirmedQuantity * 1000)) > 0.00001) {
-          return NextResponse.json({ error: `仓库确认数量须大于 0 且不超过登记数量 ${ret.quantity}` }, { status: 400 })
+        if (!Number.isFinite(confirmedQuantity) || confirmedQuantity <= 0 || confirmedQuantity >= 1e9 || Math.abs(confirmedQuantity * 1000 - Math.round(confirmedQuantity * 1000)) > 0.00001) {
+          return NextResponse.json({ error: `仓库确认数量须大于 0，最多三位小数` }, { status: 400 })
         }
         if (actualReturnedProductId) {
           actualProduct = await prisma.product.findUnique({ where: { id: actualReturnedProductId }, select: { id: true, name: true } })
@@ -93,17 +95,24 @@ export async function PUT(
           },
         })
         if (count === 0) return null
+        if (action === 'verify' && ret.workflowVersion === 2) {
+          await receiveReturnIntoQuarantine(tx, id, user)
+          const intake = await tx.returnIntake.findUnique({ where: { orderReturnId: id }, select: { sourceType: true } })
+          if (intake?.sourceType !== 'WAREHOUSE' && (ret.returnKind !== 'HISTORICAL' || ret.sourceTripId)) {
+            await markUnreportedReceiptIssues(tx, [ret.orderId], ret.sourceTripId)
+          }
+        }
 
         // 核实不通过是终态（REJECTED），跟 review 路由拒绝分支一样要回写 Order 角标；
         // 原来这里漏了，角标会一直停在"无退货"，看不出这单曾经报过退货又被仓库打回
-        if (action === 'reject') {
+        if (action === 'reject' && !(await hasPostedReturnInvoice(tx, ret.orderId))) {
           await syncOrderGoodsReturnStatus(tx, [{
             orderId: ret.orderId,
             status: 'REJECTED',
             productName: ret.productName,
             quantity: confirmedQuantity ?? toNum(ret.quantity),
           }], user)
-        } else {
+        } else if (action === 'verify') {
           await createAutoGoodsReturnPost(tx, {
             restaurantName: ret.order.restaurantName,
             productName: actualProduct?.name ?? (actualName || ret.productName),
@@ -135,6 +144,8 @@ export async function PUT(
       }))
     } catch (error) {
       console.error('[PUT /api/order-returns/[id]/warehouse-verify]', error)
+      const err = error as { status?: number; message?: string }
+      if (err.status && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       return NextResponse.json({ error: '仓库核实失败' }, { status: 500 })
     }
   }, { require: 'dispatch.goods_return.warehouse_verify' })

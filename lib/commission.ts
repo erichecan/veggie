@@ -177,3 +177,38 @@ export async function freezeTripCommission(
 
   await recalcTripDriverCommission(tripId, tx)
 }
+
+/** Freeze commissions for a receipt batch and refresh each affected trip once. */
+export async function recalcReceiptBatchCommission(tx: Prisma.TransactionClient, ids: string[]) {
+  if (!ids.length) return
+  const orders = await tx.order.findMany({ where: { id: { in: ids } }, select: { id: true, ...ORDER_COMMISSION_SELECT } })
+  const values = JSON.stringify(orders.map(order => ({ id: order.id, total: sumCommission(order).grandTotal.toFixed(2) })))
+  await tx.$executeRaw`
+    UPDATE "Order" AS ord
+    SET "driverCommissionTotal" = data.total, "commissionFrozenAt" = NOW()
+    FROM jsonb_to_recordset(${values}::jsonb) AS data(id text, total numeric)
+    WHERE ord.id = data.id
+  `
+  const trips = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Trip" AS trip
+    WHERE EXISTS (
+      SELECT 1 FROM jsonb_array_elements(trip.restaurants) AS stop
+      WHERE (stop->'orderIds') ?| ${ids}::text[]
+    )
+  `
+  if (!trips.length) return
+  await tx.$executeRaw`
+    WITH totals AS (
+      SELECT trip.id, COALESCE(SUM(ord."driverCommissionTotal"), 0) AS total
+      FROM "Trip" AS trip
+      LEFT JOIN LATERAL (
+        SELECT DISTINCT jsonb_array_elements_text(COALESCE(stop->'orderIds', '[]'::jsonb)) AS id
+        FROM jsonb_array_elements(trip.restaurants) AS stop
+      ) AS trip_order ON true
+      LEFT JOIN "Order" AS ord ON ord.id = trip_order.id
+      WHERE trip.id = ANY(${trips.map(trip => trip.id)}::text[])
+      GROUP BY trip.id
+    )
+    UPDATE "Trip" SET "driverCommission" = totals.total FROM totals WHERE "Trip".id = totals.id
+  `
+}

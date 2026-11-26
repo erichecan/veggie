@@ -32,6 +32,9 @@ const COUNTER_ACCOUNT: Record<string, { inbound: string; outbound: string; label
 }
 
 export function valuationAccounts(from: string, to: string): { debit: string; credit: string; label: string } | null {
+  if (from === LOC.CUSTOMERS && to === LOC.RETURN_QUARANTINE) return { debit: '1300', credit: '5100', label: 'Return quarantine' }
+  if (from === LOC.RETURN_QUARANTINE && to === LOC.CUSTOMERS) return { debit: '5100', credit: '1300', label: 'Return quarantine correction' }
+  if (from === LOC.RETURN_QUARANTINE && to === LOC.SCRAP) return { debit: '5200', credit: '1300', label: 'Scrap' }
   if (to === LOC.STOCK) {
     const c = COUNTER_ACCOUNT[from]
     return c ? { debit: '1300', credit: c.inbound, label: c.label } : null

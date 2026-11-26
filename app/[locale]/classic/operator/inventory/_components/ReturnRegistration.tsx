@@ -16,8 +16,6 @@ import type { Order } from '@/lib/types'
 interface RegisterForm {
   quantity: string
   reason: string
-  actionType: 'return' | 'exchange'
-  exchangeOrderId: string
   actualReturnedProductName: string
 }
 
@@ -26,9 +24,12 @@ interface RegisteredReturn {
   productId: string
   quantity: number
   status: string
+  approvedQuantity?: number | null
+  warehouseAcceptedQuantity?: number | null
+  preservedOriginalOrder?: boolean
 }
 
-const EMPTY_FORM: RegisterForm = { quantity: '', reason: '', actionType: 'return', exchangeOrderId: '', actualReturnedProductName: '' }
+const EMPTY_FORM: RegisterForm = { quantity: '', reason: '', actualReturnedProductName: '' }
 
 export default function ReturnRegistration({ refreshKey, initialOrderCode, initialOrderLineId, sourceTripId }: { refreshKey: number; initialOrderCode?: string; initialOrderLineId?: string; sourceTripId?: string }) {
   const locale = useLocale()
@@ -57,7 +58,7 @@ export default function ReturnRegistration({ refreshKey, initialOrderCode, initi
         // lib/types.ts 的 OrderStatus 类型声明是小写，但 Prisma 枚举/数据库实际存的是大写
         // （IN_DELIVERY/COMPLETED），后端 /api/order-returns 也按大写校验——这里跟它对齐，
         // 不信前端类型声明
-        if (['IN_DELIVERY', 'COMPLETED'].includes(String(o.status))) merged.set(o.id, o)
+        if (['IN_DELIVERY', 'COMPLETED', 'LOCKED'].includes(String(o.status))) merged.set(o.id, o)
       }
       setResults(Array.from(merged.values()))
     } catch {
@@ -74,7 +75,7 @@ export default function ReturnRegistration({ refreshKey, initialOrderCode, initi
     setRegisteredReturns([])
     try {
       const result = await apiGet<{ returns: RegisteredReturn[] }>(`/api/order-returns?orderId=${encodeURIComponent(o.id)}`)
-      setRegisteredReturns(result.returns.filter(row => row.status === 'WAREHOUSE_PENDING' || row.status === 'PENDING_REVIEW' || row.status === 'APPROVED'))
+      setRegisteredReturns(result.returns.filter(row => row.status === 'WAREHOUSE_PENDING' || row.status === 'PENDING_REVIEW' || row.status === 'APPROVED' || row.status === 'SETTLED'))
     } catch (err) {
       setSelected(null)
       toast.error(err instanceof Error ? err.message : (isEn ? 'Could not load registered returns' : '读取已有退货登记失败'))
@@ -90,10 +91,10 @@ export default function ReturnRegistration({ refreshKey, initialOrderCode, initi
         const response = await apiGet<{ data: Order[] }>(`/api/orders?colCode=${encodeURIComponent(initialOrderCode)}&include_lines=true&pageSize=20`)
         if (cancelled) return
         const exact = response.data.find(order => order.code?.toLowerCase() === initialOrderCode.toLowerCase())
-        if (exact && ['IN_DELIVERY', 'COMPLETED'].includes(String(exact.status))) {
+        if (exact && ['IN_DELIVERY', 'COMPLETED', 'LOCKED'].includes(String(exact.status))) {
           await selectOrder(exact)
         } else {
-          setResults(response.data.filter(order => ['IN_DELIVERY', 'COMPLETED'].includes(String(order.status))))
+          setResults(response.data.filter(order => ['IN_DELIVERY', 'COMPLETED', 'LOCKED'].includes(String(order.status))))
         }
       } catch (error) {
         if (!cancelled) toast.error(error instanceof Error ? error.message : (isEn ? 'Could not load delivery order' : '无法读取配送订单'))
@@ -107,7 +108,11 @@ export default function ReturnRegistration({ refreshKey, initialOrderCode, initi
     // conservatively attributed by order + product.
     const reserved = registeredReturns
       .filter(row => row.productId === line.productId && (!row.orderLineId || row.orderLineId === line.id))
-      .reduce((sum, row) => sum + Number(row.quantity), 0)
+      .reduce((sum, row) => {
+        if (row.status !== 'SETTLED') return sum + Number(row.quantity)
+        const received = Number(row.warehouseAcceptedQuantity ?? 0)
+        return sum + (row.preservedOriginalOrder ? received : Math.max(0, received - Number(row.approvedQuantity ?? 0)))
+      }, 0)
     return reserved
   }
 
@@ -143,8 +148,6 @@ export default function ReturnRegistration({ refreshKey, initialOrderCode, initi
         productId: line.productId,
         quantity,
         reason: form.reason.trim() || undefined,
-        actionType: form.actionType,
-        exchangeOrderId: form.actionType === 'exchange' ? form.exchangeOrderId.trim() || undefined : undefined,
         actualReturnedProductName: form.actualReturnedProductName.trim() || undefined,
       })
       toast.success(isEn ? 'Return registered' : '登记成功，待仓库核实')
@@ -251,28 +254,6 @@ export default function ReturnRegistration({ refreshKey, initialOrderCode, initi
                       />
                       <span className="text-xs text-gray-400">{line.uomName ?? ''}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500 w-20">{isEn ? 'Type' : '类型'}</label>
-                      <select
-                        value={form.actionType}
-                        onChange={e => setForm(f => ({ ...f, actionType: e.target.value as 'return' | 'exchange' }))}
-                        className="px-2 py-1 border border-gray-300 rounded text-sm"
-                      >
-                        <option value="return">{isEn ? 'Return' : '退货'}</option>
-                        <option value="exchange">{isEn ? 'Exchange' : '换货'}</option>
-                      </select>
-                    </div>
-                    {form.actionType === 'exchange' && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-500 w-20">{isEn ? 'New order' : '新订单号'}</label>
-                        <input
-                          value={form.exchangeOrderId}
-                          onChange={e => setForm(f => ({ ...f, exchangeOrderId: e.target.value }))}
-                          className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
-                          placeholder={isEn ? 'Optional' : '可选'}
-                        />
-                      </div>
-                    )}
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-gray-500 w-20">{isEn ? 'Actual item' : '实际退回商品'}</label>
                       <input value={form.actualReturnedProductName} onChange={e => setForm(f => ({ ...f, actualReturnedProductName: e.target.value }))} className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" placeholder={isEn ? 'If different from ordered item' : '与订单商品不同时填写'} />

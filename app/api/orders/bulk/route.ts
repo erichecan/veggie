@@ -1,4 +1,4 @@
-import { assertReturnsResolved, lockReturnOrders } from '@/lib/return-workflow'
+import { assertLegacyReceiptReviewComplete, assertReceiptIssuesResolved, assertReturnReviewComplete, assertReturnsResolved, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
@@ -7,8 +7,8 @@ import { syncOrderStock } from '@/lib/order-stock'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
-import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
-import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
+import { createOrderInvoiceDraftsBatch, isUniqueViolation } from '@/lib/invoice-from-order'
+import { recalcReceiptBatchCommission } from '@/lib/commission'
 import { confirmOrdersInTransaction } from '@/lib/order-confirmation'
 
 /**
@@ -198,13 +198,20 @@ export async function POST(req: Request) {
       } else if (action === 'mark_returned') {
         await prisma.$transaction(async tx => {
           await lockReturnOrders(tx, ids)
+          if (status === 'RETURNED') {
+            await assertReturnReviewComplete(tx, ids)
+            await assertReceiptIssuesResolved(tx, ids)
+          }
+          if (status === 'PENDING') {
+            await assertLegacyReceiptReviewComplete(tx, ids)
+          }
           if (lines !== undefined) {
             await assertReturnsResolved(tx, ids)
             const settled = await tx.orderReturn.count({ where: { orderId: { in: ids }, workflowVersion: 2, status: 'SETTLED' } })
-            if (settled) throw Object.assign(new Error('订单已按退货调整过数量，不能再通过回单核销重复修改实送量'), { status: 409 })
+            if (settled) throw Object.assign(new Error('订单已有已处理退货，不能在核销时重复修改实送量'), { status: 409 })
           }
           await tx.order.updateMany({ where: { id: { in: ids } }, data: {
-            returnStatus: status, returnIssueNote: status === 'ISSUE' ? note!.trim() : null,
+            returnStatus: status, returnIssueNote: status === 'ISSUE' ? note!.trim() : null, returnIssueAt: status === 'ISSUE' ? new Date() : null,
             returnConfirmedAt: status === 'RETURNED' ? new Date() : null,
             returnConfirmedBy: status === 'RETURNED' ? (user.name ?? user.email) : null,
           } })
@@ -216,46 +223,30 @@ export async function POST(req: Request) {
 
         // Write audit logs for mark_returned
         const returnStatusBefore = new Map(before.map(o => [o.id, o.returnStatus]))
-        await Promise.all(affectedOrders.map(o =>
-          prismaAny.orderAuditLog.create({
-            data: {
-              orderId: o.id,
-              userId: user.userId,
-              action: 'updated',
-              changedFields: {
-                detail: `批量${label}`,
-                returnStatus: { before: returnStatusBefore.get(o.id) ?? null, after: status },
-              },
-            },
-          }).catch((e: unknown) => console.error('[BulkAudit mark_returned]', e))
-        ))
+        await prisma.orderAuditLog.createMany({ data: affectedOrders.map(o => ({
+          orderId: o.id, userId: user.userId, action: 'updated',
+          changedFields: { detail: `批量${label}`, returnStatus: { before: returnStatusBefore.get(o.id) ?? null, after: status } },
+        })) }).catch((error: unknown) => console.error('[BulkAudit mark_returned]', error))
 
-        // ⛔ 20261026：核销确认(RETURNED)才是"核对过了"的那一刻——开票按核销时(可能已修正)的
-        // deliveredQty 生成，提成冻结同步跟上；标记完成时不再做这两件事（见 lib/delivery-complete.ts）。
-        // 失败只记日志不回滚核销本身：核销是真实的物理动作，发票/提成失败可以用「补开漏开的发票」补。
         if (status === 'RETURNED') {
-          const invoiceFailed: string[] = []
-          const invoiceDeferred: string[] = []
-          for (const o of before) {
+          for (let attempt = 0; ; attempt++) {
             try {
-              await createDraftInvoiceForOrder(prisma as never, o.id)
-              await recalcOrderCommission(o.id, prisma)
-              const ownerTrip = await prismaAny.trip.findFirst({
-                where: { restaurants: { path: '$[*].orderIds[*]', array_contains: o.id } },
-                select: { id: true },
-              }).catch(() => null)
-              if (ownerTrip) {
-                await recalcTripDriverCommission(ownerTrip.id, prisma).catch((e: unknown) => console.error('[write-off: trip commission sync]', e))
-              }
-            } catch (e) {
-              if ((e as { status?: number }).status === 409 && ((e as Error).message.includes('退货') || (e as Error).message.includes('贷记申请'))) { invoiceDeferred.push(o.restaurantName ?? o.id.slice(-8)); continue }
-              console.error('[write-off: invoice/commission]', o.id, e)
-              invoiceFailed.push(o.restaurantName ?? o.id.slice(-8))
+              const result = await prisma.$transaction(async tx => {
+                await lockReturnOrders(tx, ids)
+                const result = await createOrderInvoiceDraftsBatch(tx, ids)
+                const deferred = new Set(result.deferred)
+                await recalcReceiptBatchCommission(tx, ids.filter(id => !deferred.has(id)))
+                return result
+              }, { timeout: 60000, maxWait: 10000 })
+              detail += `；已开 ${result.created} 张发票草稿`
+              if (result.deferred.length) detail += `；${result.deferred.length} 单待退货或贷记处理后开票`
+              break
+            } catch (error) {
+              if (isUniqueViolation(error) && attempt < 2) continue
+              console.error('[write-off: batch invoice/commission]', error)
+              detail += '；发票草稿或提成生成失败，可用「补开漏开的发票」重试'
+              break
             }
-          }
-          if (invoiceDeferred.length) detail += `；${invoiceDeferred.length} 单已核销，因退货或贷记申请处理中暂缓开票，处理完毕后自动补开`
-          if (invoiceFailed.length > 0) {
-            detail += `；⚠️ ${invoiceFailed.length} 单开票/提成失败（${invoiceFailed.join('、')}），可用「补开漏开的发票」补`
           }
         }
 

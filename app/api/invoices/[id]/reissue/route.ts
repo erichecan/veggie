@@ -1,4 +1,4 @@
-import { lockReturnOrders, assertReturnsResolved } from '@/lib/return-workflow'
+import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -53,26 +53,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       for (let attempt = 0; ; attempt++) {
         try {
           result = await prisma.$transaction(async (tx) => {
-            await lockReturnOrders(tx, old.saleOrderIds)
-            await assertReturnsResolved(tx, old.saleOrderIds)
+            const orderIds = await invoiceSourceOrderIds(tx, [old])
+            await lockReturnOrders(tx, orderIds)
+            await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
+            const current = await tx.invoice.findUnique({ where: { id }, include: { supersededBy: { select: { id: true } } } })
+            if (!current || current.status === 'SUPERSEDED' || current.supersededBy || Number(current.amountPaid) > 0 || Number(current.amountCredited) > 0) {
+              throw Object.assign(new Error('发票已变更，请刷新后重试'), { status: 409 })
+            }
+            await assertInvoiceReturnsResolved(tx, [current], orderIds)
             const name = await nextInvoiceName(tx as unknown as InvoiceTx)
             const created = await tx.invoice.create({
               data: {
                 name,
-                customerId: old.customerId,
-                customerName: old.customerName,
-                invoiceDate: old.invoiceDate,
-                saleOrderIds: old.saleOrderIds,
-                lines: old.lines as object,
-                subtotalExTax: old.subtotalExTax,
-                totalTax: old.totalTax,
-                totalIncTax: old.totalIncTax,
+                customerId: current.customerId,
+                customerName: current.customerName,
+                invoiceDate: current.invoiceDate,
+                saleOrderIds: orderIds,
+                lines: current.lines as object,
+                subtotalExTax: current.subtotalExTax,
+                totalTax: current.totalTax,
+                totalIncTax: current.totalIncTax,
                 amountPaid: 0,
                 amountCredited: 0,
-                amountDue: old.totalIncTax,
+                amountDue: current.totalIncTax,
                 status: 'DRAFT',
-                paymentTerms: old.paymentTerms,
-                dueDate: old.dueDate,
+                paymentTerms: current.paymentTerms,
+                dueDate: current.dueDate,
                 supersedesInvoiceId: old.id,
               },
             })
@@ -101,6 +107,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         newInvoice: result.created,
       }), { status: 201 })
     } catch (error) {
+      const err = error as { status?: number; message?: string }
+      if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/invoices/:id/reissue]', error)
       return NextResponse.json({ error: '换开新发票失败' }, { status: 500 })
     }

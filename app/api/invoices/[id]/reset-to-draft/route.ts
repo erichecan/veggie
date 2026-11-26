@@ -1,4 +1,4 @@
-import { lockReturnOrders, assertReturnsResolved } from '@/lib/return-workflow'
+import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -11,12 +11,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     try {
       const { id } = await params
       const result = await prisma.$transaction(async tx => {
-        const source = await tx.invoice.findUnique({ where: { id }, select: { saleOrderIds: true } })
-        await lockReturnOrders(tx, source?.saleOrderIds ?? [])
-        await assertReturnsResolved(tx, source?.saleOrderIds ?? [])
+        const source = await tx.invoice.findUnique({ where: { id }, select: { saleOrderIds: true, lines: true } })
+        const orderIds = await invoiceSourceOrderIds(tx, source ? [source] : [])
+        await lockReturnOrders(tx, orderIds)
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`
         const invoice = await tx.invoice.findUnique({ where: { id }, include: { supersededBy: { select: { id: true } } } })
         if (!invoice) throw Object.assign(new Error('发票不存在'), { status: 404 })
+        await assertInvoiceReturnsResolved(tx, [invoice], orderIds)
         if (invoice.status !== 'POSTED') throw Object.assign(new Error('只有已过账发票可以退回草稿'), { status: 409 })
         if (invoice.supersededBy) throw Object.assign(new Error('已被新发票取代的发票不能退回草稿'), { status: 409 })
         const [paymentCount, allocationCount] = await Promise.all([

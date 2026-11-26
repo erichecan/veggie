@@ -70,6 +70,30 @@ export async function createDraftInvoiceForOrderInTransaction(tx: InvoiceTx, ord
   if (!order) return null
   const cust = await tx.customer.findUnique({ where: { id: order.restaurantId }, select: { name: true, paymentTerm: true } })
 
+  const adjustments = await tx.orderAdjustment.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' } })
+  const draft = buildOrderInvoiceDraft(orderId, order, cust, adjustments)
+  if (!draft) return null
+
+  // 两个人同时完成订单可能取到同一个号：撞唯一约束就重新取号，最多 3 次
+  for (let attempt = 0; ; attempt++) {
+    const name = await nextInvoiceName(tx)
+    try {
+      return await tx.invoice.create({
+        data: { ...draft, name },
+        select: { id: true },
+      })
+    } catch (e) {
+      if (!isUniqueViolation(e) || attempt >= 2) throw e
+    }
+  }
+}
+
+function buildOrderInvoiceDraft(
+  orderId: string,
+  order: NonNullable<Awaited<ReturnType<InvoiceTx['order']['findUnique']>>>,
+  cust: Awaited<ReturnType<InvoiceTx['customer']['findUnique']>>,
+  adjustments: Awaited<ReturnType<InvoiceTx['orderAdjustment']['findMany']>>,
+) {
   let subEx = 0
   let tax = 0
   const lines: Array<Record<string, unknown>> = []
@@ -102,7 +126,6 @@ export async function createDraftInvoiceForOrderInTransaction(tx: InvoiceTx, ord
   // 这笔调整的账单——单据里发票才是"要客户签字认账"的那张，Order.totalAmount 本身
   // 不含调整（sales-accounting-tax-convention SSOT 不变），发票必须补上。
   // 按无税处理（税率 0）：这些不是应税商品销售，不重新分摊已开票商品的税额。
-  const adjustments = await tx.orderAdjustment.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' } })
   for (const adj of adjustments) {
     const amount = round2(Number(adj.amount))
     subEx += amount
@@ -125,31 +148,63 @@ export async function createDraftInvoiceForOrderInTransaction(tx: InvoiceTx, ord
   const invoiceDate = order.deliveryDate ?? new Date()
   const dueDate = computeDueDate(invoiceDate, paymentTerms).toISOString().slice(0, 10)
 
-  // 两个人同时完成订单可能取到同一个号：撞唯一约束就重新取号，最多 3 次
-  for (let attempt = 0; ; attempt++) {
-    const name = await nextInvoiceName(tx)
-    try {
-      return await tx.invoice.create({
-        data: {
-          name,
-          customerId: order.restaurantId,
-          customerName: cust?.name ?? order.restaurantName,
-          invoiceDate,
-          saleOrderIds: [orderId],
-          lines: lines as never,
-          subtotalExTax: subEx,
-          totalTax: tax,
-          totalIncTax: inc,
-          amountPaid: 0,
-          amountDue: inc,
-          status: 'DRAFT',
-          paymentTerms,
-          dueDate,
-        },
-        select: { id: true },
-      })
-    } catch (e) {
-      if (!isUniqueViolation(e) || attempt >= 2) throw e
-    }
+  return {
+    customerId: order.restaurantId,
+    customerName: cust?.name ?? order.restaurantName,
+    invoiceDate,
+    saleOrderIds: [orderId],
+    lines: lines as never,
+    subtotalExTax: subEx,
+    totalTax: tax,
+    totalIncTax: inc,
+    amountPaid: 0,
+    amountDue: inc,
+    status: 'DRAFT' as const,
+    paymentTerms,
+    dueDate,
   }
+}
+
+/** The caller locks the customer orders before entering this path. */
+export async function createOrderInvoiceDraftsBatch(tx: Prisma.TransactionClient, ids: string[]) {
+  if (!ids.length) return { created: 0, deferred: [] as string[], drafts: [] }
+  const [existing, returns, requests, orders, receipts, intakes] = await Promise.all([
+    tx.invoice.findMany({ where: { saleOrderIds: { hasSome: ids } }, select: { saleOrderIds: true } }),
+    tx.orderReturn.findMany({ where: { orderId: { in: ids }, OR: [
+      { status: { in: ['WAREHOUSE_PENDING', 'PENDING_REVIEW'] } }, { status: 'APPROVED', workflowVersion: 2 },
+    ] }, select: { orderId: true } }),
+    tx.creditNoteRequest.findMany({ where: { sourceOrderId: { in: ids }, status: 'PENDING' }, select: { sourceOrderId: true } }),
+    tx.order.findMany({ where: { id: { in: ids }, returnStatus: 'RETURNED' }, include: { lines: { orderBy: { sequence: 'asc' } } }, orderBy: { id: 'asc' } }),
+    tx.receiptManifestEntry.findMany({ where: { orderId: { in: ids } }, select: { orderId: true, scannedAt: true, paperIssue: true, paperReviewedAt: true } }),
+    tx.returnIntake.findMany({ where: { candidateOrderIds: { hasSome: ids }, status: { in: ['OPEN', 'CUSTOMER_IDENTIFIED'] } }, select: { candidateOrderIds: true } }),
+  ])
+  const scanned = new Set(receipts.filter(row => row.scannedAt).map(row => row.orderId))
+  const receiptHolds = receipts.filter(row => !scanned.has(row.orderId) || (row.paperIssue && !row.paperReviewedAt)).map(row => row.orderId)
+  const deferred = [...new Set([...returns.map(row => row.orderId), ...receiptHolds, ...intakes.flatMap(row => row.candidateOrderIds).filter(id => ids.includes(id)), ...requests.map(row => row.sourceOrderId)])]
+  const blocked = new Set(deferred)
+  const invoiced = new Set(existing.flatMap(invoice => invoice.saleOrderIds))
+  const eligible = orders.filter(order => !blocked.has(order.id) && !invoiced.has(order.id))
+  if (!eligible.length) return { created: 0, deferred, drafts: [] }
+  const [customers, adjustments] = await Promise.all([
+    tx.customer.findMany({ where: { id: { in: [...new Set(eligible.map(order => order.restaurantId))] } }, select: { id: true, name: true, paymentTerm: true } }),
+    tx.orderAdjustment.findMany({ where: { orderId: { in: eligible.map(order => order.id) } }, orderBy: { createdAt: 'asc' } }),
+  ])
+  const byCustomer = new Map(customers.map(customer => [customer.id, customer]))
+  const byOrder = new Map<string, typeof adjustments>()
+  for (const adjustment of adjustments) {
+    const group = byOrder.get(adjustment.orderId) ?? []
+    group.push(adjustment)
+    byOrder.set(adjustment.orderId, group)
+  }
+  const drafts = eligible.flatMap(order => {
+    const draft = buildOrderInvoiceDraft(order.id, order, byCustomer.get(order.restaurantId) ?? null, byOrder.get(order.id) ?? [])
+    return draft ? [draft] : []
+  })
+  if (!drafts.length) return { created: 0, deferred, drafts: [] }
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('order-invoice-number-batch'))`
+  const first = Number((await nextInvoiceName(tx as unknown as InvoiceTx)).slice(4))
+  const created = await tx.invoice.createManyAndReturn({ data: drafts.map((draft, index) => ({
+    ...draft, name: `INV-${String(first + index).padStart(5, '0')}`,
+  })), select: { id: true, saleOrderIds: true } })
+  return { created: created.length, deferred, drafts: created }
 }

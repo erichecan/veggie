@@ -231,8 +231,8 @@ const moveLocations: Check = async () => {
 const locationBalances: Check = async () => {
   const rows = await q(`
     SELECT loc.code, loc."nameZh",
-           (COALESCE((SELECT SUM(ABS(qty)) FROM "StockMove" WHERE "toLocationId" = loc.id), 0)
-          - COALESCE((SELECT SUM(ABS(qty)) FROM "StockMove" WHERE "fromLocationId" = loc.id), 0))::float AS balance
+           (COALESCE((SELECT SUM(COALESCE("physicalQty", ABS(qty))) FROM "StockMove" WHERE "toLocationId" = loc.id), 0)
+          - COALESCE((SELECT SUM(COALESCE("physicalQty", ABS(qty))) FROM "StockMove" WHERE "fromLocationId" = loc.id), 0))::float AS balance
     FROM "StockLocation" loc ORDER BY loc.code`)
   const total = rows.reduce((s, r) => s + num(r.balance), 0)
   return {
@@ -438,7 +438,10 @@ const inventoryValue: Check = async () => {
   const [nocost] = await q(`
     SELECT COUNT(*)::int AS n FROM "StockMove"
     WHERE "unitCost" IS NULL AND "sourceType" IS DISTINCT FROM 'OPENING' AND "createdBy" IS NOT NULL`)
-  const diff = Math.round((num(gl?.bal) - num(sv?.v)) * 100) / 100
+  const [quarantine] = await q(`
+    SELECT COALESCE(SUM(CASE WHEN "toLocationId" = 'loc_wh_return_quarantine' THEN value ELSE -value END), 0)::float AS v
+    FROM "StockMove" WHERE "toLocationId" = 'loc_wh_return_quarantine' OR "fromLocationId" = 'loc_wh_return_quarantine'`)
+  const diff = Math.round((num(gl?.bal) - num(sv?.v) - num(quarantine?.v)) * 100) / 100
   return {
     key: 'inventory_value', label: '总账存货(1300) vs 在手量 × 平均成本', labelEn: 'GL inventory (1300) vs on hand × average cost',
     severity: 'info', diffCount: Math.abs(diff) > 0.005 ? 1 : 0, amount: diff,

@@ -188,6 +188,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 入口下线，合并进会计核销页「钱」板块，见下面 /api/accounting/driver-cash/**
   { pattern: '/api/accounting/driver-cash', methods: R, permission: 'finance.settlement.read' },
   { pattern: '/api/accounting/driver-cash/confirm', methods: ['POST'], permission: 'finance.settlement.confirm' },
+  { pattern: '/api/accounting/receipt-manifests', methods: ['GET', 'POST'], permission: ['finance.write_off.confirm', 'dispatch.goods_return.review'] },
   { pattern: '/api/accounting/returns', methods: R, permission: 'finance.settlement.read', note: '核销管理页回单清单（20261021）' },
   // ⛔ 20261026 补登：这两条路由上线时漏登记，未登记=默认拒绝（见 canAccessApi 注释），
   // 之前所有角色一直 403，功能等于没上线；本次借核销改数量顺手发现并修。
