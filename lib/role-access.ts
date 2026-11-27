@@ -81,6 +81,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    *   GET  /api/trips?driverId=…      行程列表
    *   GET  /api/trips/[id]            行程详情
    *   PUT  /api/trips/[id]            签收/退货/完成站点（整包覆盖 restaurants JSON）
+   *   GET/POST /api/driver/return-*   按客户查找并补报本人订单退货
    *   POST /api/trips/[id]/order-timing   单个订单开始/结束计时（路由内仍校验司机行级归属）
    *   GET/POST /api/trips/[id]/settlement   交账提交
    *   GET  /api/customers/coordinates 地图打点
@@ -89,6 +90,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    */
   DRIVER: [
     ...COMMON,
+    { pattern: '/api/driver/return-candidates', methods: READ },
+    { pattern: '/api/driver/returns', methods: ['POST'] },
     { pattern: '/api/trips/*/returns', methods: READ },
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: ['GET', 'PUT'] },

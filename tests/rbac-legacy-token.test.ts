@@ -64,6 +64,10 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
   // migration 末尾对 driver 角色下的全部用户 bump 了 permVersion 强制重登，旧 token 不存在。
   'POST /api/trips/[id]/returns [DRIVER]':
     '20260923002138 发权限时已 bump permVersion 强制重登，旧 token 不存在',
+  // 2026-11 新增的司机按客户查单退货接口；旧 token 只可能在 2026-09-29 前不含权限位图，
+  // token 有效期 7 天，因此这些接口上线时不存在尚未重登的无位图旧 token。
+  'GET /api/driver/return-candidates [DRIVER]': '2026-11 新增接口；2026-09-29 起已不存在无 pm 的旧 token',
+  'POST /api/driver/returns [DRIVER]': '同上',
   // 20260924000002_accounting_writeoff_permissions：finance.write_off.* 发给
   // boss/operator/finance，顺带修了 /api/orders/bulk 外层闸门此前漏挂 FINANCE 的问题
   // （闸门加入 finance.write_off.confirm 任一即可）。migration 末尾对

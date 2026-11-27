@@ -769,6 +769,34 @@
     "RESTAURANT": "n",
     "OTHER": "n"
   },
+  "GET /api/driver/return-candidates": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "POST /api/driver/returns": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
   "POST /api/driver-slots": {
     "BOSS": "y",
     "OPERATOR": "y",
