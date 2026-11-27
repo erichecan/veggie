@@ -11,6 +11,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import { formatDateTime } from '@/lib/format-date'
+import { DriverReturnRegistration } from '@/components/driver/DriverReturnRegistration'
 
 const PURPLE = '#875A7B'
 
@@ -121,6 +122,7 @@ export default function ClassicDriverPage() {
         pageSize={filtered.length || 1}
       />
       <div className="w-full px-0 py-2 sm:px-2 sm:py-3">
+        <DriverReturnRegistration isEn={isEn} />
         {!loading && activeTrips.length > 0 && (
           <section role="status" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
             <h2 className="font-semibold">

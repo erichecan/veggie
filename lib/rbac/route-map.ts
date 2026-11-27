@@ -204,6 +204,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/returns', methods: ['POST'], permission: ['dispatch.trip.report_return', 'dispatch.trip.returns'] },
   { pattern: '/api/trips/*/returns', methods: ['PUT'], permission: 'dispatch.trip.returns' },
   { pattern: '/api/trips/*/returns/warehouse-verify', methods: ['PUT'], permission: 'dispatch.trip.warehouse_verify' },
+  { pattern: '/api/driver/return-candidates', methods: R, permission: 'dispatch.trip.report_return', note: '司机仅搜索分配给自己的已配送订单' },
+  { pattern: '/api/driver/returns', methods: ['POST'], permission: 'dispatch.trip.report_return', note: '司机按客户查找本人订单登记退货' },
   // 20261027（退货/报废整合）：库存管理中手动登记退货，OrderReturn 表，
   // 与司机入口共用 OrderReturn 原订单行账本及 lib/returns-engine.ts 的处置规则，
   // 权限点各自独立（见 lib/rbac/catalog.ts dispatch.goods_return 模块说明）。
