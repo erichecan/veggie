@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -87,7 +89,7 @@ export async function POST(req: Request) {
       })
     } catch (error) {
       console.error('[POST /api/invoices/sage-export]', error)
-      return NextResponse.json({ error: 'Sage 导出失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, 'Sage 导出失败')
     }
   }, { require: 'finance.invoice.read' })
 }

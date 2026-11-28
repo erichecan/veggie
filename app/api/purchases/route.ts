@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -10,7 +12,7 @@ export async function GET() {
     return NextResponse.json(serializeApi(purchases))
   } catch (error) {
     console.error('[GET /api/purchases]', error)
-    return NextResponse.json({ error: '获取采购记录失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取采购记录失败')
   }
 }
 
@@ -52,7 +54,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(purchase), { status: 201 })
     } catch (error) {
       console.error('[POST /api/purchases]', error)
-      return NextResponse.json({ error: '创建采购记录失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建采购记录失败')
     }
   }, { require: 'purchase.legacy.create' })
 }

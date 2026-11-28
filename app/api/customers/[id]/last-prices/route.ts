@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { queryLastSoldPricesDetailed } from '@/lib/server-pricing'
@@ -75,6 +77,6 @@ export async function GET(
     return NextResponse.json({ prices, dates, missing })
   } catch (error) {
     console.error('[GET /api/customers/[id]/last-prices]', error)
-    return NextResponse.json({ error: '查询历史成交价失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '查询历史成交价失败')
   }
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -25,7 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi(enriched))
   } catch (error) {
     console.error('[GET /api/orders/[id]/audit]', error)
-    return NextResponse.json({ error: '获取审计日志失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取审计日志失败')
   }
 }
 
@@ -54,7 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json(serializeApi({ ...log, userName: user.name }), { status: 201 })
     } catch (error) {
       console.error('[POST /api/orders/[id]/audit]', error)
-      return NextResponse.json({ error: '写入失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '写入失败')
     }
   }, { require: 'sales.order.write_audit' })
 }

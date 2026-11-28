@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -32,7 +34,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[POST /api/purchase-orders/product-aliases]', error)
-      return NextResponse.json({ error: '保存对照关系失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '保存对照关系失败')
     }
   }, { require: 'purchase.order.create' })
 }

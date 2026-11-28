@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -28,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi(product))
   } catch (error) {
     console.error('[GET /api/products/[id]]', error)
-    return NextResponse.json({ error: '获取商品失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取商品失败')
   }
 }
 
@@ -99,7 +101,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(product))
     } catch (error) {
       console.error('[PUT /api/products/[id]]', error)
-      return NextResponse.json({ error: '更新商品失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新商品失败')
     }
   }, { require: 'master.product.update' })
 }
@@ -172,7 +174,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/products/[id]]', error)
-      return NextResponse.json({ error: '删除商品失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除商品失败')
     }
   }, { require: 'master.product.delete' })
 }

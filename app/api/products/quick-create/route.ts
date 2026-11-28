@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -43,7 +45,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(product), { status: 201 })
     } catch (error) {
       console.error('[POST /api/products/quick-create]', error)
-      return NextResponse.json({ error: '创建商品失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建商品失败')
     }
   }, { require: 'master.product.create' })
 }

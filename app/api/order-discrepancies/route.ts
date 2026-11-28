@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(serializeApi({ items, total }))
     } catch (error) {
       console.error('[GET /api/order-discrepancies]', error)
-      return NextResponse.json({ error: '获取差异记录失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取差异记录失败')
     }
   })
 }
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(serializeApi(disc), { status: 201 })
     } catch (error) {
       console.error('[POST /api/order-discrepancies]', error)
-      return NextResponse.json({ error: '创建差异记录失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建差异记录失败')
     }
   }, { require: 'sales.discrepancy.manage' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -138,7 +140,7 @@ export async function GET(req: Request) {
     }))
   } catch (error) {
     console.error('[GET /api/customers]', error)
-    return NextResponse.json({ error: '获取客户失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取客户失败')
   }
 }
 
@@ -186,7 +188,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '该 Sage Account 已被其他客户占用，请换一个编号' }, { status: 409 })
       }
       console.error('[POST /api/customers]', error)
-      return NextResponse.json({ error: '创建客户失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建客户失败')
     }
   }, { require: 'master.customer.create' })
 }

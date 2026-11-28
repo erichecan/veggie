@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
@@ -71,7 +73,7 @@ export async function POST(req: Request) {
       })
     } catch (e) {
       console.error('[change-password]', e)
-      return NextResponse.json({ error: '修改密码失败' }, { status: 500 })
+      return apiRouteErrorResponse(e, '修改密码失败')
     }
   })
 }

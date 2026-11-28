@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -25,7 +27,7 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi(moves.map((move: { physicalQty?: unknown; qty: unknown }) => ({ ...move, qty: move.physicalQty == null ? move.qty : -toNum(move.physicalQty) }))))
   } catch (error) {
     console.error('[GET /api/scrap]', error)
-    return NextResponse.json({ error: '获取报废记录失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取报废记录失败')
   }
 }
 
@@ -130,7 +132,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(result), { status: 201 })
     } catch (error) {
       console.error('[POST /api/scrap]', error)
-      return NextResponse.json({ error: '创建报废记录失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建报废记录失败')
     }
   }, { require: 'stock.scrap.manage' })
 }

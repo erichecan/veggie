@@ -1,3 +1,4 @@
+
 /**
  * GET /api/print/day-wise-report-pdf
  *
@@ -6,6 +7,7 @@
  * 改成跟送货单/汇总单一样，服务端 loadDayWiseReportData() 取数据、生成 HTML，用无头
  * Chromium 渲染成 PDF 二进制返回——不接受客户端传来的任意 HTML（避免 SSRF 跳板）。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadDayWiseReportData } from '@/lib/print/day-wise-report-loader'
@@ -132,7 +134,7 @@ export async function GET(req: Request) {
       })
     } catch (error) {
       console.error('[GET /api/print/day-wise-report-pdf]', error)
-      return NextResponse.json({ error: mt.genericError }, { status: 500 })
+      return apiRouteErrorResponse(error, mt.genericError)
     }
   }, { require: 'print.center.access' })
 }

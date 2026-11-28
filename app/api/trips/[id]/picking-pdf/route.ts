@@ -5,6 +5,7 @@
  * /api/trips/[id]/print-data 一致(loadTripPrintData)，服务端直接生成 HTML 再
  * 用无头 Chromium 渲染成 PDF 二进制返回，不接受客户端传来的任意 HTML。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadTripPrintData } from '@/lib/print/trip-loader'
@@ -54,10 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       })
     } catch (error) {
       console.error('[GET /api/trips/[id]/picking-pdf]', error)
-      return NextResponse.json(
-        { error: 'PDF 生成失败', message: error instanceof Error ? error.message : String(error) },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(error, 'PDF 生成失败')
     }
   }, { require: 'dispatch.trip.print' })
 }

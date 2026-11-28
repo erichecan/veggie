@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { markUnreportedReceiptIssues } from '@/lib/receipt-manifest'
 import { receiveReturnIntoQuarantine } from '@/lib/return-quarantine'
 import { hasPostedReturnInvoice, maybeInvoiceAfterReturn, lockReturnOrders } from '@/lib/return-workflow'
@@ -146,7 +148,7 @@ export async function PUT(
       console.error('[PUT /api/order-returns/[id]/warehouse-verify]', error)
       const err = error as { status?: number; message?: string }
       if (err.status && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
-      return NextResponse.json({ error: '仓库核实失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '仓库核实失败')
     }
   }, { require: 'dispatch.goods_return.warehouse_verify' })
 }

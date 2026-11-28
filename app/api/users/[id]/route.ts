@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -235,7 +237,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(user))
     } catch (error) {
       console.error('[PUT /api/users/[id]]', error)
-      return NextResponse.json({ error: '更新用户失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新用户失败')
     }
   }, { require: 'system.user.manage' })
 }
@@ -269,7 +271,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/users/[id]]', error)
-      return NextResponse.json({ error: '停用用户失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '停用用户失败')
     }
   }, { require: 'system.user.manage' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -28,7 +30,7 @@ export async function GET() {
     return NextResponse.json(serializeApi(uoms))
   } catch (error) {
     console.error('[GET /api/uoms]', error)
-    return NextResponse.json({ error: '获取 UoM 失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取 UoM 失败')
   }
 }
 
@@ -77,7 +79,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(created), { status: 201 })
     } catch (error) {
       console.error('[POST /api/uoms]', error)
-      return NextResponse.json({ error: '创建 UoM 失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建 UoM 失败')
     }
   }, { require: 'master.uom.create' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
@@ -55,7 +57,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(payload))
     } catch (error) {
       console.error('[GET /api/analytics/driver-commission]', error)
-      return NextResponse.json({ error: '获取司机提成报表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取司机提成报表失败')
     }
   }, { require: 'analytics.commission.read' })
 }

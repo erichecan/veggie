@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -104,10 +106,7 @@ export async function PATCH(
         return NextResponse.json({ error: e.message }, { status: 409 })
       }
       console.error('[PATCH order line]', e)
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : '修改失败' },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(e, e instanceof Error ? e.message : '修改失败')
     }
   }, { require: 'sales.order.update' })
 }
@@ -190,10 +189,7 @@ export async function DELETE(
         return NextResponse.json({ error: e.message }, { status: 409 })
       }
       console.error('[DELETE order line]', e)
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : '删除失败' },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(e, e instanceof Error ? e.message : '删除失败')
     }
   }, { require: 'sales.order.delete_line' })
 }

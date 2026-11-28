@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
@@ -130,6 +132,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true }, { status: 201 })
   } catch (error) {
     console.error('[POST /api/auth/register]', error)
-    return NextResponse.json({ error: '提交失败，请重试' }, { status: 500 })
+    return apiRouteErrorResponse(error, '提交失败，请重试')
   }
 }

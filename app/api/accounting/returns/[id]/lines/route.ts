@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { getReturnOrderLines } from '@/lib/accounting/returns'
@@ -15,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ lines })
     } catch (error) {
       console.error('[GET /api/accounting/returns/[id]/lines]', error)
-      return NextResponse.json({ error: '获取订单行明细失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取订单行明细失败')
     }
   }, { require: 'finance.settlement.read' })
 }

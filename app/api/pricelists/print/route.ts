@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
@@ -165,6 +167,6 @@ export async function GET(req: NextRequest) {
     })
   } catch (error) {
     console.error('[GET /api/pricelists/print]', error)
-    return NextResponse.json({ error: '获取价格表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取价格表失败')
   }
 }

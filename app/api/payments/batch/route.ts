@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -66,7 +68,7 @@ export async function POST(req: Request) {
       const err = error as { status?: number; message?: string }
       if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/payments/batch]', error)
-      return NextResponse.json({ error: err.message ?? '合并收款失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, err.message ?? '合并收款失败')
     }
   }, { require: 'finance.payment.create' })
 }

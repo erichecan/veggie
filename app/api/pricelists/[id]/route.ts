@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -15,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi(pricelist))
   } catch (error) {
     console.error('[GET /api/pricelists/[id]]', error)
-    return NextResponse.json({ error: '获取价格表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取价格表失败')
   }
 }
 
@@ -111,7 +113,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: err.status })
       }
       console.error('[PUT /api/pricelists/[id]]', error)
-      return NextResponse.json({ error: '更新价格表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新价格表失败')
     }
   }, { require: 'master.pricelist.update' })
 }
@@ -137,7 +139,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/pricelists/[id]]', error)
-      return NextResponse.json({ error: '删除价格表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除价格表失败')
     }
   }, { require: 'master.pricelist.delete' })
 }

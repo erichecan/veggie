@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { runAndRecordLedgerCheck } from '@/lib/ledger-check'
 
@@ -18,6 +20,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ id: run.id, ok: run.ok, durationMs: run.durationMs })
   } catch (error) {
     console.error('[POST /api/cron/ledger-check]', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : '账本核对失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, error instanceof Error ? error.message : '账本核对失败')
   }
 }

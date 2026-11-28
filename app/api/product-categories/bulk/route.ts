@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -135,7 +137,7 @@ export async function POST(req: Request) {
       return NextResponse.json(result)
     } catch (error) {
       console.error('[POST /api/product-categories/bulk]', error)
-      return NextResponse.json({ error: '批量导入失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '批量导入失败')
     }
   // 这个端点能新建也能按 externalId 更新已有分类，权限点必须用 update(与 products/bulk
   // 用 master.product.update 同一个道理)——只给 create 的话，一个只被授予「新建分类」

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -79,7 +81,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ history })
     } catch (error) {
       console.error('[GET /api/orders/sales-price-history]', error)
-      return NextResponse.json({ error: '查询失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '查询失败')
     }
   })
 }

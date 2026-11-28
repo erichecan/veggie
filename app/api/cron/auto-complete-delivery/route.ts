@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -83,6 +85,6 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('[POST /api/cron/auto-complete-delivery]', error)
     const message = error instanceof Error ? error.message : '自动完成配送失败'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiRouteErrorResponse(error, message)
   }
 }

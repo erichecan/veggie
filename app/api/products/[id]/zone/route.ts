@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -66,7 +68,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PATCH /api/products/[id]/zone]', error)
-      return NextResponse.json({ error: '更新商品温区失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新商品温区失败')
     }
   }, { require: ['master.product.update', 'stock.zone.manage'] })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -57,7 +59,7 @@ export async function GET(req: Request) {
     })
   } catch (error) {
     console.error('[GET /api/suppliers]', error)
-    return NextResponse.json({ error: '获取供应商失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取供应商失败')
   }
 }
 
@@ -105,7 +107,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(partner), { status: existing ? 200 : 201 })
     } catch (error) {
       console.error('[POST /api/suppliers]', error)
-      return NextResponse.json({ error: '保存供应商失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '保存供应商失败')
     }
   }, { require: 'master.supplier.create' })
 }

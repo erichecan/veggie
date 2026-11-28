@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -75,7 +77,7 @@ async function updateSlot(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: '该司机名字已存在' }, { status: 409 })
     }
     console.error('[driver-slots PUT]', e)
-    return NextResponse.json({ error: 'Failed to update driver slot' }, { status: 500 })
+    return apiRouteErrorResponse(e, 'Failed to update driver slot')
   }
 }
 
@@ -98,6 +100,6 @@ async function archiveSlot({ params }: { params: Promise<{ id: string }> }) {
       return NextResponse.json({ error: e.message }, { status: 409 })
     }
     console.error('[driver-slots DELETE]', e)
-    return NextResponse.json({ error: 'Failed to archive driver slot' }, { status: 500 })
+    return apiRouteErrorResponse(e, 'Failed to archive driver slot')
   }
 }

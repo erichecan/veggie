@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -66,7 +68,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PUT /api/uoms/[id]]', error)
-      return NextResponse.json({ error: '更新 UoM 失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新 UoM 失败')
     }
   }, { require: 'master.uom.update' })
 }
@@ -86,7 +88,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/uoms/[id]]', error)
-      return NextResponse.json({ error: '停用 UoM 失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '停用 UoM 失败')
     }
   }, { require: 'master.uom.update' })
 }

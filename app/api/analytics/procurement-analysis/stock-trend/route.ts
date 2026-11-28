@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { serializeApi } from '@/lib/api-serializer'
 import { resolveDateRange } from '@/lib/analytics/metrics'
@@ -33,7 +35,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ granularity: granularityParam, series }))
     } catch (error) {
       console.error('[GET /api/analytics/procurement-analysis/stock-trend]', error)
-      return NextResponse.json({ error: '获取库存趋势失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取库存趋势失败')
     }
   }, { require: 'analytics.purchase_detail.read' })
 }

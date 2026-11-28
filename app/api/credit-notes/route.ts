@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { confirmReturnCredit } from '@/lib/return-workflow'
 import { createDraftCreditNotesForReturns } from '@/lib/finance/return-credit-note'
 import { assertReturnReviewComplete, lockReturnOrders, returnError } from '@/lib/return-invoice-guard'
@@ -85,7 +87,7 @@ export async function GET(req: Request) {
     }))))
   } catch (error) {
     console.error('[GET /api/credit-notes]', error)
-    return NextResponse.json({ error: '获取退款单失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取退款单失败')
   }
 }
 
@@ -241,7 +243,7 @@ export async function POST(req: Request) {
       const err = error as { status?: number; message?: string }
       if (err.status) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/credit-notes]', error)
-      return NextResponse.json({ error: '创建退款单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建退款单失败')
     }
   }, { require: 'finance.credit_note.create' })
 }

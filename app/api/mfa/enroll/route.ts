@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -74,7 +76,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, message: 'MFA 已启用。下次登录需提供 6 位动态码。' })
     } catch (error) {
       console.error('[POST /api/mfa/enroll]', error)
-      return NextResponse.json({ error: '启用失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '启用失败')
     }
   })
 }
@@ -105,7 +107,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/mfa/enroll]', error)
-      return NextResponse.json({ error: '关闭失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '关闭失败')
     }
   })
 }

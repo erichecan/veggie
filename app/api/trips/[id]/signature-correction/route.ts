@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -80,7 +82,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[POST /api/trips/[id]/signature-correction]', error)
-      return NextResponse.json({ error: '签收更正失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '签收更正失败')
     }
   }, { require: 'dispatch.trip.correct_signature' })
 }

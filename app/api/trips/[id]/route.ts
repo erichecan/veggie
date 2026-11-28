@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { freezeReceiptManifest } from '@/lib/receipt-manifest'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -154,7 +156,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json(serializeApi(tripWithOrderCodes))
   } catch (error) {
     console.error('[GET /api/trips/[id]]', error)
-    return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取行程失败')
   }
   })
 }
@@ -448,7 +450,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(trip))
     } catch (error) {
       console.error('[PUT /api/trips/[id]]', error)
-      return NextResponse.json({ error: '更新行程失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新行程失败')
     }
   }, { require: 'dispatch.trip.update' })
 }
@@ -464,7 +466,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/trips/[id]]', error)
-      return NextResponse.json({ error: '删除行程失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除行程失败')
     }
   }, { require: 'dispatch.trip.delete' })
 }

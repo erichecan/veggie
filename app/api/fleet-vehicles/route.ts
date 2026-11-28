@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -31,7 +33,7 @@ export async function POST(req: Request) {
       return NextResponse.json(await prisma.fleetVehicle.create({ data: { plate, note: String(body.note ?? '').trim() || null } }), { status: 201 })
     } catch (error) {
       console.error('[POST /api/fleet-vehicles]', error)
-      return NextResponse.json({ error: '新增车辆失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '新增车辆失败')
     }
   }, { require: 'dispatch.driver_slot.manage' })
 }

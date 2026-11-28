@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { serializeApi } from '@/lib/api-serializer'
 import { getZoneSummaries, getZoneMismatches, getUnplacedCount } from '@/lib/analytics/zone-inventory'
@@ -19,7 +21,7 @@ export async function GET(req: Request) {
     } catch (error) {
       console.error('[GET /api/analytics/zone-inventory]', error)
       const isEn = new URL(req.url).searchParams.get('locale') === 'en'
-      return NextResponse.json({ error: isEn ? 'Failed to load zone inventory data' : '获取温区库存数据失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, isEn ? 'Failed to load zone inventory data' : '获取温区库存数据失败')
     }
   }, { require: 'analytics.inventory.read' })
 }

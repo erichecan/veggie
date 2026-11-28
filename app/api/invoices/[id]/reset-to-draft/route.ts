@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -61,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const err = error as { status?: number; message?: string }
       if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/invoices/:id/reset-to-draft]', error)
-      return NextResponse.json({ error: err.message ?? '发票退回草稿失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, err.message ?? '发票退回草稿失败')
     }
   }, { require: 'finance.invoice.update' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { listReturns, type ReturnState } from '@/lib/accounting/returns'
@@ -29,7 +31,7 @@ export async function GET(req: Request) {
       return NextResponse.json(data)
     } catch (error) {
       console.error('[GET /api/accounting/returns]', error)
-      return NextResponse.json({ error: '获取回单清单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取回单清单失败')
     }
   }, { require: 'finance.settlement.read' })
 }

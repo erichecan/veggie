@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -123,7 +125,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       })
     } catch (error) {
       console.error('[GET /api/waves/[id]/pallets]', error)
-      return NextResponse.json({ error: '获取托盘失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取托盘失败')
     }
   })
 }
@@ -178,7 +180,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
     } catch (error) {
       console.error('[PUT /api/waves/[id]/pallets]', error)
-      return NextResponse.json({ error: '保存托盘失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '保存托盘失败')
     }
   }, { require: 'stock.pick.manage_pallets' })
 }

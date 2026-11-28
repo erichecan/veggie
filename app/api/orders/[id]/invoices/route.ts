@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -67,7 +69,7 @@ export async function POST(req: Request, { params }: Context) {
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[POST /api/orders/[id]/invoices]', error)
-      return NextResponse.json({ error: '关联发票失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '关联发票失败')
     }
   }, { require: 'sales.order.update' })
 }

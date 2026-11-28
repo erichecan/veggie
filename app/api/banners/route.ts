@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -18,7 +20,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(banners))
     } catch (error) {
       console.error('[GET /api/banners]', error)
-      return NextResponse.json({ error: '获取轮播图失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取轮播图失败')
     }
   }, { require: 'master.pricelist.read' })
 }
@@ -53,7 +55,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(banner), { status: 201 })
     } catch (error) {
       console.error('[POST /api/banners]', error)
-      return NextResponse.json({ error: '创建轮播图失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建轮播图失败')
     }
   }, { require: 'master.pricelist.create' })
 }

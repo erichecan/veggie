@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -11,7 +13,7 @@ export async function GET() {
     return NextResponse.json(serializeApi(pricelists))
   } catch (error) {
     console.error('[GET /api/pricelists]', error)
-    return NextResponse.json({ error: '获取价格表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取价格表失败')
   }
 }
 
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
       const err = error as { status?: number; message?: string }
       if (err.status === 400) return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: 400 })
       console.error('[POST /api/pricelists]', error)
-      return NextResponse.json({ error: '创建价格表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建价格表失败')
     }
   }, { require: 'master.pricelist.create' })
 }

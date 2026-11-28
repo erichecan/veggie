@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -51,7 +53,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[POST /api/customers/[id]/term-extension]', error)
-      return NextResponse.json({ error: '延长账期失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '延长账期失败')
     }
   }, { require: 'master.customer.extend_term' })
 }

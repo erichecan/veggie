@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
@@ -49,7 +51,7 @@ export async function GET(req: Request) {
       }))
     } catch (error) {
       console.error('[GET /api/analytics/income-statement]', error)
-      return NextResponse.json({ error: '获取利润表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取利润表失败')
     }
   }, { require: 'analytics.finance.read' })
 }

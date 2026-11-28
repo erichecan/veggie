@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -172,7 +174,7 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi(result))
   } catch (error) {
     console.error('[GET /api/products]', error)
-    return NextResponse.json({ error: '获取商品失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取商品失败')
   }
 }
 
@@ -204,7 +206,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(product), { status: 201 })
     } catch (error) {
       console.error('[POST /api/products]', error)
-      return NextResponse.json({ error: '创建商品失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建商品失败')
     }
   }, { require: 'master.product.create' })
 }

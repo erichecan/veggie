@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -42,7 +44,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(lot))
     } catch (error) {
       console.error('[PUT /api/lots/[id]]', error)
-      return NextResponse.json({ error: '订正保质期失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '订正保质期失败')
     }
   }, { require: 'stock.lot.manage' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
@@ -21,7 +23,7 @@ export async function POST(req: Request) {
       return NextResponse.json(r)
     } catch (error) {
       console.error('[POST /api/finance/ledger-check/orders-without-stock]', error)
-      return NextResponse.json({ error: '统一补扣失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '统一补扣失败')
     }
   }, { require: 'stock.move.create' })
 }

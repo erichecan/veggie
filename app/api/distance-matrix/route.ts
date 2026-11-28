@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
       })
     } catch (error) {
       console.error('[POST /api/distance-matrix]', error)
-      return NextResponse.json({ error: '距离计算失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '距离计算失败')
     }
   })
 }

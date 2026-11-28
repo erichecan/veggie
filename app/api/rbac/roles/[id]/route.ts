@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -69,7 +71,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     } catch (e) {
       if (e instanceof RbacError) return NextResponse.json({ error: e.message }, { status: e.status })
       console.error('[rbac] update role failed', e)
-      return NextResponse.json({ error: '修改角色失败' }, { status: 500 })
+      return apiRouteErrorResponse(e, '修改角色失败')
     }
   }, { require: 'system.rbac.manage' })
 }
@@ -115,7 +117,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     } catch (e) {
       if (e instanceof RbacError) return NextResponse.json({ error: e.message }, { status: e.status })
       console.error('[rbac] delete role failed', e)
-      return NextResponse.json({ error: '删除角色失败' }, { status: 500 })
+      return apiRouteErrorResponse(e, '删除角色失败')
     }
   }, { require: 'system.rbac.manage' })
 }

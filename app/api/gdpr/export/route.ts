@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -112,7 +114,7 @@ export async function GET(req: Request) {
       })
     } catch (error) {
       console.error('[GDPR export]', error)
-      return NextResponse.json({ error: '导出失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '导出失败')
     }
   })
 }

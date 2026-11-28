@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -55,7 +57,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(filtered))
     } catch (error) {
       console.error('[GET /api/users]', error)
-      return NextResponse.json({ error: '获取用户列表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取用户列表失败')
     }
   }, { require: 'system.user.read' })
 }
@@ -79,7 +81,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(user), { status: 201 })
     } catch (error) {
       console.error('[POST /api/users]', error)
-      return NextResponse.json({ error: '创建用户失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建用户失败')
     }
   }, { require: 'system.user.manage' })
 }

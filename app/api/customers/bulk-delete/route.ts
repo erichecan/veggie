@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -65,7 +67,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ deleted, blocked, notFound })
     } catch (error) {
       console.error('[POST /api/customers/bulk-delete]', error)
-      return NextResponse.json({ error: '删除失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除失败')
     }
   }, { require: 'master.customer.delete' })
 }

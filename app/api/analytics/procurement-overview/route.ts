@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { serializeApi } from '@/lib/api-serializer'
 import {
@@ -25,7 +27,7 @@ export async function GET(req: Request) {
     } catch (error) {
       console.error('[GET /api/analytics/procurement-overview]', error)
       const isEn = new URL(req.url).searchParams.get('locale') === 'en'
-      return NextResponse.json({ error: isEn ? 'Failed to load procurement overview' : '获取采购总览失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, isEn ? 'Failed to load procurement overview' : '获取采购总览失败')
     }
   })
 }

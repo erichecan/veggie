@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -74,7 +76,7 @@ export async function GET(
     }))
   } catch (error) {
     console.error('[GET /api/trips/[id]/discrepancy]', error)
-    return NextResponse.json({ error: '获取差异列表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取差异列表失败')
   }
 }
 
@@ -204,7 +206,7 @@ export async function PUT(
       }))
     } catch (error) {
       console.error('[PUT /api/trips/[id]/discrepancy]', error)
-      return NextResponse.json({ error: '差异处理失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '差异处理失败')
     }
   }, { require: 'dispatch.trip.discrepancy' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { runBackup, cleanupExpiredBackups } from '@/lib/backup'
 import { runAndRecordLedgerCheck } from '@/lib/ledger-check'
@@ -32,6 +34,6 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('[POST /api/cron/backup-database]', error)
     const message = error instanceof Error ? error.message : '自动备份失败'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiRouteErrorResponse(error, message)
   }
 }

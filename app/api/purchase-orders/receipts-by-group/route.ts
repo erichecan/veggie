@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
@@ -15,7 +17,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(rows))
     } catch (error) {
       console.error('[GET /api/purchase-orders/receipts-by-group]', error)
-      return NextResponse.json({ error: '获取失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取失败')
     }
   })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -37,7 +39,7 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi(waves))
   } catch (error) {
     console.error('[GET /api/waves]', error)
-    return NextResponse.json({ error: '获取波次失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取波次失败')
   }
 }
 
@@ -154,7 +156,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(wave), { status: 201 })
     } catch (error) {
       console.error('[POST /api/waves]', error)
-      return NextResponse.json({ error: '创建波次失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建波次失败')
     }
   }, { require: 'dispatch.wave.create' })
 }

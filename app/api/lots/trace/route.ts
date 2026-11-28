@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -167,7 +169,7 @@ export async function GET(req: Request) {
       )
     } catch (error) {
       console.error('[GET /api/lots/trace]', error)
-      return NextResponse.json({ error: '获取批次追溯失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取批次追溯失败')
     }
   }, { require: 'stock.lot.read' })
 }

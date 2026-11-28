@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -250,7 +252,7 @@ export async function POST(req: Request) {
       }))
     } catch (error) {
       console.error('[POST /api/purchase-orders/parse]', error)
-      return NextResponse.json({ error: '单据识别失败，请稍后重试' }, { status: 500 })
+      return apiRouteErrorResponse(error, '单据识别失败，请稍后重试')
     }
   }, { require: 'purchase.order.create' })
 }

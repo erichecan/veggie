@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -81,10 +83,7 @@ export async function POST(
         return NextResponse.json({ error: err.message ?? '请求无效' }, { status: err.status })
       }
       console.error('[POST order adjustment]', e)
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : '添加失败' },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(e, e instanceof Error ? e.message : '添加失败')
     }
   }, { require: 'sales.order.manage_adjustment' })
 }

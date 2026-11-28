@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { assertReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -125,7 +127,7 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi(invoices))
   } catch (error) {
     console.error('[GET /api/invoices]', error)
-    return NextResponse.json({ error: '获取发票失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取发票失败')
   }
 }
 
@@ -304,7 +306,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: err.status })
       }
       console.error('[POST /api/invoices]', error)
-      return NextResponse.json({ error: '创建发票失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建发票失败')
     }
   }, { require: 'finance.invoice.create' })
 }

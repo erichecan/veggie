@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
@@ -52,7 +54,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ tempPassword, userName: user.name, email: user.email })
     } catch (error) {
       console.error('[POST /api/users/[id]/reset-password]', error)
-      return NextResponse.json({ error: '重置密码失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '重置密码失败')
     }
   }, { require: 'system.user.manage' })
 }

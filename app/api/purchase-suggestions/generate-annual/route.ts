@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
@@ -20,7 +22,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi({ generated: rows.length, rows }), { status: 201 })
     } catch (error) {
       console.error('[POST /api/purchase-suggestions/generate-annual]', error)
-      return NextResponse.json({ error: '生成年度采购计划失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '生成年度采购计划失败')
     }
   }, { require: 'purchase.plan.manage' })
 }

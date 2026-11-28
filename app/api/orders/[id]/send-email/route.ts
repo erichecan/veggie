@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -86,7 +88,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       })
     } catch (error) {
       console.error('[GET /api/orders/[id]/send-email]', error)
-      return NextResponse.json({ error: '获取收件人失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取收件人失败')
     }
   }, { require: 'sales.order.print' })
 }
@@ -222,7 +224,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ ok: true, to, cc })
     } catch (error) {
       console.error('[POST /api/orders/[id]/send-email]', error)
-      return NextResponse.json({ error: '发送失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '发送失败')
     }
   }, { require: 'sales.order.print' })
 }

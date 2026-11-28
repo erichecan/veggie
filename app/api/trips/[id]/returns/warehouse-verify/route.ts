@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { PUT as verifyOrderReturn } from '@/app/api/order-returns/[id]/warehouse-verify/route'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -119,7 +121,7 @@ export async function PUT(
       }))
     } catch (error) {
       console.error('[PUT /api/trips/[id]/returns/warehouse-verify]', error)
-      return NextResponse.json({ error: '仓库核实失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '仓库核实失败')
     }
   }, { require: 'dispatch.trip.warehouse_verify' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -225,7 +227,7 @@ export async function GET(req: Request) {
     return NextResponse.json(await attachPickingLockDisplay(attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(orders))))))
   } catch (error) {
     console.error('[GET /api/orders]', error)
-    return NextResponse.json({ error: '获取订单失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取订单失败')
   }
 }
 
@@ -567,7 +569,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: err.status })
       }
       console.error('[POST /api/orders]', error)
-      return NextResponse.json({ error: '创建订单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建订单失败')
     }
   }, { require: 'sales.order.create' })
 }

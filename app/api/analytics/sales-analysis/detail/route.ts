@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { serializeApi } from '@/lib/api-serializer'
 import { resolveDateRange } from '@/lib/analytics/metrics'
@@ -23,7 +25,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(result))
     } catch (error) {
       console.error('[GET /api/analytics/sales-analysis/detail]', error)
-      return NextResponse.json({ error: '获取销售明细失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取销售明细失败')
     }
   }, { require: 'analytics.margin.read' })
 }

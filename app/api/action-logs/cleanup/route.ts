@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
@@ -21,6 +23,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ deleted: count, cutoff: cutoff.toISOString() })
   } catch (error) {
     console.error('[POST /api/action-logs/cleanup]', error)
-    return NextResponse.json({ error: '清理失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '清理失败')
   }
 }

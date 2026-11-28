@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -37,7 +39,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PATCH /api/bulletin-posts/[id]/pin]', error)
-      return NextResponse.json({ error: '操作失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '操作失败')
     }
   })
 }
