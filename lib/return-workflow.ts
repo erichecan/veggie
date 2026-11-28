@@ -2,7 +2,7 @@ import { createOrderInvoiceDraftsBatch } from '@/lib/invoice-from-order'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { round2, toNum } from '@/lib/decimal-helpers'
 import { nextSequenceName } from '@/lib/sequence-number'
-import { syncOrderGoodsReturnStatus } from '@/lib/returns-engine'
+import { applyReturnOrderLineReduction, syncOrderGoodsReturnStatus } from '@/lib/returns-engine'
 import { createDraftCreditNotesForReturns } from '@/lib/finance/return-credit-note'
 import { postCreditNoteToJournal } from '@/lib/accounting'
 import { disposeQuarantinedReturn, receivedReturnQuantity, reverseDuplicateReturnIntake } from '@/lib/return-quarantine'
@@ -109,6 +109,38 @@ export async function hasPostedReturnInvoice(tx: Tx, orderId: string) {
   }))
 }
 
+async function reduceDraftInvoiceLineQuantity(tx: Tx, orderId: string, orderLineId: string, reduceQty: number) {
+  const drafts = await tx.invoice.findMany({
+    where: { saleOrderIds: { has: orderId }, status: 'DRAFT' },
+    select: { id: true, lines: true, amountPaid: true },
+  })
+  let remainingAcrossDrafts = reduceQty
+  for (const invoice of drafts) {
+    const rows = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
+    const updatedRows = rows.map(row => {
+      if (String(row.orderLineId ?? '') !== orderLineId || remainingAcrossDrafts <= 0) return row
+      const oldQty = toNum(row.qty ?? row.quantity)
+      const reduction = Math.min(oldQty, remainingAcrossDrafts)
+      const qty = Math.max(0, oldQty - reduction)
+      remainingAcrossDrafts = Math.max(0, remainingAcrossDrafts - reduction)
+      const unitPrice = toNum(row.unitPrice)
+      const rawTaxRate = toNum(row.taxRate)
+      const taxRate = rawTaxRate > 1 ? rawTaxRate / 100 : rawTaxRate
+      const subtotalExTax = round2(qty * unitPrice)
+      const taxAmount = round2(subtotalExTax * taxRate)
+      return { ...row, qty, subtotalExTax, taxAmount, subtotalIncTax: round2(subtotalExTax + taxAmount) }
+    })
+    const subtotalExTax = round2(updatedRows.reduce((sum, row) => sum + toNum(row.subtotalExTax), 0))
+    const totalTax = round2(updatedRows.reduce((sum, row) => sum + toNum(row.taxAmount), 0))
+    const totalIncTax = round2(subtotalExTax + totalTax)
+    await tx.invoice.update({ where: { id: invoice.id }, data: {
+      lines: updatedRows as never, subtotalExTax, totalTax, totalIncTax,
+      amountDue: round2(totalIncTax - toNum(invoice.amountPaid)),
+    } })
+  }
+  if (remainingAcrossDrafts > 0.0005) returnError('草稿发票中的原订单行数量不足以同步退货，请会计先核对发票')
+}
+
 export async function confirmReturnCredit(tx: Tx, id: string, userId: string) {
   const note = await tx.creditNote.update({ where: { id }, data: { status: 'CONFIRMED' } })
   const codes = ['1100', '4000', ...(toNum(note.totalTax) > 0 ? ['2200'] : [])]
@@ -169,19 +201,18 @@ export async function finalizeOrderReturn(tx: Tx, id: string, actor: Actor, appr
   }
   // Posted invoices without exact source lines must be reconciled, never silently under-credit.
   if (invoices.length && remaining > 0.0005) returnError('已过账发票缺少足够的原订单行可贷记数量，请会计核对发票来源；未开具贷记单')
-  if (!red) {
-    const created = await createDraftCreditNotesForReturns(tx, [{
-      sourceReturnId: `ORDER_RETURN:${id}`, customerId: ret.order.restaurantId,
-      customerName: ret.order.restaurantName, productId: ret.productId, productName: ret.productName,
-      quantity, amountExTax: toNum(ret.refundAmount ?? round2(quantity * approvedPricing.unitPrice)), taxRate: approvedPricing.taxRate,
-      sourceOrderId: ret.orderId, sourceOrderLineId: line.id, sourceTripId: ret.sourceTripId,
-      reason: ret.salesNote || ret.reason,
-    }], actor.userId)
-    for (const cn of created) await confirmReturnCredit(tx, cn.id, actor.userId)
-    creditNotes.push(...created)
-  }
+  // An unbilled return is reconciled against the eventual invoice quantity. A
+  // Credit Note here would double-count the return (net quantity plus credit).
+  // Only returns against a posted invoice create a financial credit above.
   await disposeQuarantinedReturn(tx, ret, actor, { releaseSellable: true })
+  const sameProductReturned = !ret.actualReturnedProductId || ret.actualReturnedProductId === line.productId
+  if (!red && sameProductReturned) {
+    await applyReturnOrderLineReduction(tx, [{
+      orderId: ret.orderId, orderLineId: line.id, productId: line.productId, reduceQty: quantity,
+    }])
+    await reduceDraftInvoiceLineQuantity(tx, ret.orderId, line.id, quantity)
+  }
   if (!red) await syncOrderGoodsReturnStatus(tx, [{ orderId: ret.orderId, status: 'APPROVED', productName: ret.productName, quantity, disposition: ret.disposition }], actor)
-  await tx.orderReturn.update({ where: { id }, data: { status: 'SETTLED', settledAt: new Date(), preservedOriginalOrder: true, ...(red ? { refundAmount: amount } : {}) } })
+  await tx.orderReturn.update({ where: { id }, data: { status: 'SETTLED', settledAt: new Date(), preservedOriginalOrder: red || !sameProductReturned, ...(red ? { refundAmount: amount } : {}) } })
   return { creditNote: creditNotes[0] ?? null, creditNotes, orderId: ret.orderId }
 }
