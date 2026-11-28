@@ -466,16 +466,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
     setSigning(true)
     try {
-      const updated = cloneTrip()
-      const ur = updated.restaurants.find(r => r.restaurantId === signModal.restId)
-      if (ur) {
-        ur.delivered = true
-        ur.signature = signData
-        ur.signerName = signerName.trim()
-        ur.signedAt = new Date().toISOString()
-      }
-      updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
-      await saveTrip(updated)
+      const saved = await apiPost<Trip>(`/api/trips/${trip.id}/signature`, {
+        restaurantId: signModal.restId,
+        signature: signData,
+        signerName: signerName.trim(),
+      })
+      const localOrderCodes = new Map(trip.restaurants.map(r => [r.restaurantId, r.orderCodes]))
+      setTrip({ ...saved, restaurants: saved.restaurants.map(r => ({ ...r, orderCodes: localOrderCodes.get(r.restaurantId) })) })
       setSignModal(null)
       toast.success(isEn ? `${signModal.restName} signed for` : `${signModal.restName} 已签收`)
     } finally {
