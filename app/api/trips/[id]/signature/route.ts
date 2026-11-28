@@ -83,5 +83,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/trips/[id]/signature]', error)
       return NextResponse.json({ error: '签收保存失败，请重试' }, { status: 500 })
     }
-  }, { require: 'dispatch.trip.update' })
+  }, { require: 'dispatch.trip.sign_delivery' })
 }

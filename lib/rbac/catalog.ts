@@ -272,6 +272,7 @@ export const PERMISSION_GROUPS: GroupDef[] = [
           { action: 'read_discrepancy', labelZh: '查看差异', labelEn: 'View Discrepancy' },
           { action: 'discrepancy', labelZh: '差异处理', labelEn: 'Discrepancy' },
           { action: 'correct_signature', labelZh: '更正签收', labelEn: 'Correct Signature' },
+          { action: 'sign_delivery', labelZh: '客户签收', labelEn: 'Save Delivery Signature' },
         ],
       },
       {
