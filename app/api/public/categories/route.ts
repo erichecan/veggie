@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { serializeApi } from '@/lib/api-serializer'
 import { rateLimit } from '@/lib/rate-limit'
@@ -22,6 +24,6 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi(result))
   } catch (error) {
     console.error('[GET /api/public/categories]', error)
-    return NextResponse.json({ error: '获取分类失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取分类失败')
   }
 }

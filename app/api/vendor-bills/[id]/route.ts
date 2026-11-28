@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -68,7 +70,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       })
     } catch (error) {
       console.error('[GET /api/vendor-bills/[id]]', error)
-      return NextResponse.json({ error: '获取账单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取账单失败')
     }
   }, { require: 'finance.vendor_bill.read' })
 }
@@ -202,7 +204,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         return NextResponse.json({ error: (error as Error).message }, { status: st })
       }
       console.error('[PUT /api/vendor-bills/[id]]', error)
-      return NextResponse.json({ error: '更新账单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新账单失败')
     }
   }, { require: 'finance.vendor_bill.update' })
 }

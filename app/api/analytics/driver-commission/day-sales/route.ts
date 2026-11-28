@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
@@ -25,7 +27,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ rows }))
     } catch (error) {
       console.error('[GET /api/analytics/driver-commission/day-sales]', error)
-      return NextResponse.json({ error: '获取按司机销售额失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取按司机销售额失败')
     }
   }, { require: 'analytics.commission.read' })
 }

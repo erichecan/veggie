@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
@@ -31,7 +33,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PUT /api/waves/[id]/complete]', error)
-      return NextResponse.json({ error: '标记完成失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '标记完成失败')
     }
   }, { require: 'dispatch.wave.update' })
 }

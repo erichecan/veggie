@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -61,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     } catch (error) {
       if ((error as { status?: number }).status) return NextResponse.json({ error: (error as Error).message }, { status: (error as { status: number }).status })
       console.error('[POST /api/invoices/:id/post]', error)
-      return NextResponse.json({ error: '发票过账失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '发票过账失败')
     }
   }, { require: 'finance.invoice.pay' })
 }

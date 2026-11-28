@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json(r)
     } catch (error) {
       console.error('[POST /api/finance/ledger-check/uninvoiced-orders]', error)
-      return NextResponse.json({ error: '统一补开发票失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '统一补开发票失败')
     }
   }, { require: 'finance.invoice.create' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -28,7 +30,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(rows.map(row => ({ ...row, redReturn: Boolean(row.sourceReturnId?.startsWith('ORDER_RETURN:') && postedOrderIds.has(row.sourceOrderId)), returnEvidence: row.sourceReturnId ? evidenceById.get(row.sourceReturnId.slice('ORDER_RETURN:'.length)) ?? null : null }))))
     } catch (error) {
       console.error('[GET /api/credit-note-requests]', error)
-      return NextResponse.json({ error: '获取贷记申请失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取贷记申请失败')
     }
   }, { require: 'finance.credit_note.read' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -45,7 +47,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi(payload))
   } catch (error) {
     console.error('[GET /api/customers/[id]]', error)
-    return NextResponse.json({ error: '获取客户失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取客户失败')
   }
 }
 
@@ -163,7 +165,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '该 Sage Account 已被其他客户占用，请换一个编号' }, { status: 409 })
       }
       console.error('[PUT /api/customers/[id]]', error)
-      return NextResponse.json({ error: '更新客户失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新客户失败')
     }
   }, { require: 'master.customer.update' })
 }

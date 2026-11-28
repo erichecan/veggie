@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -64,7 +66,7 @@ export async function POST(req: Request) {
       })
     } catch (error) {
       console.error('[POST /api/geocode]', error)
-      return NextResponse.json({ error: 'Geocoding 失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, 'Geocoding 失败')
     }
   })
 }

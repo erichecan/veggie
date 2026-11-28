@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { driverRowScope } from '@/lib/row-scope'
 import { reviewOrderReturn, lockReturnOrders } from '@/lib/return-workflow'
 import { NextResponse } from 'next/server'
@@ -116,7 +118,7 @@ export async function GET(
     }))
   } catch (error) {
     console.error('[GET /api/trips/[id]/returns]', error)
-    return NextResponse.json({ error: '获取退货列表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取退货列表失败')
   }
   }, { require: ['dispatch.trip.read_returns', 'dispatch.trip.report_return'] })
 }
@@ -275,7 +277,7 @@ export async function POST(
     } catch (error) {
       if (error instanceof OrderReturnInputError) return NextResponse.json({ error: error.message }, { status: error.status })
       console.error('[POST /api/trips/[id]/returns]', error)
-      return NextResponse.json({ error: '提交退货失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '提交退货失败')
     }
     // 司机上报 ≠ 销售/运营审核（PUT 那个 dispatch.trip.returns）——司机不能自己批准自己报的退货
   }, { require: ['dispatch.trip.report_return', 'dispatch.trip.returns'] })
@@ -342,7 +344,7 @@ export async function PUT(
     } catch (error) {
       if ((error as { status?: number }).status) return NextResponse.json({ error: (error as Error).message }, { status: (error as { status: number }).status })
       console.error('[PUT /api/trips/[id]/returns]', error)
-      return NextResponse.json({ error: '退货审核失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '退货审核失败')
     }
   }, { require: 'dispatch.trip.returns' })
 }

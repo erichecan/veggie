@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ url })
     } catch (err) {
       console.error('[bulletin-posts/upload-image] error:', err)
-      return NextResponse.json({ error: '图片上传失败，请稍后重试' }, { status: 500 })
+      return apiRouteErrorResponse(err, '图片上传失败，请稍后重试')
     }
   })
 }

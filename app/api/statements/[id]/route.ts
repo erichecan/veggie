@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -155,7 +157,7 @@ export async function GET(
       }))
     } catch (error) {
       console.error('[GET /api/statements/[id]]', error)
-      return NextResponse.json({ error: '获取对账单详情失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取对账单详情失败')
     }
   }, { require: 'finance.statement.read' })
 }
@@ -212,7 +214,7 @@ export async function PUT(
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PUT /api/statements/[id]]', error)
-      return NextResponse.json({ error: '更新对账单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新对账单失败')
     }
   }, { require: 'finance.statement.update' })
 }
@@ -247,7 +249,7 @@ export async function DELETE(
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/statements/[id]]', error)
-      return NextResponse.json({ error: '删除对账单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除对账单失败')
     }
   }, { require: 'finance.statement.delete' })
 }

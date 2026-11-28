@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -174,7 +176,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     } catch (e) {
       if (e instanceof RbacError) return NextResponse.json({ error: e.message }, { status: e.status })
       console.error('[rbac] update user permissions failed', e)
-      return NextResponse.json({ error: '修改用户权限失败' }, { status: 500 })
+      return apiRouteErrorResponse(e, '修改用户权限失败')
     }
   }, { require: 'system.rbac.manage' })
 }

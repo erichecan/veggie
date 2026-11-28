@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -387,7 +389,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ created, updated, skipped: [], failed, warnings })
     } catch (error) {
       console.error('[POST /api/pricelists/bulk]', error)
-      return NextResponse.json({ error: '批量导入失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '批量导入失败')
     }
   }, { require: 'master.pricelist.update' })
 }

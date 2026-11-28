@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -38,7 +40,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ items, total, unreadCount, page, pageSize }))
     } catch (error) {
       console.error('[GET /api/notifications]', error)
-      return NextResponse.json({ error: '获取通知失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取通知失败')
     }
   })
 }
@@ -94,7 +96,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(notification), { status: 201 })
     } catch (error) {
       console.error('[POST /api/notifications]', error)
-      return NextResponse.json({ error: '创建通知失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建通知失败')
     }
   }, { require: 'system.notification.create' })
 }
@@ -133,7 +135,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: '请提供 ids 数组或 markAllRead: true' }, { status: 400 })
     } catch (error) {
       console.error('[PATCH /api/notifications]', error)
-      return NextResponse.json({ error: '更新通知失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新通知失败')
     }
   })
 }

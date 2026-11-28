@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, userHasPermission } from '@/lib/auth'
@@ -59,7 +61,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi({ ...po, lines, activityLog }))
   } catch (error) {
     console.error('[GET /api/purchase-orders/:id]', error)
-    return NextResponse.json({ error: '获取失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取失败')
   }
 }
 
@@ -404,7 +406,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(po))
     } catch (error) {
       console.error('[PUT /api/purchase-orders/:id]', error)
-      return NextResponse.json({ error: '保存失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '保存失败')
     }
   }, { require: 'purchase.order.update' })
 }
@@ -472,7 +474,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/purchase-orders/:id]', error)
-      return NextResponse.json({ error: '删除失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除失败')
     }
   }, { require: 'purchase.order.update' })
 }
@@ -830,7 +832,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PATCH /api/purchase-orders/:id]', error)
-      return NextResponse.json({ error: '状态更新失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '状态更新失败')
     }
   }, { require: 'purchase.order.update' })
 }

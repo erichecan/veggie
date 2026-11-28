@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -69,7 +71,7 @@ export async function POST(req: Request) {
     } catch (e) {
       if (e instanceof RbacError) return NextResponse.json({ error: e.message }, { status: e.status })
       console.error('[rbac] create role failed', e)
-      return NextResponse.json({ error: '创建角色失败' }, { status: 500 })
+      return apiRouteErrorResponse(e, '创建角色失败')
     }
   }, { require: 'system.rbac.manage' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -15,7 +17,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     } catch (error) {
       if (error instanceof CategoryTreeError) return NextResponse.json({ error: error.message }, { status: 400 })
       console.error('[PUT /api/product-categories/[id]]', error)
-      return NextResponse.json({ error: '更新分类失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新分类失败')
     }
   }, { require: 'master.product_category.update' })
 }
@@ -35,7 +37,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     } catch (error) {
       if (error instanceof CategoryTreeError) return NextResponse.json({ error: error.message }, { status: 409 })
       console.error('[DELETE /api/product-categories/[id]]', error)
-      return NextResponse.json({ error: '删除分类失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除分类失败')
     }
   }, { require: 'master.product_category.delete' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, userHasPermission } from '@/lib/auth'
@@ -156,7 +158,7 @@ export async function POST(req: Request) {
       const err = error as { status?: number; message?: string }
       if (err.status) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[receipt-manifests]', error)
-      return NextResponse.json({ error: '回单处理失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '回单处理失败')
     }
   }, { require: ['finance.write_off.confirm', 'dispatch.goods_return.review'] })
 }

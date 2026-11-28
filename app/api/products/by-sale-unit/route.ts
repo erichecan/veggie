@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -306,7 +308,7 @@ export async function GET(req: Request) {
       })
     } catch (error) {
       console.error('[GET /api/products/by-sale-unit]', error)
-      return NextResponse.json({ error: '获取商品可售单位列表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取商品可售单位列表失败')
     }
   })
 }

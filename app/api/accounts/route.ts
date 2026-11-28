@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -18,7 +20,7 @@ export async function GET() {
     return NextResponse.json(serializeApi(accounts))
   } catch (error) {
     console.error('[GET /api/accounts]', error)
-    return NextResponse.json({ error: '获取科目表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取科目表失败')
   }
 }
 
@@ -76,7 +78,7 @@ export async function POST(req: Request) {
       })
     } catch (error) {
       console.error('[POST /api/accounts ledger]', error)
-      return NextResponse.json({ error: '总账查询失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '总账查询失败')
     }
   }, { require: 'finance.account.manage' })
 }

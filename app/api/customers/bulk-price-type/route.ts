@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ updated: 0, unchanged, notFound: ids.length - visible.length })
     } catch (error) {
       console.error('[POST /api/customers/bulk-price-type]', error)
-      return NextResponse.json({ error: '批量更新 Price Type 失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '批量更新 Price Type 失败')
     }
   }, { require: 'master.customer.update' })
 }

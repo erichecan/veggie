@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -351,7 +353,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '部分退货记录已被其他请求结算，请刷新后重试' }, { status: 409 })
       }
       console.error('[POST /api/credit-notes/generate-from-returns]', error)
-      return NextResponse.json({ error: '生成退款单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '生成退款单失败')
     }
   }, { require: 'finance.credit_note.create' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ results })
     } catch (err) {
       console.error('[bulk-images] error:', err)
-      return NextResponse.json({ error: '批量上传失败，请稍后重试' }, { status: 500 })
+      return apiRouteErrorResponse(err, '批量上传失败，请稍后重试')
     }
   }, { require: 'master.product.update' })
 }

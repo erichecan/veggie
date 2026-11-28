@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -26,7 +28,7 @@ export async function GET(
       return NextResponse.json(serializeApi(item))
     } catch (error) {
       console.error('[GET /api/purchase-suggestions/[id]]', error)
-      return NextResponse.json({ error: '获取采购建议详情失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取采购建议详情失败')
     }
   })
 }
@@ -88,7 +90,7 @@ export async function PUT(
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[PUT /api/purchase-suggestions/[id]]', error)
-      return NextResponse.json({ error: '更新采购建议失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新采购建议失败')
     }
   }, { require: 'purchase.suggestion.manage' })
 }
@@ -116,7 +118,7 @@ export async function DELETE(
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/purchase-suggestions/[id]]', error)
-      return NextResponse.json({ error: '删除采购建议失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除采购建议失败')
     }
   }, { require: 'purchase.suggestion.manage' })
 }

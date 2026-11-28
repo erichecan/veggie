@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -33,7 +35,7 @@ export async function GET(req: Request) {
       return NextResponse.json(slots)
     } catch (e) {
       console.error('[driver-slots GET]', e)
-      return NextResponse.json({ error: 'Failed to fetch driver slots' }, { status: 500 })
+      return apiRouteErrorResponse(e, 'Failed to fetch driver slots')
     }
   })
 }
@@ -87,6 +89,6 @@ async function createSlot(req: Request) {
       return NextResponse.json({ error: '该司机已在相同时段和批次中（若在归档里请先恢复）' }, { status: 409 })
     }
     console.error('[driver-slots POST]', e)
-    return NextResponse.json({ error: 'Failed to create driver slot' }, { status: 500 })
+    return apiRouteErrorResponse(e, 'Failed to create driver slot')
   }
 }

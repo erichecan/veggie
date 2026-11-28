@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { assertInvoiceReturnsResolved, invoiceSourceOrderIds, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -57,7 +59,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi({ ...invoice, lines, saleOrderCodes }))
   } catch (error) {
     console.error('[GET /api/invoices/[id]]', error)
-    return NextResponse.json({ error: '获取发票失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取发票失败')
   }
 }
 
@@ -173,7 +175,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const err = error as { status?: number; message?: string }
       if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[PUT /api/invoices/[id]]', error)
-      return NextResponse.json({ error: '更新发票失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新发票失败')
     }
   }, { require: 'finance.invoice.update' })
 }
@@ -196,7 +198,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/invoices/[id]]', error)
-      return NextResponse.json({ error: '删除发票失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除发票失败')
     }
   }, { require: 'finance.invoice.delete' })
 }

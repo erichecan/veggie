@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { recomputeVendorBillBalance } from '@/lib/finance/vendor-bill-balance'
@@ -35,7 +37,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       return NextResponse.json(serializeApi({ items: payments, count: payments.length, sum }))
     } catch (error) {
       console.error('[GET /api/vendor-bills/[id]/payments]', error)
-      return NextResponse.json({ error: '获取付款流水失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取付款流水失败')
     }
   }, { require: 'finance.vendor_bill.read' })
 }
@@ -110,7 +112,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: err.status })
       }
       console.error('[POST /api/vendor-bills/[id]/payments]', error)
-      return NextResponse.json({ error: '登记付款失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '登记付款失败')
     }
   }, { require: 'finance.vendor_bill.update' })
 }

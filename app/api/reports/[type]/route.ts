@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, effectiveRoles, type JwtPayload } from '@/lib/auth'
@@ -95,7 +97,7 @@ export async function POST(
       }
       console.error('[Reports API]', err)
       const message = err instanceof Error ? err.message : '报表查询失败'
-      return NextResponse.json({ error: message }, { status: 500 })
+      return apiRouteErrorResponse(err, message)
     }
   }, { require: 'analytics.report.generate' })
 }

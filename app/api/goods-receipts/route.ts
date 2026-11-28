@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -114,7 +116,7 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi({ items, total }))
   } catch (error) {
     console.error('[GET /api/goods-receipts]', error)
-    return NextResponse.json({ error: '获取收货单失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取收货单失败')
   }
 }
 
@@ -243,7 +245,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(result), { status: 201 })
     } catch (error) {
       console.error('[POST /api/goods-receipts]', error)
-      return NextResponse.json({ error: '记录收货失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '记录收货失败')
     }
   }, { require: 'stock.receipt.create' })
 }

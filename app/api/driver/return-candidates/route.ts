@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -83,7 +85,7 @@ export async function GET(req: Request) {
       })).filter(order => order.lines.length > 0))
     } catch (error) {
       console.error('[GET /api/driver/return-candidates]', error)
-      return NextResponse.json({ error: '获取可登记订单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取可登记订单失败')
     }
   }, { require: 'dispatch.trip.report_return' })
 }

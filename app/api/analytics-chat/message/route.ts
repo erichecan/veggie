@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
@@ -65,7 +67,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi({ status: result.status, reason: result.reason }))
     } catch (error) {
       console.error('[POST /api/analytics-chat/message]', error)
-      return NextResponse.json({ error: 'AI 问数理解失败，请稍后重试' }, { status: 500 })
+      return apiRouteErrorResponse(error, 'AI 问数理解失败，请稍后重试')
     }
   }, { require: 'analytics.chat.read' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -82,7 +84,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       })
     } catch (error) {
       console.error('[GET /api/waves/[id]/pick-sheet]', error)
-      return NextResponse.json({ error: '获取拣货单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取拣货单失败')
     }
   })
 }

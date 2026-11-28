@@ -19,6 +19,7 @@
  * 逐单独立事务：一张单被锁/状态不允许，不该连累其它单一起回滚。结果分
  * applied / blocked 两组返回，前端分别展示，不是笼统的「N 条失败」。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -366,10 +367,7 @@ export async function POST(req: Request) {
       })
     } catch (error) {
       console.error('[POST /api/daily-sales/shortage/bulk-adjust]', error)
-      return NextResponse.json(
-        { error: '批量处理失败', message: error instanceof Error ? error.message : String(error) },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(error, '批量处理失败')
     }
   }, { require: 'sales.daily_report.manage' })
 }

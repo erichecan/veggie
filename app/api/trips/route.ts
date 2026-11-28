@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -105,7 +107,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(tripsWithOrderCodes))
     } catch (error) {
       console.error('[GET /api/trips]', error)
-      return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取行程失败')
     }
   })
 }
@@ -291,7 +293,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(trip), { status: 201 })
     } catch (error) {
       console.error('[POST /api/trips]', error)
-      return NextResponse.json({ error: '创建行程失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建行程失败')
     }
   }, { require: 'dispatch.trip.create' })
 }

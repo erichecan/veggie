@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -22,7 +24,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ runs, current }))
     } catch (error) {
       console.error('[GET /api/finance/ledger-check]', error)
-      return NextResponse.json({ error: '获取核对结果失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取核对结果失败')
     }
   }, { require: 'finance.account.read' })
 }
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(run), { status: 201 })
     } catch (error) {
       console.error('[POST /api/finance/ledger-check]', error)
-      return NextResponse.json({ error: '账本核对失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '账本核对失败')
     }
   }, { require: 'finance.account.read' })
 }

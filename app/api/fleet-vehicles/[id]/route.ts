@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -50,7 +52,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       return NextResponse.json(vehicle)
     } catch (error) {
       console.error('[PUT /api/fleet-vehicles/:id]', error)
-      return NextResponse.json({ error: '更新车辆失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新车辆失败')
     }
   }, { require: 'dispatch.driver_slot.manage' })
 }
@@ -62,7 +64,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
       return NextResponse.json(await prisma.fleetVehicle.update({ where: { id }, data: { isActive: false } }))
     } catch (error) {
       console.error('[DELETE /api/fleet-vehicles/:id]', error)
-      return NextResponse.json({ error: '停用车辆失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '停用车辆失败')
     }
   }, { require: 'dispatch.driver_slot.manage' })
 }

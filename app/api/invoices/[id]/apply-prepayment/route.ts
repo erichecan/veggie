@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -44,7 +46,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: err.status })
       }
       console.error('[POST /api/invoices/[id]/apply-prepayment]', error)
-      return NextResponse.json({ error: '预付款冲抵失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '预付款冲抵失败')
     }
   }, { require: 'finance.invoice.pay' })
 }

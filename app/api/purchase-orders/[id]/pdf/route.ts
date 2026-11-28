@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { renderPurchaseOrderHtml } from '@/lib/purchase-order-pdf'
@@ -23,6 +25,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     })
   } catch (error) {
     console.error('[GET /api/purchase-orders/[id]/pdf]', error)
-    return NextResponse.json({ error: 'PDF generation failed' }, { status: 500 })
+    return apiRouteErrorResponse(error, 'PDF generation failed')
   }
 }

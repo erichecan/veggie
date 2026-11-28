@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -38,7 +40,7 @@ export async function GET(req: Request) {
     return NextResponse.json(serializeApi(lots))
   } catch (error) {
     console.error('[GET /api/lots]', error)
-    return NextResponse.json({ error: '获取批次列表失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取批次列表失败')
   }
 }
 
@@ -118,7 +120,7 @@ export async function POST(req: Request) {
       if ((error as { code?: string })?.code === 'P2002' || (error instanceof Error && error.message.includes('Unique constraint'))) {
         return NextResponse.json({ error: '批号已存在，请换一个批号' }, { status: 409 })
       }
-      return NextResponse.json({ error: '创建批次失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建批次失败')
     }
   }, { require: 'stock.lot.manage' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -20,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(serializeApi(wave))
   } catch (error) {
     console.error('[GET /api/waves/[id]]', error)
-    return NextResponse.json({ error: '获取波次失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取波次失败')
   }
 }
 
@@ -69,7 +71,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(wave))
     } catch (error) {
       console.error('[PUT /api/waves/[id]]', error)
-      return NextResponse.json({ error: '更新波次失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新波次失败')
     }
   }, { require: ['dispatch.wave.update', 'stock.quality.manage'] })
 }
@@ -85,7 +87,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/waves/[id]]', error)
-      return NextResponse.json({ error: '删除波次失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除波次失败')
     }
   }, { require: 'dispatch.wave.delete' })
 }

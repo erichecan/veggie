@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -49,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ error: err.message }, { status: err.status })
       }
       console.error('[POST /api/credit-notes/[id]/allocations]', error)
-      return NextResponse.json({ error: '贷记单抵扣失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '贷记单抵扣失败')
     }
   }, { require: 'finance.credit_note.update' })
 }

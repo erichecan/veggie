@@ -1,9 +1,11 @@
+
 /**
  * GET /api/print/returns-pdf —— 未核销回单清单 PDF（核销管理，20261021）
  *   ?groupBy=date|driver &from=&to=&driver=&timeOfDay=am|pm&payment=CASH|ONLINE&status=PENDING,ISSUE
  * 与送货单 / 日报同一套：服务端取数（lib/accounting/returns.ts）→ HTML 模板 → 无头 Chromium 渲染 PDF。
  * 只读，权限与核销页「钱」板块相同（finance.settlement.read）。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { listReturns, type ReturnState } from '@/lib/accounting/returns'
@@ -49,7 +51,7 @@ export async function GET(req: Request) {
       })
     } catch (error) {
       console.error('[GET /api/print/returns-pdf]', error)
-      return NextResponse.json({ error: '生成未核销清单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '生成未核销清单失败')
     }
   }, { require: 'finance.settlement.read' })
 }

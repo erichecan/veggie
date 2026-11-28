@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { assertLegacyReceiptReviewComplete, assertReceiptIssuesResolved, assertReturnReviewComplete, assertReturnsResolved, lockReturnOrders } from '@/lib/return-invoice-guard'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -359,7 +361,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, affected: ids.length, detail })
     } catch (error) {
       console.error('[POST /api/orders/bulk]', error)
-      return NextResponse.json({ error: '批量操作失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '批量操作失败')
     }
   // ⛔ 20260924 发现：route-map.ts 那层外层闸门已放行 finance.write_off.confirm，
   // 但 withAuth 自己这层 require 是第二道独立闸门，之前漏改，FINANCE 请求会在

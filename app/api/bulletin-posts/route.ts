@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -48,7 +50,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ items, total, page, pageSize }))
     } catch (error) {
       console.error('[GET /api/bulletin-posts]', error)
-      return NextResponse.json({ error: '获取信息广场失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取信息广场失败')
     }
   })
 }
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(post), { status: 201 })
     } catch (error) {
       console.error('[POST /api/bulletin-posts]', error)
-      return NextResponse.json({ error: '发布失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '发布失败')
     }
   })
 }

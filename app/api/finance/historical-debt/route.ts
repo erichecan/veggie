@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -33,7 +35,7 @@ export async function GET(req: Request) {
       return NextResponse.json(map)
     } catch (error) {
       console.error('[GET /api/finance/historical-debt]', error)
-      return NextResponse.json({ error: '获取历史欠款失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取历史欠款失败')
     }
   }, { require: 'finance.account.read' })
 }

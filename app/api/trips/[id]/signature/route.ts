@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -81,7 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
       console.error('[POST /api/trips/[id]/signature]', error)
-      return NextResponse.json({ error: '签收保存失败，请重试' }, { status: 500 })
+      return apiRouteErrorResponse(error, '签收保存失败，请重试')
     }
   }, { require: 'dispatch.trip.sign_delivery' })
 }

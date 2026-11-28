@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -124,7 +126,7 @@ export async function GET(
       return NextResponse.json(serializeApi({ shortages, summary }))
     } catch (error) {
       console.error('[GET /api/waves/[id]/shortage]', error)
-      return NextResponse.json({ error: '获取缺货信息失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取缺货信息失败')
     }
   })
 }

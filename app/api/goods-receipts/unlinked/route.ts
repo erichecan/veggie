@@ -1,3 +1,4 @@
+
 /**
  * GET /api/goods-receipts/unlinked?days=30&limit=100
  * ============================================================================
@@ -11,6 +12,7 @@
  * 判据见 lib/receipt-linkage.isUnlinkedInbound（白名单反选，新增入库路径若忘了
  * 登记会自动落进这里被发现，而不是静默漏掉）。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -75,7 +77,7 @@ export async function GET(req: Request) {
       }))
     } catch (error) {
       console.error('[GET /api/goods-receipts/unlinked]', error)
-      return NextResponse.json({ error: '获取未关联入库失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取未关联入库失败')
     }
   }, { require: 'stock.receipt.read' })
 }

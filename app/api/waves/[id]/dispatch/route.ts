@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -40,7 +42,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: result.updatedCount, tripId: result.tripId }))
     } catch (error) {
       console.error('[PUT /api/waves/[id]/dispatch]', error)
-      return NextResponse.json({ error: '确认出发失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '确认出发失败')
     }
   }, { require: 'dispatch.wave.update' })
 }

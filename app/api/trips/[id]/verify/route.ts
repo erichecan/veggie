@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -58,7 +60,7 @@ export async function GET(
     }))
   } catch (error) {
     console.error('[GET /api/trips/[id]/verify]', error)
-    return NextResponse.json({ error: '获取核货状态失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取核货状态失败')
   }
 }
 
@@ -185,7 +187,7 @@ export async function POST(
       }))
     } catch (error) {
       console.error('[POST /api/trips/[id]/verify]', error)
-      return NextResponse.json({ error: '核货确认失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '核货确认失败')
     }
   }, { require: 'dispatch.trip.verify' })
 }

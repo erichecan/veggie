@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { serializeApi } from '@/lib/api-serializer'
 import {
@@ -45,7 +47,7 @@ export async function GET(req: Request) {
       }))
     } catch (error) {
       console.error('[GET /api/analytics/loss-dashboard]', error)
-      return NextResponse.json({ error: '获取损耗与退货仪表盘数据失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取损耗与退货仪表盘数据失败')
     }
   }, { require: 'analytics.inventory.read' })
 }

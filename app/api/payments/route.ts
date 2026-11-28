@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -50,7 +52,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(payments))
     } catch (error) {
       console.error('[GET /api/payments]', error)
-      return NextResponse.json({ error: '获取收款记录失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取收款记录失败')
     }
   }, { require: 'finance.payment.read' })
 }
@@ -236,7 +238,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: err.message ?? 'Bad Request' }, { status: err.status })
       }
       console.error('[POST /api/payments]', error)
-      return NextResponse.json({ error: '登记收款失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '登记收款失败')
     }
   }, { require: 'finance.payment.create' })
 }

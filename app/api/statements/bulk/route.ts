@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
@@ -40,7 +42,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ results })
     } catch (error) {
       console.error('[POST /api/statements/bulk]', error)
-      return NextResponse.json({ error: '批量生成对账单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '批量生成对账单失败')
     }
   }, { require: 'finance.statement.create' })
 }

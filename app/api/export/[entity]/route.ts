@@ -1,3 +1,4 @@
+
 /**
  * GET /api/export/<entity>?<列表页原样的筛选参数>
  * ============================================================================
@@ -11,6 +12,7 @@
  * 行数上限：超过上限时截断，并在 X-Export-Truncated 头里带上实际匹配总数，
  *          前端据此提示用户"结果超过 N 行，已导出前 M 行"，不静默给半份数据。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { buildCsv, csvResponseHeaders } from '@/lib/export/csv'
@@ -49,7 +51,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ entity: 
       return res
     } catch (error) {
       console.error(`[GET /api/export/${entity}]`, error)
-      return NextResponse.json({ error: '导出失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '导出失败')
     }
   }, { require: meta.permission })
 }

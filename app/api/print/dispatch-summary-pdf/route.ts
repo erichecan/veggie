@@ -6,6 +6,7 @@
  * loadDispatchPrintData() 取数据、生成 HTML，再用无头 Chromium 渲染成 PDF 二进制返回——
  * 不接受客户端传来的任意 HTML（避免无头浏览器被拿去做 SSRF 跳板）。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadDispatchPrintData, parseDispatchSelector } from '@/lib/print/dispatch-loader'
@@ -53,10 +54,7 @@ export async function GET(req: Request) {
       })
     } catch (error) {
       console.error('[GET /api/print/dispatch-summary-pdf]', error)
-      return NextResponse.json(
-        { error: 'PDF 生成失败', message: error instanceof Error ? error.message : String(error) },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(error, 'PDF 生成失败')
     }
   }, { require: 'print.center.access' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -56,7 +58,7 @@ export async function GET(req: Request) {
       }))
     } catch (error) {
       console.error('[GET /api/order-returns]', error)
-      return NextResponse.json({ error: '获取退货列表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取退货列表失败')
     }
   }, { require: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review', 'dispatch.goods_return.register'] })
 }
@@ -120,7 +122,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: error.message }, { status: error.status })
       }
       console.error('[POST /api/order-returns]', error)
-      return NextResponse.json({ error: '登记退货失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '登记退货失败')
     }
   }, { require: ['dispatch.goods_return.register', 'dispatch.goods_return.warehouse_verify'] })
 }

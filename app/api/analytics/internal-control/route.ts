@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
@@ -96,7 +98,7 @@ export async function GET(req: Request) {
       }))
     } catch (error) {
       console.error('[GET /api/analytics/internal-control]', error)
-      return NextResponse.json({ error: '获取内控审计失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取内控审计失败')
     }
   }, { require: 'analytics.finance.read' }) // TODO: 临时放开给 OPERATOR 看数据分析中心，权限模型定下来后收紧
 }

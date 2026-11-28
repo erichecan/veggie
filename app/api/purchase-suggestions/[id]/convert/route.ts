@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -127,7 +129,7 @@ export async function POST(
       const err = error as { status?: number; message?: string }
       if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/purchase-suggestions/[id]/convert]', error)
-      return NextResponse.json({ error: '转采购单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '转采购单失败')
     }
   }, { require: 'purchase.suggestion.manage' })
 }

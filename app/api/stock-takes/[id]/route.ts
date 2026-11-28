@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -34,7 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(st))
     } catch (error) {
       console.error('[GET /api/stock-takes/:id]', error)
-      return NextResponse.json({ error: '获取盘点单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取盘点单失败')
     }
   }, { require: 'stock.take.read' })
 }
@@ -150,7 +152,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: `未知 action: ${action}` }, { status: 400 })
     } catch (error) {
       console.error('[PATCH /api/stock-takes/:id]', error)
-      return NextResponse.json({ error: '操作失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '操作失败')
     }
   }, { require: 'stock.take.update' })
 }

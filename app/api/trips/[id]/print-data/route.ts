@@ -10,6 +10,7 @@
  *   3. dangerouslySetInnerHTML 注入，模板内嵌 <script>window.print()</script> 触发浏览器打印
  */
 
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadTripPrintData } from '@/lib/print/trip-loader'
@@ -32,13 +33,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       })
     } catch (error) {
       console.error('[GET /api/trips/[id]/print-data]', error)
-      return NextResponse.json(
-        {
-          error: '获取打印数据失败',
-          message: error instanceof Error ? error.message : String(error),
-        },
-        { status: 500 },
-      )
+      return apiRouteErrorResponse(error, '获取打印数据失败')
     }
   }, { require: 'dispatch.trip.print' })
 }

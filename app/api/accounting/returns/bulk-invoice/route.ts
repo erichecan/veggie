@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -49,7 +51,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ total: ids.length, created, skipped, failed })
     } catch (error) {
       console.error('[POST /api/accounting/returns/bulk-invoice]', error)
-      return NextResponse.json({ error: '批量生成发票失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '批量生成发票失败')
     }
   }, { require: 'finance.invoice.create' })
 }

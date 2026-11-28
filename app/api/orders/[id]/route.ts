@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
@@ -140,7 +142,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json(deriveOrderItems(serializeApi(enrichedOrder)))
   } catch (error) {
     console.error('[GET /api/orders/[id]]', error)
-    return NextResponse.json({ error: '获取订单失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取订单失败')
   }
 }
 
@@ -670,7 +672,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id },
             data: { status: orderBefore.status, confirmationDate: orderBefore.confirmationDate },
           }).catch(() => {})
-          return NextResponse.json({ error: '从波次移除失败，订单状态已回滚，请重试或联系管理员' }, { status: 500 })
+          return apiRouteErrorResponse(e, '从波次移除失败，订单状态已回滚，请重试或联系管理员')
         }
       }
 
@@ -896,7 +898,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: err.message ?? '请求无效' }, { status: err.status })
       }
       console.error('[PUT /api/orders/[id]]', error)
-      return NextResponse.json({ error: '更新订单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '更新订单失败')
     }
   }, { require: 'sales.order.update' })
 }
@@ -926,7 +928,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/orders/[id]]', error)
-      return NextResponse.json({ error: '删除订单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '删除订单失败')
     }
   }, { require: 'sales.order.delete' })
 }

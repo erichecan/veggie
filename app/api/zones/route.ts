@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -10,7 +12,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(zones))
     } catch (error) {
       console.error('[GET /api/zones]', error)
-      return NextResponse.json({ error: '获取温区列表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取温区列表失败')
     }
   }, { require: 'stock.zone.read' })
 }

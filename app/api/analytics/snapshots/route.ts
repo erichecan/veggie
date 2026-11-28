@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -28,7 +30,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ items }))
     } catch (error) {
       console.error('[GET /api/analytics/snapshots]', error)
-      return NextResponse.json({ error: '获取快照失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取快照失败')
     }
   }, { require: 'analytics.report.read' })
 }
@@ -57,7 +59,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ recomputed })
     } catch (error) {
       console.error('[POST /api/analytics/snapshots]', error)
-      return NextResponse.json({ error: '重算快照失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '重算快照失败')
     }
   }, { require: 'analytics.report.manage' })
 }

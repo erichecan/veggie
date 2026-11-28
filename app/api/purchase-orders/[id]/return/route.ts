@@ -1,3 +1,4 @@
+
 /**
  * POST /api/purchase-orders/:id/return —— 采购退货（退给供应商）
  * ============================================================================
@@ -28,6 +29,7 @@
  * 状态的账单，退回到"只改库存、算 refundExTax 给财务参考"的老路径，两条路径共用同一个入口，
  * 不引入第二套编辑机制。
  */
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -276,7 +278,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ error: err.message ?? '请求有误' }, { status: err.status })
       }
       console.error('[POST /api/purchase-orders/[id]/return]', error)
-      return NextResponse.json({ error: '采购退货失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '采购退货失败')
     }
   }, { require: 'purchase.order.receive' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { listDriverCash, CASH_ORDER_STATUSES } from '@/lib/accounting/driver-cash'
@@ -20,7 +22,7 @@ export async function GET(req: Request) {
       return NextResponse.json(await listDriverCash({ from: day(sp.get('from')), to: day(sp.get('to')) }))
     } catch (error) {
       console.error('[GET /api/accounting/driver-cash]', error)
-      return NextResponse.json({ error: '获取司机收款汇总失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取司机收款汇总失败')
     }
   }, { require: 'finance.settlement.read' })
 }

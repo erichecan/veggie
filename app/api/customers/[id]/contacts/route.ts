@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -38,7 +40,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(contacts))
     } catch (error) {
       console.error('[GET /api/customers/[id]/contacts]', error)
-      return NextResponse.json({ error: '获取联系人失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取联系人失败')
     }
   }, { require: 'master.customer.read_detail' })
 }
@@ -106,7 +108,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json(serializeApi(contact), { status: 201 })
     } catch (error) {
       console.error('[POST /api/customers/[id]/contacts]', error)
-      return NextResponse.json({ error: '新增联系人失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '新增联系人失败')
     }
   }, { require: 'master.customer.update' })
 }

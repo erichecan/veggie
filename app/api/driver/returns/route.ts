@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
     } catch (error) {
       if (error instanceof OrderReturnInputError) return NextResponse.json({ error: error.message }, { status: error.status })
       console.error('[POST /api/driver/returns]', error)
-      return NextResponse.json({ error: '退货登记失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '退货登记失败')
     }
   }, { require: 'dispatch.trip.report_return' })
 }

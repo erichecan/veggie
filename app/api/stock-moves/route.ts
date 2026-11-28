@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
@@ -69,7 +71,7 @@ export async function GET(req: Request) {
     }))
   } catch (error) {
     console.error('[GET /api/stock-moves]', error)
-    return NextResponse.json({ error: '获取库存记录失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '获取库存记录失败')
   }
 }
 
@@ -155,7 +157,7 @@ export async function POST(req: Request) {
       const st = (error as { status?: number })?.status
       if (st && st >= 400 && st < 500) return NextResponse.json({ error: (error as Error).message }, { status: st })
       console.error('[POST /api/stock-moves]', error)
-      return NextResponse.json({ error: '创建库存记录失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建库存记录失败')
     }
   }, { require: 'stock.move.create' })
 }

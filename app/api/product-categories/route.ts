@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -13,7 +15,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(new URL(req.url).searchParams.get('tree') === '1' ? buildCategoryTree(cats) : cats))
     } catch (error) {
       console.error('[GET /api/product-categories]', error)
-      return NextResponse.json({ error: '获取分类失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取分类失败')
     }
   }
   const params = new URL(req.url).searchParams
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
     } catch (error) {
       if (error instanceof CategoryTreeError) return NextResponse.json({ error: error.message }, { status: 400 })
       console.error('[POST /api/product-categories]', error)
-      return NextResponse.json({ error: '创建分类失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建分类失败')
     }
   }, { require: 'master.product_category.create' })
 }

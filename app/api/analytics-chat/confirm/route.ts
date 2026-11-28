@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
           errorMessage: '执行查询失败',
         },
       })
-      return NextResponse.json({ error: '执行查询失败，请稍后重试' }, { status: 500 })
+      return apiRouteErrorResponse(error, '执行查询失败，请稍后重试')
     }
   }, { require: 'analytics.chat.read' })
 }

@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { findSimilarProducts } from '@/lib/product-similarity'
 
@@ -13,6 +15,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ candidates })
   } catch (error) {
     console.error('[GET /api/products/similar]', error)
-    return NextResponse.json({ error: '查询相似商品失败' }, { status: 500 })
+    return apiRouteErrorResponse(error, '查询相似商品失败')
   }
 }

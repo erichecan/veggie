@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -40,7 +42,7 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi({ items, total, page, pageSize }))
     } catch (error) {
       console.error('[GET /api/statements]', error)
-      return NextResponse.json({ error: '获取对账单列表失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取对账单列表失败')
     }
   }, { require: 'finance.statement.read' })
 }
@@ -102,7 +104,7 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi({ ...statement, openingSource }), { status: 201 })
     } catch (error) {
       console.error('[POST /api/statements]', error)
-      return NextResponse.json({ error: '创建对账单失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '创建对账单失败')
     }
   }, { require: 'finance.statement.create' })
 }

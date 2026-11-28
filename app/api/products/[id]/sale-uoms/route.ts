@@ -1,3 +1,5 @@
+
+import { apiRouteErrorResponse } from '@/lib/api-route-error'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
@@ -31,7 +33,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(rows))
     } catch (error) {
       console.error('[GET /api/products/[id]/sale-uoms]', error)
-      return NextResponse.json({ error: '获取可售单位失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '获取可售单位失败')
     }
   })
 }
@@ -77,7 +79,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json(serializeApi(rows))
     } catch (error) {
       console.error('[PUT /api/products/[id]/sale-uoms]', error)
-      return NextResponse.json({ error: '保存可售单位失败' }, { status: 500 })
+      return apiRouteErrorResponse(error, '保存可售单位失败')
     }
   }, { require: 'master.product.update' })
 }
