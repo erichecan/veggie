@@ -1,4 +1,5 @@
 import { createOrderInvoiceDraftsBatch } from '@/lib/invoice-from-order'
+import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { round2, toNum } from '@/lib/decimal-helpers'
 import { nextSequenceName } from '@/lib/sequence-number'
@@ -112,7 +113,7 @@ export async function hasPostedReturnInvoice(tx: Tx, orderId: string) {
 async function reduceDraftInvoiceLineQuantity(tx: Tx, orderId: string, orderLineId: string, reduceQty: number) {
   const drafts = await tx.invoice.findMany({
     where: { saleOrderIds: { has: orderId }, status: 'DRAFT' },
-    select: { id: true, lines: true, amountPaid: true },
+    select: { id: true, lines: true },
   })
   let remainingAcrossDrafts = reduceQty
   for (const invoice of drafts) {
@@ -135,8 +136,8 @@ async function reduceDraftInvoiceLineQuantity(tx: Tx, orderId: string, orderLine
     const totalIncTax = round2(subtotalExTax + totalTax)
     await tx.invoice.update({ where: { id: invoice.id }, data: {
       lines: updatedRows as never, subtotalExTax, totalTax, totalIncTax,
-      amountDue: round2(totalIncTax - toNum(invoice.amountPaid)),
     } })
+    await recomputeInvoiceBalance(tx, invoice.id)
   }
   if (remainingAcrossDrafts > 0.0005) returnError('草稿发票中的原订单行数量不足以同步退货，请会计先核对发票')
 }
