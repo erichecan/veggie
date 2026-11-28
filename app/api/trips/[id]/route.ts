@@ -87,10 +87,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ? await prisma.pickingWave.findUnique({ where: { id: trip.waveId }, select: { dispatchedAt: true } })
       : null
     const orderIds = [...new Set(restaurants.flatMap(restaurant => restaurant.orderIds ?? []))]
-    const orders = orderIds.length > 0
-      ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, code: true } })
-      : []
+    const restaurantIds = [...new Set(restaurants.map(restaurant => String(restaurant.restaurantId ?? '')).filter(Boolean))]
+    const [orders, customers] = await Promise.all([
+      orderIds.length > 0
+        ? prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, code: true } })
+        : Promise.resolve([]),
+      restaurantIds.length > 0
+        ? prisma.customer.findMany({ where: { id: { in: restaurantIds } }, select: { id: true, creditLimit: true } })
+        : Promise.resolve([]),
+    ])
     const orderCodeById = new Map((orders as Array<{ id: string; code: string | null }>).map(order => [order.id, order.code ?? order.id.slice(-8).toUpperCase()]))
+    const collectionInstructionByCustomer = new Map(customers.map(customer => [customer.id, Number(customer.creditLimit ?? 0) <= 0 ? 'CASH_ON_DELIVERY' as const : 'SIGN' as const]))
     const canonicalReturns = await prisma.orderReturn.findMany({
       where: { sourceTripId: id },
       include: { order: { select: { restaurantId: true } } },
@@ -137,6 +144,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       restaurants: restaurants.map(restaurant => ({
         ...restaurant,
         orderCodes: (restaurant.orderIds ?? []).map(orderId => orderCodeById.get(orderId) ?? orderId.slice(-8).toUpperCase()),
+        collectionInstruction: collectionInstructionByCustomer.get(String(restaurant.restaurantId)) ?? 'CASH_ON_DELIVERY',
         returns: [
           ...(Array.isArray(restaurant.returns) ? restaurant.returns : []),
           ...(canonicalByOrder.get(String(restaurant.restaurantId)) ?? []),
@@ -256,9 +264,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           ? data.restaurants as PaymentRestaurantJson[]
           : oldRestaurants
         const oldById = new Map(oldRestaurants.map(r => [r.restaurantId, r]))
+        const customerIds = [...new Set(incomingRestaurants.map(r => r.restaurantId).filter(Boolean))]
+        const customers = customerIds.length > 0
+          ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, creditLimit: true } })
+          : []
+        const creditLimitByCustomer = new Map(customers.map(customer => [customer.id, Number(customer.creditLimit ?? 0)]))
         for (const restaurant of incomingRestaurants) {
           const old = oldById.get(restaurant.restaurantId)
           if (!old) continue
+          const wasAlreadyLocked = !!old.delivered
+            || (old.orderIds ?? []).some(orderId => !!old.orderTimings?.[orderId]?.endedAt)
+          if (!wasAlreadyLocked) {
+            const creditLimit = creditLimitByCustomer.get(restaurant.restaurantId) ?? 0
+            if (creditLimit > 0) {
+              restaurant.payment = 0
+              restaurant.paymentMethod = null
+            } else if (typeof restaurant.payment === 'number' && Number.isFinite(restaurant.payment) && restaurant.payment >= 0) {
+              restaurant.paymentMethod = 'CASH'
+            }
+          }
           const completed = !!old.delivered || !!restaurant.delivered
             || (old.orderIds ?? []).some(orderId => !!old.orderTimings?.[orderId]?.endedAt)
           const amount = Number(restaurant.payment)

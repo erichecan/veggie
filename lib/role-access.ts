@@ -95,6 +95,9 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/trips/*/returns', methods: READ },
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: ['GET', 'PUT'] },
+    // The standalone signature endpoint uses POST so old JWTs (without an RBAC
+    // permission bitmap) must explicitly allow it in this legacy role scope.
+    { pattern: '/api/trips/*/signature', methods: ['POST'] },
     { pattern: '/api/trips/*/order-timing', methods: ['POST'] },
     // 20260924：交账（/api/trips/*/settlement）、对账（/api/driver-reports/**）
     // 两个独立入口下线，司机不用再自己报数——钱由会计核销页按系统数据直接确认

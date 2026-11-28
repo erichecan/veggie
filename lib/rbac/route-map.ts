@@ -222,6 +222,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/discrepancy', methods: R, permission: 'dispatch.trip.read_discrepancy' },
   { pattern: '/api/trips/*/discrepancy', methods: ['PUT'], permission: 'dispatch.trip.discrepancy' },
   { pattern: '/api/trips/*/signature-correction', permission: 'dispatch.trip.correct_signature' },
+  { pattern: '/api/trips/*/signature', methods: ['POST'], permission: 'dispatch.trip.update' },
   { pattern: '/api/trips/*/picking-pdf', permission: 'dispatch.trip.print' },
   { pattern: '/api/trips/*/summary-pdf', permission: 'dispatch.trip.print' },
   { pattern: '/api/trips/*/print-data', permission: 'dispatch.trip.print' },

@@ -24,6 +24,7 @@ interface InboundLine {
   taxRate?: number
   reason?: string
   sourceOrderId?: string
+  sourceOrderLineId?: string
   sourceTripId?: string
   sequence?: number
 }
@@ -43,6 +44,26 @@ export async function GET(req: Request) {
       include: { lines: { orderBy: { sequence: 'asc' } }, sourceInvoice: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     })
+    // Recover a display link for legacy notes whose invoice relation was never saved.
+    // Only return a link when every source line points to exactly one common invoice.
+    const unlinked = creditNotes.filter(note => !note.sourceInvoiceId && note.lines.length > 0)
+    const orderIdsForRecovery = [...new Set(unlinked.flatMap(note => note.lines.map(line => line.sourceOrderId).filter((id): id is string => Boolean(id))))]
+    const candidateInvoices = orderIdsForRecovery.length ? await prisma.invoice.findMany({
+      where: { saleOrderIds: { hasSome: orderIdsForRecovery }, status: { in: ['POSTED', 'PAID'] } },
+      select: { id: true, name: true, customerId: true, saleOrderIds: true, lines: true },
+    }) : []
+    const recoveredInvoiceByNote = new Map<string, { id: string; name: string }>()
+    for (const note of unlinked) {
+      if (note.lines.some(line => !line.sourceOrderId)) continue
+      const matches = candidateInvoices.filter(invoice => invoice.customerId === note.customerId && note.lines.every(line => {
+        if (!invoice.saleOrderIds.includes(line.sourceOrderId!)) return false
+        const rows = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
+        return rows.some(row => line.sourceOrderLineId
+          ? row.orderLineId === line.sourceOrderLineId
+          : row.productId === line.productId)
+      }))
+      if (matches.length === 1) recoveredInvoiceByNote.set(note.id, { id: matches[0].id, name: matches[0].name })
+    }
     // 剩余可用 = 总额 − Σ 抵扣/退款（20261014 L1），列表直接显示，不用点进详情
     const sums = creditNotes.length
       ? await prisma.creditNoteAllocation.groupBy({
@@ -57,6 +78,7 @@ export async function GET(req: Request) {
     const used = new Map(sums.map(s => [s.creditNoteId, toNum(s._sum.amount ?? 0)]))
     return NextResponse.json(serializeApi(creditNotes.map(c => ({
       ...c,
+      sourceInvoice: c.sourceInvoice ?? recoveredInvoiceByNote.get(c.id) ?? null,
       lines: c.lines.map(line => ({ ...line, sourceOrderCode: line.sourceOrderId ? orderCodeById.get(line.sourceOrderId) ?? null : null })),
       amountAllocated: round2(used.get(c.id) ?? 0),
       amountRemaining: round2(toNum(c.totalIncTax) - (used.get(c.id) ?? 0)),
@@ -123,6 +145,28 @@ export async function POST(req: Request) {
       }
       const safeLines = Array.isArray(lines) ? lines : []
 
+      // A credit note based on an invoiced order must retain its original invoice.
+      // Blank drafts remain allowed; they are linked when created from an invoice.
+      const sourceOrderIds = [...new Set(safeLines.map(line => String(line.sourceOrderId ?? '').trim()).filter(Boolean))]
+      let sourceInvoiceId: string | null = null
+      if (sourceOrderIds.length) {
+        const invoices = await prisma.invoice.findMany({
+          where: { saleOrderIds: { hasSome: sourceOrderIds }, customerId, status: { in: ['POSTED', 'PAID'] } },
+          select: { id: true, saleOrderIds: true, lines: true },
+        })
+        if (invoices.length) {
+          const matches = invoices.filter(invoice => sourceOrderIds.every(orderId => invoice.saleOrderIds.includes(orderId)) && safeLines.every(line => {
+            if (!line.sourceOrderId) return true
+            const rows = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
+            return rows.some(row => line.sourceOrderLineId
+              ? row.orderLineId === line.sourceOrderLineId
+              : row.productId === line.productId)
+          }))
+          if (matches.length !== 1) return NextResponse.json({ error: '原订单已有发票，但无法唯一匹配来源发票；请从原发票页面创建贷记单或拆分后重试' }, { status: 409 })
+          sourceInvoiceId = matches[0].id
+        }
+      }
+
       // P0-3: 服务端权威计算金额
       let subtotalExTax = 0
       let totalTax = 0
@@ -145,6 +189,7 @@ export async function POST(req: Request) {
           subtotalIncTax: round2(lineSubtotal + lineTax),
           reason: l.reason ? String(l.reason).trim().slice(0, 500) : null,
           sourceOrderId: l.sourceOrderId ? String(l.sourceOrderId).trim() : null,
+          sourceOrderLineId: l.sourceOrderLineId ? String(l.sourceOrderLineId).trim() : null,
           sourceTripId: l.sourceTripId ? String(l.sourceTripId).trim() : null,
           sequence: l.sequence ?? idx,
         }
@@ -177,6 +222,7 @@ export async function POST(req: Request) {
           status: 'DRAFT',
           notes,
           createdBy: user.userId,
+          sourceInvoiceId,
           lines: {
             create: lineData,
           },
