@@ -78,6 +78,7 @@
     "dispatch.trip.verify": 143,
     "dispatch.trip.read_returns": 167,
     "dispatch.trip.report_return": 190,
+    "dispatch.trip.sign_delivery": 198,
     "dispatch.trip.returns": 144,
     "dispatch.trip.warehouse_verify": 189,
     "dispatch.trip.read_discrepancy": 168,

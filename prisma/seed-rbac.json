@@ -622,6 +622,7 @@
       "permissions": [
         "dispatch.trip.read",
         "dispatch.trip.update",
+        "dispatch.trip.sign_delivery",
         "page.driver.access",
         "tool.bulletin.use",
         "page.bulletin.access",
