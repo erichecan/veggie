@@ -57,20 +57,30 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))`
         const name = await nextSequenceName(tx, 'CreditNote', prefix, 4)
         const sourceInvoice = request.sourceInvoiceId ? await tx.invoice.findFirst({
-          where: { id: request.sourceInvoiceId, status: { in: ['POSTED', 'PAID'] } },
-          select: { id: true },
+          where: { id: request.sourceInvoiceId, customerId: request.customerId, saleOrderIds: { has: request.sourceOrderId }, status: { in: ['POSTED', 'PAID'] } },
+          select: { id: true, lines: true },
         }) : null
+        const requestedLineIds = new Set(lines.map(line => line.orderLineId).filter((id): id is string => Boolean(id)))
+        if (sourceInvoice && requestedLineIds.size) {
+          const invoiceLines = Array.isArray(sourceInvoice.lines) ? sourceInvoice.lines as Array<Record<string, unknown>> : []
+          if (![...requestedLineIds].every(lineId => invoiceLines.some(line => line.orderLineId === lineId))) {
+            throw Object.assign(new Error('申请记录保存的原发票不包含对应订单商品，请核对原发票后再审批'), { status: 409 })
+          }
+        }
         const invoices = request.sourceInvoiceId ? [] : await tx.invoice.findMany({
           where: { saleOrderIds: { has: request.sourceOrderId }, status: { in: ['POSTED', 'PAID'] } },
           orderBy: { createdAt: 'desc' }, select: { id: true, lines: true },
         })
-        const requestedLineIds = new Set(lines.map(line => line.orderLineId).filter((id): id is string => Boolean(id)))
-        const matchedInvoice = invoices.find(invoice => {
+        const matchedInvoices = invoices.filter(invoice => {
           const invoiceLines = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
           const invoicedLineIds = new Set(invoiceLines.map(line => String(line.orderLineId ?? '')).filter(Boolean))
           return requestedLineIds.size > 0 && [...requestedLineIds].every(lineId => invoicedLineIds.has(lineId))
         })
+        const matchedInvoice = matchedInvoices.length === 1 ? matchedInvoices[0] : null
         const sourceInvoiceId = sourceInvoice?.id ?? matchedInvoice?.id ?? null
+        if ((request.sourceInvoiceId || invoices.length > 0) && !sourceInvoiceId) {
+          throw Object.assign(new Error('该贷记申请无法匹配唯一的原发票，请核对原发票后再审批'), { status: 409 })
+        }
         const subtotalExTax = round2(lines.reduce((sum, line) => sum + toNum(line.subtotalExTax), 0))
         const totalTax = round2(lines.reduce((sum, line) => sum + toNum(line.taxAmount), 0))
         const note = await tx.creditNote.create({

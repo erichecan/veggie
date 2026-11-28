@@ -2039,7 +2039,7 @@ model CreditNote {
   updatedAt     DateTime               @updatedAt
   lines         CreditNoteLine[]
   allocations   CreditNoteAllocation[]
-  /// 发票详情手动创建时记录来源发票；退货自动生成的贷记单为空。
+  /// 来源发票；已开票订单产生的贷记单必须关联，以便追溯原始应收。
   sourceInvoiceId String?
   sourceInvoice   Invoice? @relation("InvoiceCreditNotes", fields: [sourceInvoiceId], references: [id], onDelete: Restrict)
 

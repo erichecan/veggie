@@ -89,11 +89,15 @@ export async function POST(req: Request) {
         orderBy: { createdAt: 'desc' }, select: { id: true, lines: true },
       })
       const requestedLineIds = new Set(lines.map(line => line.orderLineId))
-      const postedInvoice = postedInvoices.find(invoice => {
+      const matchingInvoices = postedInvoices.filter(invoice => {
         const invoiceLines = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
         const invoicedLineIds = new Set(invoiceLines.map(line => String(line.orderLineId ?? '')).filter(Boolean))
         return [...requestedLineIds].every(lineId => invoicedLineIds.has(lineId))
       })
+      if (postedInvoices.length > 0 && matchingInvoices.length !== 1) {
+        return NextResponse.json({ error: '该订单已有已过账发票，但申请商品无法唯一匹配原发票，请先核对发票明细' }, { status: 409 })
+      }
+      const postedInvoice = matchingInvoices[0]
       const created = await prisma.$transaction(async tx => {
         await lockReturnOrders(tx, [order.id])
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))`

@@ -4,7 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
-import type { TripRestaurant, ReturnItem } from '@/lib/types'
+import type { TripRestaurant } from '@/lib/types'
 
 function requestTimestamp(value: Date | string | null | undefined, fallback: Date): Date {
   if (!value) return fallback
@@ -60,6 +60,7 @@ export async function POST(req: Request) {
           sourceOrderId: string | null
           sourceTripId: string | null
           sourceReturnId: string | null
+          sourceInvoiceId?: string | null
           requestDate: Date
         }>
       }>()
@@ -166,7 +167,6 @@ export async function POST(req: Request) {
           include: { order: { select: { restaurantId: true, restaurantName: true } } },
         })
         const uncreditedOrderReturns = orderReturns.filter(ret => !existingSourceIds.has(`ORDER_RETURN:${ret.id}`))
-        const orderIds = [...new Set(uncreditedOrderReturns.map(r => r.orderId))]
         const lineIds = [...new Set(uncreditedOrderReturns.map(r => r.orderLineId).filter((v): v is string => Boolean(v)))]
         const priceLines = lineIds.length > 0 ? await prisma.orderLine.findMany({
           where: { id: { in: lineIds } },
@@ -217,6 +217,23 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '未找到已审批的退货记录' }, { status: 400 })
       }
 
+      const sourceOrderIds = [...new Set([...customerReturns.values()].flatMap(group => group.lines.map(line => line.sourceOrderId).filter((id): id is string => Boolean(id))))]
+      const postedInvoices = sourceOrderIds.length ? await prisma.invoice.findMany({
+        where: { saleOrderIds: { hasSome: sourceOrderIds }, status: { in: ['POSTED', 'PAID'] } },
+        select: { id: true, saleOrderIds: true, lines: true },
+      }) : []
+      for (const group of customerReturns.values()) for (const line of group.lines) {
+        if (!line.sourceOrderId) continue
+        const orderInvoices = postedInvoices.filter(invoice => invoice.saleOrderIds.includes(line.sourceOrderId!))
+        if (!orderInvoices.length) continue
+        const matching = orderInvoices.filter(invoice => {
+          const rows = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
+          return rows.some(row => row.productId === line.productId)
+        })
+        if (matching.length !== 1) return NextResponse.json({ error: `退货商品“${line.productName}”无法唯一匹配原发票，请先核对订单和发票明细；本批次未生成贷记单` }, { status: 409 })
+        line.sourceInvoiceId = matching[0].id
+      }
+
       // 生成 CreditNote（每个客户一张）
       const today = new Date()
       const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '')
@@ -253,11 +270,19 @@ export async function POST(req: Request) {
 
         // 为每个客户创建 CreditNote
         for (const [customerId, data] of customerReturns) {
+          const invoiceGroups = new Map<string, typeof data.lines>()
+          for (const line of data.lines) {
+            const key = line.sourceInvoiceId ?? ''
+            const bucket = invoiceGroups.get(key) ?? []
+            bucket.push(line)
+            invoiceGroups.set(key, bucket)
+          }
+          for (const [invoiceId, invoiceLines] of invoiceGroups) {
           seqStart++
           const name = `CN-${dateStr}-${String(seqStart).padStart(4, '0')}`
 
           let subtotalExTax = 0
-          const lineData = data.lines.map((l, idx) => {
+          const lineData = invoiceLines.map((l, idx) => {
             const lineSubtotal = round2(l.quantity * l.unitPrice)
             subtotalExTax += lineSubtotal
             return {
@@ -285,12 +310,13 @@ export async function POST(req: Request) {
               customerId,
               customerName: data.customerName,
               // Backfill credits use the return request's timestamp, not the later accounting generation time.
-              creditDate: new Date(Math.min(...data.lines.map(line => line.requestDate.getTime()))),
+              creditDate: new Date(Math.min(...invoiceLines.map(line => line.requestDate.getTime()))),
               currency: 'EUR',
               subtotalExTax,
               totalTax: 0,
               totalIncTax: subtotalExTax,
               status: 'CONFIRMED',
+              sourceInvoiceId: invoiceId || null,
               notes: `从退货自动生成 — ${tripIds.length}个行程 + ${settledOrderReturnIds.length}条登记`,
               createdBy: user.userId,
               lines: { create: lineData },
@@ -304,6 +330,7 @@ export async function POST(req: Request) {
             totalIncTax: subtotalExTax,
             lineCount: lineData.length,
           })
+          }
         }
       })
 
