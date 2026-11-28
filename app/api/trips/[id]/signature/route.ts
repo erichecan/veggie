@@ -37,11 +37,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ error: '该站点已完成，不能重复签收' }, { status: 409 })
       }
 
+      const customer = await prisma.customer.findUnique({ where: { id: restaurantId }, select: { creditLimit: true } })
+      const isCashOnDelivery = Number(customer?.creditLimit ?? 0) <= 0
+      const amount = Number(current.payment)
+      if (isCashOnDelivery && (!Number.isFinite(amount) || amount < 0)) {
+        return NextResponse.json({ error: '请先填写货到现金实收金额' }, { status: 400 })
+      }
+
       const candidate = {
         ...current,
         delivered: true,
         signature: body.signature,
         signerName: body.signerName,
+        payment: isCashOnDelivery ? amount : 0,
+        paymentMethod: isCashOnDelivery ? 'CASH' : null,
       }
       const checked = reconcileSignatures([], [candidate], new Date())
       if (checked.issues.length) {
@@ -52,7 +61,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       nextRestaurants[index] = checked.restaurants[0] as typeof current
       const updated = await prisma.trip.update({
         where: { id },
-        data: { restaurants: nextRestaurants as never },
+        data: {
+          restaurants: nextRestaurants as never,
+          totalPayment: nextRestaurants.reduce((sum, restaurant) => {
+            const payment = Number(restaurant.payment)
+            return sum + (Number.isFinite(payment) && payment >= 0 ? payment : 0)
+          }, 0),
+        },
       })
 
       // A logging outage must not turn a committed signature into a reported save failure.

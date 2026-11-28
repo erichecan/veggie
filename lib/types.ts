@@ -703,7 +703,9 @@ export interface TripRestaurant {
   delivered: boolean
   payment?: number
   /** Driver-reported way this stop's actual collection was received. */
-  paymentMethod?: 'CASH' | 'ONLINE'
+  paymentMethod?: 'CASH' | 'ONLINE' | null
+  /** Server-derived driver instruction based on the customer's credit limit. */
+  collectionInstruction?: 'CASH_ON_DELIVERY' | 'SIGN'
   returns: ReturnItem[]
   pods: string[]
   cargoVerified: boolean

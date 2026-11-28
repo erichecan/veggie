@@ -145,10 +145,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       throw e
     }
     if (saved) {
-      const localOrderCodes = new Map(updated.restaurants.map(r => [r.restaurantId, r.orderCodes]))
+      const localProjection = new Map(updated.restaurants.map(r => [r.restaurantId, {
+        orderCodes: r.orderCodes,
+        collectionInstruction: r.collectionInstruction,
+      }]))
       setTrip({
         ...saved,
-        restaurants: saved.restaurants.map(r => ({ ...r, orderCodes: localOrderCodes.get(r.restaurantId) })),
+        restaurants: saved.restaurants.map(r => ({ ...r, ...localProjection.get(r.restaurantId) })),
       })
     } else {
       setTrip(updated)
@@ -235,29 +238,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     const clean = Math.round(amount * 100) / 100
     const updated = cloneTrip()
     const r = updated.restaurants.find(r => r.restaurantId === restId)
-    if (r) r.payment = clean
+    if (r) {
+      r.payment = clean
+      if (r.collectionInstruction !== 'SIGN') r.paymentMethod = 'CASH'
+    }
     setPaymentSavingRestId(restId)
     try {
       await saveTrip(updated)
     } catch {
       // saveTrip already reports the error; keep sign-off and order end disabled until retry.
-    } finally {
-      setPaymentSavingRestId(null)
-    }
-  }
-
-  async function setPaymentMethod(restId: string, method: 'CASH' | 'ONLINE') {
-    if (!trip) return
-    const current = trip.restaurants.find(r => r.restaurantId === restId)
-    if (!current || current.delivered) return
-    const updated = cloneTrip()
-    const restaurant = updated.restaurants.find(r => r.restaurantId === restId)
-    if (restaurant) restaurant.paymentMethod = method
-    setPaymentSavingRestId(restId)
-    try {
-      await saveTrip(updated)
-    } catch {
-      // saveTrip already reports the error.
     } finally {
       setPaymentSavingRestId(null)
     }
@@ -471,8 +460,11 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         signature: signData,
         signerName: signerName.trim(),
       })
-      const localOrderCodes = new Map(trip.restaurants.map(r => [r.restaurantId, r.orderCodes]))
-      setTrip({ ...saved, restaurants: saved.restaurants.map(r => ({ ...r, orderCodes: localOrderCodes.get(r.restaurantId) })) })
+      const localProjection = new Map(trip.restaurants.map(r => [r.restaurantId, {
+        orderCodes: r.orderCodes,
+        collectionInstruction: r.collectionInstruction,
+      }]))
+      setTrip({ ...saved, restaurants: saved.restaurants.map(r => ({ ...r, ...localProjection.get(r.restaurantId) })) })
       setSignModal(null)
       toast.success(isEn ? `${signModal.restName} signed for` : `${signModal.restName} 已签收`)
     } finally {
@@ -651,8 +643,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           const canEditPayment = canContinueStopActions
           const canReportException = canContinueStopActions && !hasException
           const canUploadPod = canContinueStopActions
-          const needsCollectionMethod = Number(r.payment ?? 0) > 0
-          const canSignOff = canEditPayment && !r.delivered && hasValidPayment && (!needsCollectionMethod || !!r.paymentMethod) && paymentSavingRestId !== r.restaurantId
+          const isCashOnDelivery = r.collectionInstruction !== 'SIGN'
+          const canSignOff = canEditPayment && !r.delivered && (!isCashOnDelivery || hasValidPayment) && paymentSavingRestId !== r.restaurantId
           const navigationOrderId = (activeOrderAtRest ? activeOrderId : null)
             ?? orderIds.find(orderId => !orderTimingById[orderId]?.endedAt)
             ?? orderIds[0]
@@ -815,40 +807,35 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
                   {(tripStatus === 'in_progress' || tripStatus === 'verifying') && (
                     <div className="rounded-xl border border-gray-200 bg-white p-3">
-                      <label className="mb-2 block text-sm font-semibold text-gray-700">{isEn ? 'Amount Collected (€)' : '实收金额 (€)'}</label>
-                      <NumericInput
-                        min="0"
-                        step="0.01"
-                        placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
-                        value={r.payment ?? ''}
-                        onBlur={e => {
-                          const value = e.target.value.trim()
-                          if (!value) {
-                            toast.error(isEn ? 'Enter an amount collected (0 is allowed)' : '请输入实收金额（可以填写 0）')
-                            return
-                          }
-                          void setPayment(r.restaurantId, Number(value))
-                        }}
-                        disabled={tripStatus === 'in_progress'
-                          ? !canEditPayment || paymentLocked || paymentSavingRestId === r.restaurantId
-                          : !canOperateRest || paymentLocked || paymentSavingRestId === r.restaurantId}
-                        className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
-                      />
-                      {Number(r.payment ?? 0) > 0 && (
-                        <div className="mt-3">
-                          <label className="mb-1 block text-xs font-medium text-gray-600">{isEn ? 'Collection method' : '收款方式'}</label>
-                          <select
-                            value={r.paymentMethod ?? ''}
-                            onChange={e => e.target.value && void setPaymentMethod(r.restaurantId, e.target.value as 'CASH' | 'ONLINE')}
-                            disabled={tripStatus === 'in_progress' ? !canEditPayment || paymentLocked || paymentSavingRestId === r.restaurantId : !canOperateRest || paymentLocked || paymentSavingRestId === r.restaurantId}
-                            className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-base text-gray-800 disabled:bg-gray-100"
-                            required
-                          >
-                            <option value="">{isEn ? 'Select how payment was received' : '请选择实际收款方式'}</option>
-                            <option value="CASH">{isEn ? 'Cash' : '现金'}</option>
-                            <option value="ONLINE">{isEn ? 'Bank transfer / online' : '银行转账 / 在线'}</option>
-                          </select>
-                        </div>
+                      {isCashOnDelivery ? (
+                        <>
+                          <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                            {isEn ? 'Cash on delivery — collect cash from the customer.' : '货到现金收款 — 请向客户收取现金。'}
+                          </p>
+                          <label className="mb-2 block text-sm font-semibold text-gray-700">{isEn ? 'Cash collected (€)' : '现金实收金额 (€)'}</label>
+                          <NumericInput
+                            min="0"
+                            step="0.01"
+                            placeholder={isEn ? 'Enter cash collected' : '输入现金实收金额'}
+                            value={r.payment ?? ''}
+                            onBlur={e => {
+                              const value = e.target.value.trim()
+                              if (!value) {
+                                toast.error(isEn ? 'Enter the cash collected (0 is allowed)' : '请输入现金实收金额（可以填写 0）')
+                                return
+                              }
+                              void setPayment(r.restaurantId, Number(value))
+                            }}
+                            disabled={tripStatus === 'in_progress'
+                              ? !canEditPayment || paymentLocked || paymentSavingRestId === r.restaurantId
+                              : !canOperateRest || paymentLocked || paymentSavingRestId === r.restaurantId}
+                            className="min-h-14 w-full rounded-lg border-2 border-purple-400 bg-white px-4 py-3 text-xl font-semibold text-gray-900 shadow-sm outline-none transition focus:border-purple-700 focus:ring-4 focus:ring-purple-100 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                          />
+                        </>
+                      ) : (
+                        <p className="rounded-lg bg-green-50 px-3 py-3 text-sm font-semibold text-green-900">
+                          {isEn ? 'Credit customer — do not collect payment. Get the customer’s signature to confirm delivery.' : '信用客户 — 无需收款，请客户签字确认收货。'}
+                        </p>
                       )}
                     </div>
                   )}
